@@ -479,25 +479,48 @@ async def _direct_fallback(
             return {"output": output or "(no output)", "exit_code": rc or 0}
 
         if tool == "read_file":
-            path = content.split("\n", 1)[0].strip()
+            _rlines = content.split("\n")
+            path = _rlines[0].strip()
             if not path:
                 return {"error": "read_file: path required", "exit_code": 1}
+            # Optional ranged read: "offset N" / "limit M" lines (1-based offset),
+            # or native offset/limit args serialized the same way. Lets the agent
+            # page through large files instead of hitting the char cap.
+            offset = 0
+            limit = None
+            for _ln in _rlines[1:]:
+                _mo = re.match(r"\s*offset\s*[:=]?\s*(\d+)", _ln, re.I)
+                if _mo:
+                    offset = max(0, int(_mo.group(1)) - 1)
+                _ml = re.match(r"\s*limit\s*[:=]?\s*(\d+)", _ln, re.I)
+                if _ml:
+                    limit = max(0, int(_ml.group(1)))
             try:
-                # Run blocking read in a thread to keep the loop responsive
                 def _read():
                     with open(path, "r", encoding="utf-8", errors="replace") as f:
-                        return f.read(MAX_READ_CHARS + 1)
-                data = await asyncio.to_thread(_read)
+                        return f.read()
+                raw = await asyncio.to_thread(_read)
             except FileNotFoundError:
                 return {"error": f"read_file: {path}: not found", "exit_code": 1}
             except PermissionError:
                 return {"error": f"read_file: {path}: permission denied", "exit_code": 1}
             except OSError as e:
                 return {"error": f"read_file: {path}: {e}", "exit_code": 1}
-            truncated = len(data) > MAX_READ_CHARS
-            if truncated:
-                data = data[:MAX_READ_CHARS] + f"\n... [truncated at {MAX_READ_CHARS} chars]"
-            return {"output": data, "exit_code": 0}
+            # Whole-file read (no range): preserve prior behaviour byte-for-byte.
+            if offset == 0 and limit is None:
+                if len(raw) > MAX_READ_CHARS:
+                    return {"output": raw[:MAX_READ_CHARS] + f"\n... [truncated at {MAX_READ_CHARS} chars — pass offset/limit to read more]", "exit_code": 0}
+                return {"output": raw, "exit_code": 0}
+            # Ranged read: slice by line, with a header noting which lines.
+            file_lines = raw.splitlines()
+            total = len(file_lines)
+            if total and offset >= total:
+                return {"output": f"(offset line {offset + 1} is past end of file; {total} lines total)", "exit_code": 0}
+            end = total if limit is None else min(total, offset + limit)
+            body = "\n".join(file_lines[offset:end])
+            if len(body) > MAX_READ_CHARS:
+                body = body[:MAX_READ_CHARS] + f"\n... [truncated at {MAX_READ_CHARS} chars]"
+            return {"output": f"# {path} (lines {offset + 1}-{end} of {total})\n{body}", "exit_code": 0}
 
         if tool == "write_file":
             lines = content.split("\n", 1)

@@ -203,7 +203,13 @@ Search the web for a SINGLE quick fact/lookup mid-task. For news / "today" / "la
 ```read_file
 <file path>
 ```
-Read a file and return its contents.""",
+Read a file and return its contents. For large files, read a line range with
+`offset` (1-based start line) and `limit`:
+```read_file
+<file path>
+offset 200
+limit 100
+```""",
 
     "write_file": """\
 ```write_file

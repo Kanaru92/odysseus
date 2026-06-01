@@ -68,11 +68,13 @@ FUNCTION_TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "read_file",
-            "description": "Read a file from disk",
+            "description": "Read a file from disk. Optionally read a line range with offset/limit for large files.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "path": {"type": "string", "description": "File path to read"}
+                    "path": {"type": "string", "description": "File path to read"},
+                    "offset": {"type": "integer", "description": "1-based line to start at (optional; for large files)"},
+                    "limit": {"type": "integer", "description": "Number of lines to read from offset (optional)"}
                 },
                 "required": ["path"]
             }
@@ -1099,6 +1101,10 @@ def function_call_to_tool_block(name: str, arguments: str) -> Optional[ToolBlock
         content = args.get("query", "")
     elif tool_type == "read_file":
         content = args.get("path", "")
+        if args.get("offset") is not None:
+            content += f"\noffset {int(args['offset'])}"
+        if args.get("limit") is not None:
+            content += f"\nlimit {int(args['limit'])}"
     elif tool_type == "write_file":
         content = args.get("path", "") + "\n" + args.get("content", "")
     elif tool_type == "edit_file":
