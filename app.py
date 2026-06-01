@@ -707,6 +707,13 @@ async def startup_event():
     global upload_cleanup_task
     logger.info("Application starting up...")
     webhook_manager.set_loop(asyncio.get_running_loop())
+    # Load drop-in tool plugins (plugins/<name>/plugin.py). Each registers one or
+    # more tools via src.tool_registry.register_tool — no edits to core needed.
+    try:
+        from src.tool_registry import load_plugins
+        load_plugins()
+    except Exception as _e:
+        logger.error("Plugin loading failed: %s", _e)
     # Wipe any leftover incognito sessions from previous process — they're
     # ephemeral by design and must not survive a restart.
     try:

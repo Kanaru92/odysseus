@@ -942,6 +942,27 @@ async def execute_tool_block(
         logger.warning("Public tool policy blocked owner=%r tool=%s", owner, tool)
         return desc, result
 
+    # Plugin / registry tools — declared via a single ToolSpec (src/tool_registry),
+    # including drop-in plugins under plugins/. Executed here generically so no
+    # per-tool edit to this dispatcher is needed. Permission gates above already
+    # ran (register_tool adds admin-permission plugins to _ADMIN_TOOLS).
+    try:
+        from src.tool_registry import REGISTRY as _PLUGIN_REGISTRY
+    except Exception:
+        _PLUGIN_REGISTRY = {}
+    if tool in _PLUGIN_REGISTRY:
+        spec = _PLUGIN_REGISTRY[tool]
+        desc = f"{tool}: {content.split(chr(10))[0][:80]}"
+        try:
+            args = spec.parse_content(content)
+            result = await spec.execute(args)
+            if not isinstance(result, dict):
+                result = {"output": str(result), "exit_code": 0}
+        except Exception as e:
+            result = {"error": f"{tool}: {e}", "exit_code": 1}
+        logger.info("Tool executed (plugin): %s", desc)
+        return desc, result
+
     # Background execution: a `bash` block whose first line is the `#!bg`
     # marker runs DETACHED — returns a job id immediately so the chat stream
     # isn't held open for a multi-minute install/ffmpeg/download. The always-on

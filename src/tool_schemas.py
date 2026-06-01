@@ -1092,6 +1092,15 @@ def function_call_to_tool_block(name: str, arguments: str) -> Optional[ToolBlock
         logger.warning(f"Unknown function call: {name}")
         return None
 
+    # Plugin/registry tools (src/tool_registry) serialize their own args into
+    # the fenced content their parser understands — no per-tool case needed here.
+    try:
+        from src.tool_registry import REGISTRY as _REG
+        if tool_type in _REG:
+            return ToolBlock(tool_type, _REG[tool_type].serialize_args(args))
+    except Exception:
+        pass
+
     # Convert structured args back to the text format each tool expects
     if tool_type == "bash":
         content = args.get("command", "")
