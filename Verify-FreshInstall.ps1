@@ -98,7 +98,8 @@ Rec 'setup/login (data, DB, admin)' (($LASTEXITCODE -eq 0) -and (Test-Path (Join
 # --- 1,3,4,5,6: Python-level checks -----------------------------------------
 $pyCheck = Join-Path $Work 'checks.py'
 @'
-import sys, subprocess, time, json
+import sys, os, subprocess, time, json
+sys.path.insert(0, os.getcwd())   # run-as-script puts checks.py's dir on path, not the repo
 out = {}
 try:
     import app
