@@ -108,7 +108,17 @@ python setup.py            # creates data dirs and prints an initial admin passw
 uvicorn app:app --host 0.0.0.0 --port 7000
 ```
 
-### Option 3: Manual install — Windows (PowerShell)
+### Option 3: Manual install — Windows (PowerShell, native, no Docker)
+
+**One-command launcher** (creates the venv, installs deps, runs setup, starts the
+server — safe to re-run):
+```powershell
+git clone <your-odysseus-repo-url>
+cd odysseus
+powershell -ExecutionPolicy Bypass -File .\launch-windows.ps1
+```
+
+Or do it by hand:
 ```powershell
 git clone <your-odysseus-repo-url>
 cd odysseus
@@ -116,8 +126,16 @@ python -m venv venv
 venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 python setup.py
-uvicorn app:app --host 0.0.0.0 --port 7000
+python -m uvicorn app:app --host 127.0.0.1 --port 7000   # use `python -m` — bare `uvicorn` may not be on PATH
 ```
+
+**Requirements:** Python 3.11+. The core app (chat, agent, memory, documents,
+email, calendar, deep research) runs fully native. For full **Cookbook** background
+model downloads and the agent shell tool, also install
+[Git for Windows](https://git-scm.com/download/win) (provides `bash.exe`).
+Local GPU *serving* of vLLM/SGLang needs Linux/WSL2; for a local model on Windows,
+[Ollama](https://ollama.com/download) is the easiest path — point Odysseus at
+`http://localhost:11434/v1` in Settings.
 
 Open `http://localhost:7000`, log in with the generated admin password,
 and configure everything else inside **Settings**.

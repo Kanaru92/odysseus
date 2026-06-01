@@ -287,7 +287,7 @@ class ResearchHandler:
         path = RESEARCH_DATA_DIR / f"{session_id}.json"
         if path.exists():
             try:
-                data = json.loads(path.read_text())
+                data = json.loads(path.read_text(encoding="utf-8"))
                 if data.get("consumed"):
                     return None
                 return {
@@ -326,7 +326,7 @@ class ResearchHandler:
         path = RESEARCH_DATA_DIR / f"{session_id}.json"
         if path.exists():
             try:
-                data = json.loads(path.read_text())
+                data = json.loads(path.read_text(encoding="utf-8"))
                 if data.get("consumed"):
                     return None
                 return data.get("result")
@@ -348,7 +348,7 @@ class ResearchHandler:
         path = RESEARCH_DATA_DIR / f"{session_id}.json"
         if path.exists():
             try:
-                data = json.loads(path.read_text())
+                data = json.loads(path.read_text(encoding="utf-8"))
                 return data.get("sources")
             except Exception:
                 pass
@@ -365,7 +365,7 @@ class ResearchHandler:
         path = RESEARCH_DATA_DIR / f"{session_id}.json"
         if path.exists():
             try:
-                data = json.loads(path.read_text())
+                data = json.loads(path.read_text(encoding="utf-8"))
                 return data.get("raw_findings")
             except Exception as e:
                 logger.warning(f"Failed to read raw findings for {session_id}: {e}")
@@ -413,7 +413,7 @@ class ResearchHandler:
         try:
             for p in RESEARCH_DATA_DIR.glob("*.json"):
                 try:
-                    data = json.loads(p.read_text())
+                    data = json.loads(p.read_text(encoding="utf-8"))
                     if data.get("status") == "done":
                         started = data.get("started_at", 0)
                         completed = data.get("completed_at", 0)
@@ -436,9 +436,9 @@ class ResearchHandler:
         path = RESEARCH_DATA_DIR / f"{session_id}.json"
         if path.exists():
             try:
-                data = json.loads(path.read_text())
+                data = json.loads(path.read_text(encoding="utf-8"))
                 data["consumed"] = True
-                path.write_text(json.dumps(data))
+                path.write_text(json.dumps(data), encoding="utf-8")
             except Exception:
                 pass
 
@@ -469,7 +469,7 @@ class ResearchHandler:
                 # SECURITY: stamp owner so route handlers can filter by user.
                 "owner": entry.get("owner", ""),
             }
-            path.write_text(json.dumps(data))
+            path.write_text(json.dumps(data), encoding="utf-8")
             logger.info(f"Research result saved to {path}")
             try:
                 from src.event_bus import fire_event
@@ -484,7 +484,7 @@ class ResearchHandler:
         path = RESEARCH_DATA_DIR / f"{session_id}.json"
         if path.exists():
             try:
-                return json.loads(path.read_text())
+                return json.loads(path.read_text(encoding="utf-8"))
             except Exception:
                 pass
         return None
@@ -499,7 +499,7 @@ class ResearchHandler:
         try:
             from src.visual_report import generate_visual_report
 
-            data = json.loads(json_path.read_text())
+            data = json.loads(json_path.read_text(encoding="utf-8"))
             report_md = data.get("raw_report") or data.get("result", "")
             html_content = generate_visual_report(
                 question=data.get("query", ""),
@@ -522,12 +522,12 @@ class ResearchHandler:
         if not path.exists():
             return False
         try:
-            data = json.loads(path.read_text())
+            data = json.loads(path.read_text(encoding="utf-8"))
             hidden = data.get("hidden_images") or []
             if image_url not in hidden:
                 hidden.append(image_url)
                 data["hidden_images"] = hidden
-                path.write_text(json.dumps(data))
+                path.write_text(json.dumps(data), encoding="utf-8")
                 logger.info(f"Hid image {image_url[:80]} for research {session_id}")
             return True
         except Exception as e:
@@ -540,9 +540,9 @@ class ResearchHandler:
         if not path.exists():
             return False
         try:
-            data = json.loads(path.read_text())
+            data = json.loads(path.read_text(encoding="utf-8"))
             data["hidden_images"] = []
-            path.write_text(json.dumps(data))
+            path.write_text(json.dumps(data), encoding="utf-8")
             logger.info(f"Cleared hidden_images for research {session_id}")
             return True
         except Exception as e:
