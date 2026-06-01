@@ -87,6 +87,33 @@ def _message_needs_tools(text: str) -> bool:
     return any(p.search(text) for p in _TOOL_INTENT_PATTERNS)
 
 
+# Agent sub-modes (Claude-Code style), set by the composer mode selector and
+# sent as the `agent_mode` form field. Only meaningful when mode == 'agent'.
+_AGENT_SUBMODES = ("auto", "plan", "accept-edits", "manual")
+
+# Plan mode = read-only. Every state-changing / side-effecting tool is withheld
+# so the agent can investigate (read_file, list_dir, web_search) and PROPOSE a
+# plan, but cannot change anything until the user switches to an execute mode.
+_PLAN_MODE_STRIP = {
+    "bash", "python", "write_file", "edit_file", "builtin_browser",
+    "create_document", "edit_document", "update_document", "suggest_document",
+    "generate_image",
+    "manage_memory", "manage_skills", "manage_notes", "manage_calendar",
+    "manage_tasks", "manage_email", "send_email", "reply_email", "draft_email",
+    "manage_sessions", "model_serve", "model_download", "ui_control",
+}
+
+_PLAN_MODE_DIRECTIVE = (
+    "PLAN MODE IS ON. Do NOT execute any state-changing tools — no bash, no python, "
+    "no writing or editing files, no document/image creation, no sending email or "
+    "messages. You MAY use read-only tools (read_file, list_dir, web_search) to "
+    "investigate. Then reply with a concise, numbered PLAN describing the exact steps "
+    "and the specific tool calls you WOULD run, with file paths and commands. Do not "
+    "perform them. End by telling the user to switch to Auto, Accept-Edits, or Manual "
+    "mode to carry out the plan."
+)
+
+
 def setup_chat_routes(
     session_manager,
     chat_handler,
@@ -226,6 +253,12 @@ def setup_chat_routes(
         compare_mode = str(form_data.get("compare_mode", "")).lower() == "true"
         incognito = str(form_data.get("incognito", "")).lower() == "true"
         chat_mode = str(form_data.get("mode", "")).lower()  # 'chat' or 'agent'
+        # Agent sub-mode (Claude-Code style): auto | plan | accept-edits | manual.
+        # Only meaningful when chat_mode == 'agent'; defaults to 'auto' (the prior
+        # agent behaviour — tools run immediately).
+        agent_submode = str(form_data.get("agent_mode", "") or "auto").lower()
+        if agent_submode not in _AGENT_SUBMODES:
+            agent_submode = "auto"
         # Did the USER explicitly pick agent mode? (vs. us auto-escalating
         # below). Skill extraction should only learn from real agent sessions,
         # not chats we quietly promoted for a notes/calendar intent.
@@ -434,6 +467,12 @@ def setup_chat_routes(
             disabled_tools.update({
                 "bash", "python", "read_file", "write_file", "builtin_browser",
             })
+
+        # Plan mode: withhold every mutating tool (the agent investigates with
+        # read-only tools and proposes a plan; a system directive injected just
+        # before the agent loop tells it not to execute).
+        if chat_mode == "agent" and agent_submode == "plan":
+            disabled_tools.update(_PLAN_MODE_STRIP)
 
         # Disable document tools in compare sessions — they break the pane UI
         if sess.name and sess.name.startswith("[CMP]"):
@@ -788,6 +827,13 @@ def setup_chat_routes(
                 try:
                     from src.settings import get_setting
                     _tool_budget = int(get_setting("agent_max_tool_calls", 0))
+
+                    # Plan mode: inject a read-only "propose, don't execute"
+                    # directive as the most-recent system turn (highest salience).
+                    if agent_submode == "plan":
+                        messages = list(messages) + [
+                            {"role": "system", "content": _PLAN_MODE_DIRECTIVE}
+                        ]
 
                     async for chunk in stream_agent_loop(
                         sess.endpoint_url,

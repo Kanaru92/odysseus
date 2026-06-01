@@ -290,6 +290,50 @@ def _split_bg_marker(content: str):
     return False, content
 
 
+def _agent_fs_root() -> Optional[str]:
+    """Filesystem confinement root for agent file/shell tools, or None
+    (unrestricted — the default, preserving prior behaviour).
+
+    Set ``ODYSSEUS_AGENT_FS_ROOT`` (env) or the ``agent_fs_root`` app setting to a
+    directory to confine ``read_file``/``write_file`` and start ``bash``/``python``
+    there. This is a GUARDRAIL against accidental writes outside a project — NOT a
+    security boundary: ``bash`` is a full shell and can still escape a path root
+    (cd /, network, etc.). Real isolation for untrusted/remote use needs the
+    container/Windows-Sandbox backend (roadmap #6b).
+    """
+    root = os.environ.get("ODYSSEUS_AGENT_FS_ROOT")
+    if not root:
+        try:
+            from src.settings import get_setting
+            root = get_setting("agent_fs_root", "") or None
+        except Exception:
+            root = None
+    if not root:
+        return None
+    try:
+        return os.path.realpath(root)
+    except Exception:
+        return None
+
+
+def _resolve_in_root(path: str) -> "tuple[str, Optional[str]]":
+    """Resolve a file-tool path. With a root configured, resolve relative paths
+    against it and reject escapes (``..``, absolute paths outside the root).
+    Returns ``(resolved_path, error_or_None)``. No root → pass through unchanged.
+    """
+    root = _agent_fs_root()
+    if not root:
+        return path, None
+    candidate = path if os.path.isabs(path) else os.path.join(root, path)
+    try:
+        real = os.path.realpath(candidate)
+    except Exception:
+        return path, f"invalid path: {path}"
+    if real == root or real.startswith(root + os.sep):
+        return real, None
+    return path, f"path is outside the allowed agent root ({root})"
+
+
 async def _direct_fallback(
     tool: str,
     content: str,
@@ -328,6 +372,7 @@ async def _direct_fallback(
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 env=_subproc_env,
+                cwd=_agent_fs_root(),  # start in the confinement root if configured (else inherit)
             )
             stdout, stderr, rc, timed_out = await _run_subprocess_streaming(
                 proc,
@@ -347,11 +392,17 @@ async def _direct_fallback(
             # Run user code in a subprocess so an infinite loop or crash
             # can't take the whole server down. -I = isolated mode (skip
             # user site, no PYTHONPATH inheritance) for hygiene.
+            # Use the running interpreter (sys.executable) rather than a bare
+            # "python3" — there is no python3.exe on Windows, which made the
+            # agent's `python` tool fail there. sys.executable is the venv python
+            # and is valid on every platform.
+            import sys as _sys
             proc = await asyncio.create_subprocess_exec(
-                "python3", "-I", "-c", content,
+                (_sys.executable or "python"), "-I", "-c", content,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 env=_subproc_env,
+                cwd=_agent_fs_root(),
             )
             stdout, stderr, rc, timed_out = await _run_subprocess_streaming(
                 proc,
@@ -371,6 +422,9 @@ async def _direct_fallback(
             path = content.split("\n", 1)[0].strip()
             if not path:
                 return {"error": "read_file: path required", "exit_code": 1}
+            path, _err = _resolve_in_root(path)
+            if _err:
+                return {"error": f"read_file: {_err}", "exit_code": 1}
             try:
                 # Run blocking read in a thread to keep the loop responsive
                 def _read():
@@ -394,6 +448,9 @@ async def _direct_fallback(
             body = lines[1] if len(lines) > 1 else ""
             if not path:
                 return {"error": "write_file: path required", "exit_code": 1}
+            path, _err = _resolve_in_root(path)
+            if _err:
+                return {"error": f"write_file: {_err}", "exit_code": 1}
             try:
                 def _write():
                     import os
