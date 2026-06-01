@@ -110,6 +110,10 @@ uvicorn app:app --host 0.0.0.0 --port 7000
 
 ### Option 3: Manual install — Windows (PowerShell, native, no Docker)
 
+Native Windows support is newer than the Linux/Docker path. The steps below are
+verified on Windows 11, but if you hit a snag, Docker on Linux or a Linux/macOS
+manual install remains the most battle-tested route.
+
 **One-command launcher** (creates the venv, installs deps, runs setup, starts the
 server — safe to re-run):
 ```powershell
