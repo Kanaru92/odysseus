@@ -125,6 +125,11 @@ export function createCanvasTransforms({ saveState, composite, fitZoom, showCanv
             // them so the next composite re-renders from the rotated canvas.
             layer._adjCacheKey = null;
             layer._adjFinalKey = null;
+            // The Stage-B layer-fx cache is keyed by pixVer|adjKey|fx — none of
+            // which rotation changes — so it would otherwise return the stale,
+            // pre-rotation-size fx canvas. Drop it + bump pixVer to force a redraw.
+            layer._fxCache = null; layer._fxKey = '';
+            layer._pixVer = (layer._pixVer || 0) + 1;
             state.layerOffsets.set(layer.id, {
               x: Math.round(nx - newLw / 2),
               y: Math.round(ny - newLh / 2),
@@ -192,6 +197,10 @@ export function createCanvasTransforms({ saveState, composite, fitZoom, showCanv
         // so composite redraws from the flipped canvas, not a stale cache.
         layer._adjCacheKey = null;
         layer._adjFinalKey = null;
+        // Same Stage-B fx-cache staleness as rotate: a flip mirrors the pixels but
+        // the cache key is unchanged, so drop it (else the un-mirrored fx shows).
+        layer._fxCache = null; layer._fxKey = '';
+        layer._pixVer = (layer._pixVer || 0) + 1;
         const off = state.layerOffsets.get(layer.id) || { x: 0, y: 0 };
         if (axis === 'h') {
           state.layerOffsets.set(layer.id, { x: state.imgWidth - off.x - lw, y: off.y });

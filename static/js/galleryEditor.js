@@ -2813,6 +2813,7 @@ function _applyCrop() {
       layer.canvas.height = ch;
       layer.ctx.putImageData(data, 0, 0);
       state.layerOffsets.set(layer.id, { x: 0, y: 0 });
+      _resetLayerCaches(layer); // layer canvas resized by the crop — drop old-dim caches
     }
   }
   state.mainCanvas.width = cw;
