@@ -933,7 +933,9 @@ function _syncLayerMaskBtn() {
 
 // Blending Options popup — toggle + tune the active layer's effects. Effects are
 // applied live at composite via _applyLayerFx; no caching, so just re-composite
-// on change. (Persistence of layer.fx across undo/save is a tracked follow-up.)
+// on change. layer.fx round-trips through undo (snapshot/restore) and drafts
+// (save/restore); toggling an effect pushes an undo step (live colour/size tweaks
+// stay live and are captured by the next snapshot).
 function _openFxMenu() {
   document.getElementById('ge-fx-popup')?.remove();
   const layer = activeLayer();
@@ -966,6 +968,7 @@ function _openFxMenu() {
   document.body.appendChild(pop);
   pop.querySelector('#ge-fx-close').addEventListener('click', () => pop.remove());
   pop.querySelectorAll('[data-fx]').forEach((cb) => cb.addEventListener('change', () => {
+    _saveState('Layer effect'); // snapshot the pre-toggle fx state so it's undoable
     fx[cb.dataset.fx].enabled = cb.checked; composite();
   }));
   pop.querySelectorAll('[data-fxp]').forEach((inp) => inp.addEventListener('input', () => {
@@ -1600,6 +1603,8 @@ function _snapshotState() {
         maskEnabled: l.maskEnabled === false ? false : undefined, // disabled-mask state
         text: l.text ? JSON.parse(JSON.stringify(l.text)) : null, // editable text model
         fill: l.fill ? JSON.parse(JSON.stringify(l.fill)) : null, // re-editable fill spec
+        fx: l.fx ? JSON.parse(JSON.stringify(l.fx)) : null, // layer effects (Blending Options) — reversible
+
         activeMaskId: l.activeMaskId || null,
         isBase: !!l.isBase,
         groupId: l.groupId || null,
@@ -2065,6 +2070,7 @@ function _restoreState(snap) {
     if (s.maskEnabled === false) layer.maskEnabled = false; else delete layer.maskEnabled;
     if (s.text) layer.text = JSON.parse(JSON.stringify(s.text)); else delete layer.text;
     if (s.fill) layer.fill = JSON.parse(JSON.stringify(s.fill)); else delete layer.fill;
+    if (s.fx) layer.fx = JSON.parse(JSON.stringify(s.fx)); else delete layer.fx;
     layer.activeMaskId = s.activeMaskId || (layer.masks[0]?.id ?? null);
     layer._adjFinal = null;
     layer._adjFinalKey = null;
