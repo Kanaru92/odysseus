@@ -36,15 +36,8 @@ export function controlsHTML({ color, brushSize, wandTolerance }) {
         </div>
       </div>
     </div>
-    <div class="ge-quicktransform-section" id="ge-quicktransform-section">
-      <div class="ge-section-title">Rotate &amp; Flip</div>
-      <div class="ge-control-row" style="display:flex;gap:4px;">
-        <button type="button" class="ge-btn ge-btn-sm" id="ge-qt-fliph" title="Flip canvas horizontal — great for checking a drawing" style="flex:1;">⇋</button>
-        <button type="button" class="ge-btn ge-btn-sm" id="ge-qt-flipv" title="Flip canvas vertical" style="flex:1;">⇅</button>
-        <button type="button" class="ge-btn ge-btn-sm" id="ge-qt-rotccw" title="Rotate 90° counter-clockwise" style="flex:1;">↺</button>
-        <button type="button" class="ge-btn ge-btn-sm" id="ge-qt-rotcw" title="Rotate 90° clockwise" style="flex:1;">↻</button>
-      </div>
-    </div>
+    <!-- Rotate & Flip lives on the top bar (ge-tb-fliph/flipv/rotccw/rotcw) + the
+         Image menu; the duplicate side-panel section was removed (felt out of place). -->
     <div class="ge-eraser-section" id="ge-crop-section" style="display:none;">
       <div class="ge-section-title">Crop</div>
       <div class="ge-control-row" style="display:flex;flex-wrap:wrap;gap:4px;">
@@ -727,9 +720,14 @@ export function layerPanelHTML() {
     </div>
     <div class="ge-layers-props" title="Blend mode + opacity of the active layer">
       <select id="ge-active-blend" class="ge-active-blend" title="Blend mode"></select>
-      <span class="ge-active-op-label">Opacity</span>
-      <input id="ge-active-opacity" class="ge-layer-opacity ge-active-opacity" type="range" min="0" max="100" value="100" title="Opacity">
-      <span id="ge-active-opacity-val" class="ge-active-op-val">100%</span>
+      <button type="button" id="ge-active-opacity-chip" class="ge-opacity-chip" aria-haspopup="true" aria-expanded="false" title="Layer opacity — click for a wide slider">
+        <span class="ge-active-op-label">Opacity</span>
+        <span id="ge-active-opacity-val" class="ge-active-op-val">100%</span>
+        <svg class="ge-opacity-caret" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      <div id="ge-opacity-pop" class="ge-opacity-pop" hidden>
+        <input id="ge-active-opacity" class="ge-layer-opacity ge-active-opacity" type="range" min="0" max="100" value="100" title="Opacity" aria-label="Layer opacity">
+      </div>
     </div>
     <div class="ge-layers-list" id="ge-layers-list"></div>`;
 }

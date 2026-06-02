@@ -23447,6 +23447,38 @@ input.settings-select::placeholder { color: color-mix(in srgb, var(--fg) 35%, tr
   opacity: 0.5;
   font-weight: 600;
 }
+/* Histogram / Reference are <details> sections — override the global markdown
+   <details> styling (amber --hl-string border + overflow:hidden) that leaked in
+   and squished their summaries into empty 6px slivers. Render them as clean,
+   collapsible editor section headers with the standard disclosure triangle. */
+.ge-histogram-section,
+.ge-reference-section {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  margin: var(--ge-s3, 6px) 0 0;
+  padding: 0;
+  overflow: visible;
+}
+.ge-histogram-section > summary,
+.ge-reference-section > summary {
+  display: flex;
+  align-items: center;
+  gap: var(--ge-s2, 4px);
+  height: auto;
+  min-height: 0;
+  padding: var(--ge-s1, 2px) 0;
+  background: transparent;
+  border: 0;
+  color: var(--fg);
+  font-size: var(--ge-fs-hint, 10px);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+  opacity: var(--ge-op-muted, 0.55);
+}
+.ge-histogram-section > summary:hover,
+.ge-reference-section > summary:hover { background: transparent; opacity: var(--ge-op-strong, 0.85); }
 /* Selection-row buttons stay compact so eye + invert + clear fit on
    one line beside each other. */
 .ge-inpaint-mask-row {
@@ -24916,28 +24948,47 @@ button .spinner-whirlpool {
   background: color-mix(in srgb, var(--red) 14%, transparent);
 }
 .ge-action-btn.danger:hover { color: var(--red); background: color-mix(in srgb, var(--red) 12%, transparent); }
-/* Active-layer blend + opacity (PS-style, in the header). */
+/* Active-layer blend + opacity (PS-style header row). Opacity opens a wide
+   popover slider for precision instead of a cramped inline track. */
 .ge-layers-props {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 5px 10px;
+  gap: var(--ge-s3, 6px);
+  padding: 5px var(--ge-gutter, 10px);
   border-bottom: 1px solid var(--border);
+  position: relative; /* anchor for the opacity popover */
 }
 .ge-active-blend {
-  flex: 0 1 auto;
-  max-width: 104px;
-  font-size: 10px;
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: var(--ge-fs-hint, 10px);
   background: color-mix(in srgb, var(--fg) 6%, transparent);
   color: var(--fg);
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: var(--ge-r-md, 4px);
   padding: 2px 4px;
 }
-.ge-active-op-label { font-size: 10px; opacity: 0.6; }
-.ge-active-opacity { flex: 1; min-width: 40px; }
-.ge-active-op-val { font-size: 10px; opacity: 0.85; min-width: 34px; text-align: right; }
-.ge-active-blend:disabled, .ge-active-opacity:disabled { opacity: 0.4; cursor: not-allowed; }
+.ge-active-op-label { font-size: var(--ge-fs-hint, 10px); opacity: var(--ge-op-mid, 0.7); }
+.ge-active-op-val { font-size: var(--ge-fs-hint, 10px); opacity: var(--ge-op-strong, 0.85); min-width: 30px; text-align: right; font-variant-numeric: tabular-nums; }
+/* Opacity chip → click opens the popover slider. */
+.ge-opacity-chip {
+  display: inline-flex; align-items: center; gap: var(--ge-s2, 4px); flex: 0 0 auto;
+  padding: 2px var(--ge-s3, 6px); cursor: pointer;
+  background: var(--bg); color: var(--fg);
+  border: 1px solid var(--border); border-radius: var(--ge-r-md, 4px);
+}
+.ge-opacity-chip:hover { background: color-mix(in srgb, var(--fg) 10%, var(--bg)); }
+.ge-opacity-caret { opacity: var(--ge-op-mid, 0.7); flex: 0 0 auto; }
+.ge-opacity-pop {
+  position: absolute; left: var(--ge-gutter, 10px); right: var(--ge-gutter, 10px);
+  top: calc(100% - 2px); z-index: 60;
+  padding: var(--ge-s4, 8px) var(--ge-s5, 10px);
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: var(--ge-r-lg, 6px); box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+}
+.ge-opacity-pop[hidden] { display: none; }
+.ge-opacity-pop .ge-active-opacity { display: block; width: 100%; min-width: 0; }
+.ge-active-blend:disabled, .ge-active-opacity:disabled { opacity: var(--ge-op-faint, 0.4); cursor: not-allowed; }
 /* ── Tabbed Color panel (OK Color / Swatches) + OK Color Picker ── */
 .ge-color-tabs { display: flex; gap: 2px; margin-bottom: 8px; }
 .ge-color-tab {

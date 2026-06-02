@@ -5335,12 +5335,8 @@ function _buildEditor(container) {
   _mkGuideBtn('ge-color-range', () => _runColorRange());
   _mkGuideBtn('ge-content-fill', () => _contentAwareFill());
 
-  // Quick Rotate & Flip row (always visible) — flip-horizontal is a constant
-  // painter habit ("flip to check the drawing"); reuse the whole-canvas ops.
-  document.getElementById('ge-qt-fliph')?.addEventListener('click', () => _flipAllLayers('h'));
-  document.getElementById('ge-qt-flipv')?.addEventListener('click', () => _flipAllLayers('v'));
-  document.getElementById('ge-qt-rotccw')?.addEventListener('click', () => _rotateAllLayers(270));
-  document.getElementById('ge-qt-rotcw')?.addEventListener('click', () => _rotateAllLayers(90));
+  // (Rotate & Flip side-panel row removed — these live on the top bar
+  // (ge-tb-*) + the Image menu. _flipAllLayers/_rotateAllLayers stay wired there.)
 
   // Distort tool — Apply / Cancel buttons; keep the corner handles glued to the
   // canvas on every redraw (zoom / pan / scroll fire ge:composited).

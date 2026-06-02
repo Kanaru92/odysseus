@@ -343,6 +343,28 @@ export function createLayerPanelRenderer(deps) {
       composite();
     });
 
+    // Opacity chip → wide popover slider (PS-style; precision over a cramped inline
+    // track). The slider keeps id #ge-active-opacity, so the wiring above is reused.
+    const opChip = document.getElementById('ge-active-opacity-chip');
+    const opPop = document.getElementById('ge-opacity-pop');
+    if (opChip && opPop) {
+      const closeOpPop = () => {
+        opPop.hidden = true;
+        opChip.setAttribute('aria-expanded', 'false');
+        document.removeEventListener('pointerdown', onOpDoc, true);
+      };
+      function onOpDoc(e) { if (!opPop.contains(e.target) && !opChip.contains(e.target)) closeOpPop(); }
+      opChip.addEventListener('click', () => {
+        if (opPop.hidden) {
+          opPop.hidden = false;
+          opChip.setAttribute('aria-expanded', 'true');
+          op.focus();
+          setTimeout(() => document.addEventListener('pointerdown', onOpDoc, true), 0);
+        } else { closeOpPop(); }
+      });
+      opPop.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.stopPropagation(); closeOpPop(); opChip.focus(); } });
+    }
+
     // Header Group (folder) + Delete (trash) — PS layers-panel footer parity.
     // Act on the active layer; mirror the Ctrl+G / per-row × logic so all three
     // entry points stay consistent.
