@@ -55,6 +55,23 @@ export function createBrushEngine(preset) {
   let residual = 0; // leftover spacing distance carried across segments
   let lastAngle = 0; // most recent stroke-direction angle (for tip-follows-direction)
 
+  // ── Dirty-rect accumulator ──
+  // Per-segment union of every stamped dab's footprint. `recompose` only
+  // rebuilds this region instead of the whole document each frame — `baseSnap`
+  // (full pre-stroke image) and `strokeBuf` (all dabs across the stroke) are
+  // both persistent, so clear+base+buffer over ANY rect is pixel-identical to
+  // the full rebuild for that rect; untouched regions keep their prior composite.
+  let dMinX = 0, dMinY = 0, dMaxX = 0, dMaxY = 0, dDirty = false;
+  function resetDab() { dDirty = false; }
+  function addDab(cx, cy, half) {
+    const x0 = cx - half, y0 = cy - half, x1 = cx + half, y1 = cy + half;
+    if (!dDirty) { dMinX = x0; dMinY = y0; dMaxX = x1; dMaxY = y1; dDirty = true; return; }
+    if (x0 < dMinX) dMinX = x0;
+    if (y0 < dMinY) dMinY = y0;
+    if (x1 > dMaxX) dMaxX = x1;
+    if (y1 > dMaxY) dMaxY = y1;
+  }
+
   // ── Opacity / flow model ──
   // Dabs accumulate on an offscreen STROKE buffer at FLOW (overlapping dabs
   // build up within a single stroke). That buffer is composited onto the
@@ -187,6 +204,9 @@ export function createBrushEngine(preset) {
         ox += (Math.random() * 2 - 1) * p.scatter * size;
         oy += (Math.random() * 2 - 1) * p.scatter * size;
       }
+      // Grow the segment's dirty rect by this dab's footprint (post-scatter,
+      // post-symmetry-mirror) so recompose covers every pixel it touched.
+      addDab(ox, oy, Math.max(w, h) * 0.75 + 3);
       strokeCtx.save();
       strokeCtx.globalAlpha = flow;
       strokeCtx.globalCompositeOperation = 'source-over';
@@ -200,29 +220,51 @@ export function createBrushEngine(preset) {
   }
 
   // Rebuild the layer = base + (stroke buffer at stroke opacity).
-  function recompose() {
+  // When `dirty` ({x,y,w,h} in canvas px) is given, only that region is rebuilt
+  // via a clip: clear/draw is confined to the rect while drawImage stays at
+  // (0,0), so the result inside the rect is byte-identical to a full rebuild and
+  // pixels outside are untouched. When `dirty` is null/undefined the whole
+  // canvas is rebuilt (used by non-incremental callers).
+  function recompose(dirty) {
     if (!targetCtx) return;
     const w = targetCtx.canvas.width, h = targetCtx.canvas.height;
+    // Clamp the dirty rect to integer canvas bounds; bail if it collapses.
+    let rx = 0, ry = 0, rw = w, rh = h, clipped = false;
+    if (dirty) {
+      const x0 = Math.max(0, Math.floor(dirty.x));
+      const y0 = Math.max(0, Math.floor(dirty.y));
+      const x1 = Math.min(w, Math.ceil(dirty.x + dirty.w));
+      const y1 = Math.min(h, Math.ceil(dirty.y + dirty.h));
+      rw = x1 - x0; rh = y1 - y0;
+      if (rw <= 0 || rh <= 0) return;
+      rx = x0; ry = y0; clipped = true;
+    }
     targetCtx.save();
+    if (clipped) { targetCtx.beginPath(); targetCtx.rect(rx, ry, rw, rh); targetCtx.clip(); }
     targetCtx.globalCompositeOperation = 'source-over';
     targetCtx.globalAlpha = 1;
-    targetCtx.clearRect(0, 0, w, h);
+    targetCtx.clearRect(rx, ry, rw, rh);
     targetCtx.drawImage(baseSnap, 0, 0);
     targetCtx.globalAlpha = strokeOpacity;
     // Eraser: the accumulated buffer carves alpha out of the base instead of
     // painting onto it (opacity still caps how much a single stroke removes).
     targetCtx.globalCompositeOperation = eraseMode ? 'destination-out' : strokeBlend;
     // Grain/texture: multiply the stroke's alpha by the canvas-fixed grain mask
-    // before compositing — textured brushes.
+    // before compositing — textured brushes. The grained pass is confined to the
+    // same rect (clip + rect-only clear) so grained brushes also skip full-canvas
+    // work; drawImage stays at (0,0) so the result matches a full grained rebuild.
     let strokeSrc = strokeBuf;
     if (grainMask && grainedCtx) {
+      grainedCtx.save();
+      if (clipped) { grainedCtx.beginPath(); grainedCtx.rect(rx, ry, rw, rh); grainedCtx.clip(); }
       grainedCtx.globalCompositeOperation = 'source-over';
       grainedCtx.globalAlpha = 1;
-      grainedCtx.clearRect(0, 0, w, h);
+      grainedCtx.clearRect(rx, ry, rw, rh);
       grainedCtx.drawImage(strokeBuf, 0, 0);
       grainedCtx.globalCompositeOperation = 'destination-in';
       grainedCtx.drawImage(grainMask, 0, 0);
       grainedCtx.globalCompositeOperation = 'source-over';
+      grainedCtx.restore();
       strokeSrc = grainedBuf;
     }
     targetCtx.drawImage(strokeSrc, 0, 0);
@@ -244,6 +286,7 @@ export function createBrushEngine(preset) {
     /** Stamp `from` → `to` at spacing onto the flow buffer, then recompose. */
     segment(ctx, from, to, rt) {
       if (!painting || targetCtx !== ctx) doBegin(ctx, rt); // safety net
+      resetDab(); // start a fresh dirty-rect union for this segment
       const dx = to.x - from.x;
       const dy = to.y - from.y;
       const dist = Math.hypot(dx, dy);
@@ -261,7 +304,12 @@ export function createBrushEngine(preset) {
         }
         residual = d - dist;
       }
-      recompose();
+      // Only the union of this segment's dab footprints changed → recompose just
+      // that rect. Nothing stamped (e.g. spacing not yet reached) → no work.
+      // (Test hook: a global, off by default, forces a full rebuild so a harness
+      //  can assert the dirty-rect path is byte-identical to the whole-canvas one.)
+      if (typeof globalThis !== 'undefined' && globalThis.__BRUSH_FORCE_FULL_RECOMPOSE) { recompose(); return; }
+      if (dDirty) recompose({ x: dMinX, y: dMinY, w: dMaxX - dMinX, h: dMaxY - dMinY });
     },
     /** Finish — the layer already holds base + stroke@opacity, so just reset. */
     end() { residual = 0; painting = false; },
