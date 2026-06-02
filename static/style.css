@@ -24924,6 +24924,10 @@ button .spinner-whirlpool {
   box-sizing: border-box;
   width: 100%;
 }
+/* Functional grouping in the layer-actions toolbar (DESIGN-GUIDE §3.4):
+   thin dividers between clusters + a spacer that right-aligns Delete. */
+.ge-actions-divider { flex: 0 0 auto; align-self: stretch; width: 1px; margin: var(--ge-s1, 2px) var(--ge-s2, 4px); background: var(--border); }
+.ge-actions-spacer { flex: 1 1 var(--ge-s2, 4px); min-width: 0; }
 .ge-action-btn {
   flex: 0 0 auto;
   width: 24px;
