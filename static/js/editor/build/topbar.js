@@ -53,9 +53,15 @@ export function buildTopbar() {
     </div>
     <div class="ge-topbar-right">
       <span class="ge-canvas-size" id="ge-canvas-size" title="Canvas size" hidden></span>
-      <div class="ge-image-wrap">
-        <button class="ge-btn ge-btn-sm" id="ge-image-menu-btn" title="Image actions" aria-haspopup="true">Image ▾</button>
-        <div class="ge-image-menu dropdown" id="ge-image-menu" hidden>
+      <!--
+        Hidden relay registry for the app menu bar's Image menu. The visible
+        "Image ▾" trigger button was removed (it duplicated the menu bar); the
+        [data-image-action] items below stay in the DOM, permanently hidden, so
+        wire-menu-bar.js can relay clicks through them to the real handlers
+        attached in wire-topbar-menus.js. Do not show this — it has no trigger.
+      -->
+      <div class="ge-image-wrap" hidden style="display:none">
+        <div class="ge-image-menu dropdown" id="ge-image-menu" hidden style="display:none">
           <button class="dropdown-item-compact" data-image-action="resize">
             <span class="dropdown-icon">⤢</span>
             <span>Canvas…</span>
@@ -83,9 +89,15 @@ export function buildTopbar() {
           </button>
         </div>
       </div>
-      <div class="ge-filter-wrap">
-        <button class="ge-btn ge-btn-sm" id="ge-filter-menu-btn" title="Filters" aria-haspopup="true">Filter ▾</button>
-        <div class="ge-filter-menu dropdown" id="ge-filter-menu" hidden>
+      <!--
+        Hidden relay registry for the app menu bar's Filter menu. The visible
+        "Filter ▾" trigger button was removed (it duplicated the menu bar); the
+        [data-filter-action] items below stay in the DOM, permanently hidden, so
+        wire-menu-bar.js can relay clicks through them to the real handlers
+        attached in wire-topbar-menus.js. Do not show this — it has no trigger.
+      -->
+      <div class="ge-filter-wrap" hidden style="display:none">
+        <div class="ge-filter-menu dropdown" id="ge-filter-menu" hidden style="display:none">
           <div class="ge-filter-submenu-label">Blur</div>
           <button class="dropdown-item-compact" data-filter-action="blur-gaussian">
             <span class="dropdown-icon ge-blur-icon ge-blur-gaussian" aria-hidden="true"></span>

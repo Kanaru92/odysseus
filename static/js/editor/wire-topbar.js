@@ -36,8 +36,12 @@
  */
 import { state } from './state.js';
 
-const TOPBAR_MENU_IDS = ['ge-image-menu', 'ge-filter-menu', 'ge-resize-menu', 'ge-save-menu'];
-const TOPBAR_TRIGGER_IDS = ['ge-image-menu-btn', 'ge-filter-menu-btn', 'ge-resize-menu-btn', 'ge-save-menu-btn'];
+// #ge-image-menu / #ge-filter-menu are intentionally absent: their visible
+// trigger buttons were removed (they duplicated the app menu bar). Those two
+// dropdown divs remain in the DOM but are permanently hidden relay registries,
+// so they never need open/close coordination here.
+const TOPBAR_MENU_IDS = ['ge-resize-menu', 'ge-save-menu'];
+const TOPBAR_TRIGGER_IDS = ['ge-resize-menu-btn', 'ge-save-menu-btn'];
 
 /**
  * Close every topbar dropdown except an optional "keep open" one.

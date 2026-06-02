@@ -88,21 +88,18 @@ export function wireTopbarMenus({
     applyResize(result.w, result.h);
   }
 
-  // ── Image menu ──
+  // ── Image actions (hidden relay registry) ──
+  // The visible "Image ▾" trigger button was removed — the app menu bar's
+  // Image menu now drives these actions. wire-menu-bar.js relays each click
+  // onto the matching [data-image-action] item inside the (permanently
+  // hidden) #ge-image-menu div, so we only keep the action-execution handler;
+  // there is no longer any open/close/toggle or click-away logic to wire.
   {
-    const btn = document.getElementById('ge-image-menu-btn');
     const menu = document.getElementById('ge-image-menu');
-    if (btn && menu) {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const willOpen = menu.hidden;
-        if (willOpen) closeOtherTopbarMenus('ge-image-menu');
-        menu.hidden = !menu.hidden;
-      });
+    if (menu) {
       menu.addEventListener('click', (e) => {
         const item = e.target.closest('[data-image-action]');
         if (!item || item.disabled) return;
-        menu.hidden = true;
         const action = item.dataset.imageAction;
         if (action === 'resize') resizeCustomPrompt();
         else if (action === 'selection') document.getElementById('ge-edge-menu-btn')?.click();
@@ -113,33 +110,23 @@ export function wireTopbarMenus({
         else if (action === 'flip-h') flipAllLayers('h');
         else if (action === 'flip-v') flipAllLayers('v');
       });
-      registerDocClickAway((e) => {
-        if (!menu.hidden && !menu.contains(e.target) && e.target !== btn) menu.hidden = true;
-      });
     }
   }
 
-  // ── Filter menu (Blur sub-menu — Gaussian / Zoom) ──
+  // ── Filter actions (hidden relay registry — Gaussian / Zoom blur) ──
+  // The visible "Filter ▾" trigger button was removed — the app menu bar's
+  // Filter menu now drives these actions via wire-menu-bar.js relaying clicks
+  // onto the [data-filter-action] items in the hidden #ge-filter-menu div.
+  // Keep only the action-execution handler.
   {
-    const btn = document.getElementById('ge-filter-menu-btn');
     const menu = document.getElementById('ge-filter-menu');
-    if (btn && menu) {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const willOpen = menu.hidden;
-        if (willOpen) closeOtherTopbarMenus('ge-filter-menu');
-        menu.hidden = !menu.hidden;
-      });
+    if (menu) {
       menu.addEventListener('click', (e) => {
         const item = e.target.closest('[data-filter-action]');
         if (!item) return;
-        menu.hidden = true;
         const action = item.dataset.filterAction;
         if (action === 'blur-gaussian') applyGaussianBlur();
         else if (action === 'blur-zoom') applyZoomBlur();
-      });
-      registerDocClickAway((e) => {
-        if (!menu.hidden && !menu.contains(e.target) && e.target !== btn) menu.hidden = true;
       });
     }
   }
