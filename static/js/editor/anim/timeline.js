@@ -62,6 +62,20 @@ export function createTimeline(anim, container) {
     const onion = btn('Onion', 'Onion skin (light table)', () => anim.toggleOnion());
     if (a.onion && a.onion.enabled) onion.style.background = 'rgba(120,170,255,0.3)';
     bar.appendChild(onion);
+    // Light-table options (CSP-style) — only while onion is on.
+    if (a.onion && a.onion.enabled) {
+      const og = document.createElement('span');
+      og.style.cssText = 'display:inline-flex;align-items:center;gap:4px;opacity:0.9;';
+      const num = (val, title, on) => { const n = document.createElement('input'); n.type = 'number'; n.min = '0'; n.max = '8'; n.value = String(val); n.title = title; n.style.cssText = 'width:36px;padding:2px 3px;background:#1d1d22;border:1px solid rgba(255,255,255,0.15);border-radius:4px;color:#eee;'; n.addEventListener('change', () => on(parseInt(n.value, 10) || 0)); return n; };
+      const col = (val, title, on) => { const c = document.createElement('input'); c.type = 'color'; c.value = val; c.title = title; c.style.cssText = 'width:22px;height:20px;padding:0;border:1px solid rgba(255,255,255,0.2);border-radius:3px;background:none;cursor:pointer;'; c.addEventListener('input', () => on(c.value)); return c; };
+      og.appendChild(document.createTextNode('◂'));
+      og.appendChild(num(a.onion.before, 'Onion: frames before', (v) => anim.setOnion({ before: v })));
+      og.appendChild(col(a.onion.beforeTint || '#ff5555', 'Previous-frame tint', (v) => anim.setOnion({ beforeTint: v })));
+      og.appendChild(col(a.onion.afterTint || '#55aaff', 'Next-frame tint', (v) => anim.setOnion({ afterTint: v })));
+      og.appendChild(num(a.onion.after, 'Onion: frames after', (v) => anim.setOnion({ after: v })));
+      og.appendChild(document.createTextNode('▸'));
+      bar.appendChild(og);
+    }
 
     const sep = document.createElement('span');
     sep.style.cssText = 'width:1px;height:16px;background:rgba(255,255,255,0.15);';
@@ -70,6 +84,14 @@ export function createTimeline(anim, container) {
     bar.appendChild(btn('+ Frame', 'New blank frame', () => anim.addFrame()));
     bar.appendChild(btn('⧉ Dup', 'Duplicate frame', () => anim.duplicateFrame()));
     bar.appendChild(btn('🗑', 'Delete frame', () => anim.deleteFrame(), 'danger'));
+    // Cel reuse (CSP) — drop an existing cel on this frame, or hold the prev one.
+    const reuse = document.createElement('select');
+    reuse.title = 'Reuse an existing cel on this frame';
+    reuse.style.cssText = 'padding:2px 4px;background:#1d1d22;border:1px solid rgba(255,255,255,0.15);border-radius:4px;color:#eee;max-width:96px;';
+    reuse.innerHTML = '<option value="">Reuse cel…</option>' + anim.cels().map((c) => `<option value="${c.id}">${(c.name || c.id)}</option>`).join('');
+    reuse.addEventListener('change', () => { if (reuse.value) anim.assignCel(reuse.value); reuse.value = ''; });
+    bar.appendChild(reuse);
+    bar.appendChild(btn('Hold', 'Clear this frame → hold the previous cel', () => anim.setHold()));
 
     // Frame ruler.
     const ruler = document.createElement('div');
