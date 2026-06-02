@@ -17,9 +17,51 @@
  *
  * `smudgeDab` is a pure per-dab kernel (no DOM) so the smear math is unit-
  * testable; the tool object handles sampling, segment stepping, and compositing.
+ *
+ * SYMMETRY (deliberately better than the reference editors, which disable
+ * symmetry for smear-type tools): when brush symmetry is active the same smear
+ * is replayed at every mirrored / rotated copy. A smudge has a DIRECTION, so we
+ * map BOTH endpoints of each segment through the symmetry point-transform — the
+ * transformed direction (transformedCur − transformedLast) then comes out
+ * correct for free (x-mirror flips dx, y-mirror flips dy, rotation rotates the
+ * vector). The mirror math mirrors `brush/engine.js` `stampToBuffer` and uses
+ * the same canvas-centre axes; coords here are layer-local (matching the engine,
+ * which subtracts the layer offset before mirroring about the buffer centre).
  */
 import { state } from '../state.js';
 import { canvasCoords } from '../canvas-coords.js';
+
+/**
+ * Build the active symmetry point-transforms for a layer of size cw×ch, reading
+ * the live brush-symmetry state (`state.brushSymmetry` ∈ 'none'|'x'|'y'|'xy'|
+ * 'radial'|'mandala', `state.brushSymmetryN` = radial/mandala segment count).
+ * Returns an array of fns mapping a layer-local point (x,y) → {x,y}; index 0 is
+ * always identity. Mirroring both endpoints of a segment through the SAME fn
+ * also maps the smear DIRECTION correctly (see file header). Mirrors the math in
+ * `brush/engine.js` stampToBuffer.
+ */
+export function symmetryPointTransforms(cw, ch) {
+  const sym = state.brushSymmetry || 'none';
+  const fns = [(x, y) => ({ x, y })]; // identity (the original stroke)
+  if (sym === 'x' || sym === 'xy') fns.push((x, y) => ({ x: cw - x, y }));
+  if (sym === 'y' || sym === 'xy') fns.push((x, y) => ({ x, y: ch - y }));
+  if (sym === 'xy') fns.push((x, y) => ({ x: cw - x, y: ch - y }));
+  if (sym === 'radial' || sym === 'mandala') {
+    const cx = cw / 2, cy = ch / 2;
+    const N = Math.max(2, Math.round(state.brushSymmetryN || 6));
+    for (let k = 1; k < N; k++) { // k=0 is the identity already present
+      const a = (k * 2 * Math.PI) / N, ca = Math.cos(a), sa = Math.sin(a);
+      fns.push((x, y) => { const dx = x - cx, dy = y - cy; return { x: cx + dx * ca - dy * sa, y: cy + dx * sa + dy * ca }; });
+    }
+    if (sym === 'mandala') {
+      for (let k = 0; k < N; k++) { // reflected (kaleidoscope) set
+        const a = (k * 2 * Math.PI) / N, ca = Math.cos(a), sa = Math.sin(a);
+        fns.push((x, y) => { const dx = -(x - cx), dy = y - cy; return { x: cx + dx * ca - dy * sa, y: cy + dx * sa + dy * ca }; });
+      }
+    }
+  }
+  return fns;
+}
 
 /**
  * Apply one smudge dab IN PLACE on `region` (RGBA, regionW×regionH, whose
@@ -61,7 +103,10 @@ export function smudgeDab(region, regionW, regionH, originX, originY, carried, b
 }
 
 export function createSmudgeTool({ activeLayer, saveState, composite }) {
-  let ctx = null, carried = null, cr = 0, bw = 0, radius = 0, layerRef = null;
+  // One carried buffer PER active symmetry copy (index 0 = the real stroke),
+  // each seeded from the pixels under its own mirrored start so every copy
+  // smears consistently and independently. `syms` holds the matching transforms.
+  let ctx = null, carriedSet = null, syms = null, cr = 0, bw = 0, radius = 0, layerRef = null;
 
   function strengthVal() {
     const el = document.getElementById('ge-smudge-strength');
@@ -94,30 +139,36 @@ export function createSmudgeTool({ activeLayer, saveState, composite }) {
       ctx = layer.ctx;
       layerRef = layer;
       const sx0 = c.x - off.x, sy0 = c.y - off.y;
-      carried = new Float32Array(bw * bw * 4);
-      // Finger Painting: load the carried buffer with the foreground colour so
-      // the stroke drags fresh paint in. Otherwise seed from the pixels under
-      // the brush (clamped to the canvas edge).
+      // Active symmetry copies (index 0 = identity / the real stroke). Locked in
+      // at stroke start so the copy count can't change mid-drag.
+      syms = symmetryPointTransforms(W, H);
       const finger = !!state.smudgeFingerPaint;
+      let fr = 0, fg = 0, fb = 0;
       if (finger) {
         const m = /^#?([0-9a-fA-F]{6})$/.exec(state.color || '#000000');
         const h = m ? m[1] : '000000';
-        const fr = parseInt(h.slice(0, 2), 16), fg = parseInt(h.slice(2, 4), 16), fb = parseInt(h.slice(4, 6), 16);
-        for (let i = 0; i < bw * bw; i++) { const di = i * 4; carried[di] = fr; carried[di + 1] = fg; carried[di + 2] = fb; carried[di + 3] = 255; }
-      } else {
-        // Seed from the pixels under the brush (clamped to the canvas edge).
+        fr = parseInt(h.slice(0, 2), 16); fg = parseInt(h.slice(2, 4), 16); fb = parseInt(h.slice(4, 6), 16);
+      }
+      // Seed one carried buffer per symmetry copy from the pixels under THAT
+      // copy's start point (or the foreground colour in Finger-Painting mode).
+      const seedCarried = (sx, sy) => {
+        const carried = new Float32Array(bw * bw * 4);
+        if (finger) {
+          for (let i = 0; i < bw * bw; i++) { const di = i * 4; carried[di] = fr; carried[di + 1] = fg; carried[di + 2] = fb; carried[di + 3] = 255; }
+          return carried;
+        }
         // Read ONLY the brush-sized neighbourhood, not the whole document. The
         // sampled coords (after edge-clamping to [0,W-1]×[0,H-1]) all fall in
         // this window, so the seed pixels are identical to a full-document read.
-        const rx0 = Math.max(0, Math.floor(sx0 - cr));
-        const ry0 = Math.max(0, Math.floor(sy0 - cr));
-        const rx1 = Math.min(W, Math.ceil(sx0 + cr) + 1);
-        const ry1 = Math.min(H, Math.ceil(sy0 + cr) + 1);
+        const rx0 = Math.max(0, Math.floor(sx - cr));
+        const ry0 = Math.max(0, Math.floor(sy - cr));
+        const rx1 = Math.min(W, Math.ceil(sx + cr) + 1);
+        const ry1 = Math.min(H, Math.ceil(sy + cr) + 1);
         const nw = Math.max(1, rx1 - rx0), nh = Math.max(1, ry1 - ry0);
         const nb = ctx.getImageData(rx0, ry0, nw, nh).data;
         for (let ly = 0; ly < bw; ly++) {
           for (let lx = 0; lx < bw; lx++) {
-            let px = Math.round(sx0 - cr + lx), py = Math.round(sy0 - cr + ly);
+            let px = Math.round(sx - cr + lx), py = Math.round(sy - cr + ly);
             if (px < 0) px = 0; else if (px > W - 1) px = W - 1;
             if (py < 0) py = 0; else if (py > H - 1) py = H - 1;
             // Index into the smaller neighbourhood buffer; clamp into its
@@ -129,47 +180,62 @@ export function createSmudgeTool({ activeLayer, saveState, composite }) {
             carried[di + 2] = nb[si + 2]; carried[di + 3] = nb[si + 3];
           }
         }
-      }
+        return carried;
+      };
+      carriedSet = syms.map((fn) => { const p = fn(sx0, sy0); return seedCarried(p.x, p.y); });
       saveState('Smudge');
       state.smudgeActive = true;
       state.smudgeLast = { x: sx0, y: sy0 };
     },
     move(e) {
-      if (!state.smudgeActive || !layerRef || !carried) return;
+      if (!state.smudgeActive || !layerRef || !carriedSet) return;
       const off = state.layerOffsets.get(layerRef.id) || { x: 0, y: 0 };
       const c = canvasCoords(e, state.mainCanvas);
       const cur = { x: c.x - off.x, y: c.y - off.y };
       const last = state.smudgeLast || cur;
       const W = layerRef.canvas.width, H = layerRef.canvas.height;
-      const minX = Math.max(0, Math.floor(Math.min(last.x, cur.x) - radius));
-      const minY = Math.max(0, Math.floor(Math.min(last.y, cur.y) - radius));
-      const maxX = Math.min(W, Math.ceil(Math.max(last.x, cur.x) + radius));
-      const maxY = Math.min(H, Math.ceil(Math.max(last.y, cur.y) + radius));
+      // Per-copy transformed segments. Mirroring BOTH endpoints maps the smear
+      // direction for free. Union all copies' footprints into one read/write
+      // region so a single getImageData/putImageData + composite covers them all.
+      const segs = syms.map((fn) => ({ a: fn(last.x, last.y), b: fn(cur.x, cur.y) }));
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      for (const sg of segs) {
+        minX = Math.min(minX, sg.a.x, sg.b.x); minY = Math.min(minY, sg.a.y, sg.b.y);
+        maxX = Math.max(maxX, sg.a.x, sg.b.x); maxY = Math.max(maxY, sg.a.y, sg.b.y);
+      }
+      minX = Math.max(0, Math.floor(minX - radius));
+      minY = Math.max(0, Math.floor(minY - radius));
+      maxX = Math.min(W, Math.ceil(maxX + radius));
+      maxY = Math.min(H, Math.ceil(maxY + radius));
       const rw = maxX - minX, rh = maxY - minY;
       if (rw <= 0 || rh <= 0) { state.smudgeLast = cur; return; }
       const region = ctx.getImageData(minX, minY, rw, rh);
       const s = effStrength(strengthVal());
       const pow = falloffPow();
-      const segLen = Math.hypot(cur.x - last.x, cur.y - last.y);
       const stepLen = Math.max(0.75, radius * 0.15); // dense steps → smooth trail
-      const steps = Math.max(1, Math.ceil(segLen / stepLen));
-      for (let i = 1; i <= steps; i++) {
-        const t = i / steps;
-        smudgeDab(region.data, rw, rh, minX, minY, carried, bw, cr,
-          last.x + (cur.x - last.x) * t, last.y + (cur.y - last.y) * t, radius, s, pow);
+      for (let m = 0; m < segs.length; m++) {
+        const a = segs[m].a, b = segs[m].b, carried = carriedSet[m];
+        const segLen = Math.hypot(b.x - a.x, b.y - a.y);
+        const steps = Math.max(1, Math.ceil(segLen / stepLen));
+        for (let i = 1; i <= steps; i++) {
+          const t = i / steps;
+          smudgeDab(region.data, rw, rh, minX, minY, carried, bw, cr,
+            a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, radius, s, pow);
+        }
       }
       ctx.putImageData(region, minX, minY);
       state.smudgeLast = cur;
-      // Dirty-rect composite: only the region we just wrote changed. Convert the
-      // layer-local rect to document space (layer is drawn at its offset); the
-      // compositor clamps to canvas bounds and falls back to a full redraw when
-      // unsafe (fx/mask/selection/overlays).
+      // Dirty-rect composite: the union of all symmetry copies' footprints (one
+      // region, computed above). Convert the layer-local rect to document space
+      // (layer is drawn at its offset); the compositor clamps to canvas bounds
+      // and falls back to a full redraw when unsafe (fx/mask/selection/overlays).
       composite({ x: minX + off.x, y: minY + off.y, w: rw, h: rh });
     },
     end() {
       state.smudgeActive = false;
       state.smudgeLast = null;
-      carried = null;
+      carriedSet = null;
+      syms = null;
       layerRef = null;
     },
   };

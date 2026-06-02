@@ -9,9 +9,48 @@
  *
  * `healDab` is a pure kernel over an RGBA buffer (no DOM) so the math is unit-
  * testable; the tool reads the layer once per stroke and writes back dirty rects.
+ *
+ * SYMMETRY (deliberately better than the reference editors, which disable it for
+ * heal-type tools): when brush symmetry is active each dab is replayed at every
+ * mirrored / rotated copy. Heal carries a SOURCE-SAMPLE OFFSET vector (write
+ * point → clean source); to mirror correctly we transform the WRITE point AND
+ * map that offset vector by the SAME transform. Mirror/rotation about the canvas
+ * centre are affine, so the mapped offset = T(point+offset) − T(point) — which
+ * works uniformly for x/y/xy/radial/mandala. Source coords are clamped to the
+ * canvas in `healDab`, so a mirrored source that lands near an edge is handled
+ * gracefully rather than wrongly. Mirror math matches `brush/engine.js`.
  */
 import { state } from '../state.js';
 import { canvasCoords } from '../canvas-coords.js';
+
+/**
+ * Active symmetry point-transforms for a layer of size cw×ch, from the live
+ * brush-symmetry state (`state.brushSymmetry`, `state.brushSymmetryN`). Returns
+ * fns mapping a layer-local point (x,y) → {x,y}; index 0 = identity. Mirrors
+ * `brush/engine.js` stampToBuffer.
+ */
+function symmetryPointTransforms(cw, ch) {
+  const sym = state.brushSymmetry || 'none';
+  const fns = [(x, y) => ({ x, y })];
+  if (sym === 'x' || sym === 'xy') fns.push((x, y) => ({ x: cw - x, y }));
+  if (sym === 'y' || sym === 'xy') fns.push((x, y) => ({ x, y: ch - y }));
+  if (sym === 'xy') fns.push((x, y) => ({ x: cw - x, y: ch - y }));
+  if (sym === 'radial' || sym === 'mandala') {
+    const cx = cw / 2, cy = ch / 2;
+    const N = Math.max(2, Math.round(state.brushSymmetryN || 6));
+    for (let k = 1; k < N; k++) {
+      const a = (k * 2 * Math.PI) / N, ca = Math.cos(a), sa = Math.sin(a);
+      fns.push((x, y) => { const dx = x - cx, dy = y - cy; return { x: cx + dx * ca - dy * sa, y: cy + dx * sa + dy * ca }; });
+    }
+    if (sym === 'mandala') {
+      for (let k = 0; k < N; k++) {
+        const a = (k * 2 * Math.PI) / N, ca = Math.cos(a), sa = Math.sin(a);
+        fns.push((x, y) => { const dx = -(x - cx), dy = y - cy; return { x: cx + dx * ca - dy * sa, y: cy + dx * sa + dy * ca }; });
+      }
+    }
+  }
+  return fns;
+}
 
 const clamp8 = (v) => (v < 0 ? 0 : v > 255 ? 255 : v);
 
@@ -73,7 +112,7 @@ export function healDab(data, w, h, px, py, radius, srcDx, srcDy) {
 }
 
 export function createHealTool({ activeLayer, saveState, composite }) {
-  let ctx = null, layerRef = null, buf = null, W = 0, H = 0, radius = 0;
+  let ctx = null, layerRef = null, buf = null, W = 0, H = 0, radius = 0, syms = null;
 
   // Pick a clean source offset (the first in-bounds direction at ~1.6×radius).
   function pickOffset(px, py) {
@@ -84,15 +123,30 @@ export function createHealTool({ activeLayer, saveState, composite }) {
     }
     return [d, 0];
   }
-  // Heal one dab and write back only its rect. Returns the layer-local dab rect
-  // {x0,y0,x1,y1} so callers can union it for a dirty-rect composite.
+  // Heal one dab — replayed at every active symmetry copy — and write back each
+  // copy's rect. The base copy picks a clean source offset; each mirror maps the
+  // WRITE point AND that offset vector by the same transform (offset' =
+  // T(p+offset) − T(p), exact for the affine mirror/rotation). Returns the
+  // unioned layer-local rect {x0,y0,x1,y1} for a dirty-rect composite.
   function dabAt(lx, ly) {
     const [ox, oy] = pickOffset(lx, ly);
-    healDab(buf.data, W, H, lx, ly, radius, ox, oy);
-    const x0 = Math.max(0, Math.floor(lx - radius)), y0 = Math.max(0, Math.floor(ly - radius));
-    const x1 = Math.min(W, Math.ceil(lx + radius)), y1 = Math.min(H, Math.ceil(ly + radius));
-    ctx.putImageData(buf, 0, 0, x0, y0, x1 - x0, y1 - y0); // write only the dab rect
-    return { x0, y0, x1, y1 };
+    let u = null;
+    for (const fn of syms) {
+      const p = fn(lx, ly);                 // mirrored write point
+      const so = fn(lx + ox, ly + oy);      // where the source point maps to
+      const mox = so.x - p.x, moy = so.y - p.y; // mirrored source offset (vector)
+      healDab(buf.data, W, H, p.x, p.y, radius, mox, moy);
+      const x0 = Math.max(0, Math.floor(p.x - radius)), y0 = Math.max(0, Math.floor(p.y - radius));
+      const x1 = Math.min(W, Math.ceil(p.x + radius)), y1 = Math.min(H, Math.ceil(p.y + radius));
+      if (x1 - x0 > 0 && y1 - y0 > 0) ctx.putImageData(buf, 0, 0, x0, y0, x1 - x0, y1 - y0); // write only this copy's rect
+      const d = { x0, y0, x1, y1 };
+      if (!u) u = d;
+      else {
+        if (d.x0 < u.x0) u.x0 = d.x0; if (d.y0 < u.y0) u.y0 = d.y0;
+        if (d.x1 > u.x1) u.x1 = d.x1; if (d.y1 > u.y1) u.y1 = d.y1;
+      }
+    }
+    return u;
   }
   // Composite only the union of the dab rects just written, in document space.
   // The compositor clamps to canvas bounds and falls back to a full redraw when
@@ -111,6 +165,9 @@ export function createHealTool({ activeLayer, saveState, composite }) {
       ctx = layer.ctx; layerRef = layer;
       W = layer.canvas.width; H = layer.canvas.height;
       radius = Math.max(2, state.brushSize / 2);
+      // Lock in the active symmetry copies for the whole stroke (index 0 = the
+      // real dab). Same canvas-centre axes the brush engine uses.
+      syms = symmetryPointTransforms(W, H);
       buf = ctx.getImageData(0, 0, W, H);
       saveState('Heal');
       state.healActive = true;
@@ -140,7 +197,7 @@ export function createHealTool({ activeLayer, saveState, composite }) {
       compositeRect(u, off);
     },
     end() {
-      state.healActive = false; state.healLast = null; buf = null; layerRef = null;
+      state.healActive = false; state.healLast = null; buf = null; layerRef = null; syms = null;
     },
   };
 }
