@@ -2006,7 +2006,7 @@ function _beginDraw(e) {
   // Quick Selection — drag-flood select. Begins the drag here.
   if (state.tool === 'quickselect') {
     if (!(activeLayer() || _activeParentLayer())) return;
-    _saveState();
+    _saveState('Quick select');
     state.drawing = true; state.quickSelecting = true;
     const c = _canvasCoords(e, state.mainCanvas);
     _quickSelectAt(c.x, c.y);
@@ -3235,7 +3235,7 @@ function _runMagicWand(cx, cy, mode = 'replace', opts = {}) {
   // Snapshot current state to undo BEFORE mutating the selection, but
   // skip when called via the tolerance slider (`opts.retune`) so dragging
   // the slider doesn't fill the undo stack with intermediate states.
-  if (!opts.retune) _saveState();
+  if (!opts.retune) _saveState('Magic wand');
   // Remember the seed so the tolerance slider can re-run the wand live.
   state.wandLastSeed = { x: cx, y: cy, mode };
   const off = activeMask ? { x: 0, y: 0 } : (state.layerOffsets.get(layer.id) || { x: 0, y: 0 });
@@ -3284,7 +3284,7 @@ function _runMagicWand(cx, cy, mode = 'replace', opts = {}) {
 function _runColorRange() {
   const layer = activeLayer();
   if (!layer || layer.locked) return;
-  _saveState();
+  _saveState('Color range');
   const w = layer.canvas.width, h = layer.canvas.height;
   const src = _getWandSource(layer).data;
   const m = /^#?([0-9a-fA-F]{6})$/.exec(state.color || '#000000');
@@ -3596,7 +3596,7 @@ function _loadLayerAlphaAsSelection(layer) {
     }
   }
   mctx.putImageData(mdata, 0, 0);
-  _saveState();
+  _saveState('Refine selection');
   state.wandMask = mask;
   state.wandLayerId = layer.id;
   state.wandLastSeed = null;
@@ -3609,7 +3609,7 @@ function _loadLayerAlphaAsSelection(layer) {
 // the mask alpha). Wired to Ctrl+Alt+I.
 function _invertSelection() {
   if (state.wandMask && state.wandLayerId) {
-    _saveState();
+    _saveState('Invert selection');
     const w = state.wandMask.width, h = state.wandMask.height;
     const ctx = state.wandMask.getContext('2d');
     const data = ctx.getImageData(0, 0, w, h);
@@ -3626,7 +3626,7 @@ function _invertSelection() {
   if (state.lassoPoints.length >= 3 && !state.lassoActive) {
     // Build polygon covering the whole canvas, with the lasso as a hole.
     // Easiest: convert lasso to wand mask, then invert.
-    _saveState();
+    _saveState('Invert selection');
     const w = state.imgWidth, h = state.imgHeight;
     const c = document.createElement('canvas');
     c.width = w; c.height = h;
@@ -3797,7 +3797,7 @@ function _wandDeleteSelection() {
   if (!state.wandMask) return;
   const layer = state.layers.find(l => l.id === state.wandLayerId);
   if (!layer || layer.locked) return;
-  _saveState();
+  _saveState('Delete selection');
   // Use destination-out with the mask to erase the selected pixels.
   layer.ctx.save();
   layer.ctx.globalCompositeOperation = 'destination-out';
@@ -3810,7 +3810,7 @@ function _wandCopyToNewLayer() {
   if (!state.wandMask) return;
   const src = state.layers.find(l => l.id === state.wandLayerId);
   if (!src) return;
-  _saveState();
+  _saveState('Copy selection to layer');
   // Clip the source by the mask, put it on a new layer.
   const tmp = document.createElement('canvas');
   tmp.width = src.canvas.width;
@@ -3837,7 +3837,7 @@ function _lassoDeleteSelection() {
   if (!layer || state.lassoPoints.length < 3) return;
   const feather = parseInt(document.getElementById('ge-lasso-feather')?.value || '0');
   const grow = parseInt(document.getElementById('ge-lasso-grow')?.value || '0');
-  _saveState();
+  _saveState('Delete selection');
   const off = state.layerOffsets.get(layer.id) || { x: 0, y: 0 };
   const w = layer.canvas.width, h = layer.canvas.height;
 
@@ -3864,7 +3864,7 @@ function _lassoCopyToLayer() {
   if (!layer || state.lassoPoints.length < 3) return;
   const feather = parseInt(document.getElementById('ge-lasso-feather')?.value || '0');
   const grow = parseInt(document.getElementById('ge-lasso-grow')?.value || '0');
-  _saveState();
+  _saveState('Copy selection to layer');
   const off = state.layerOffsets.get(layer.id) || { x: 0, y: 0 };
   const w = layer.canvas.width, h = layer.canvas.height;
 
