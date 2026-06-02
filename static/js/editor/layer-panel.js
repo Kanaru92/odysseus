@@ -324,6 +324,19 @@ export function createLayerPanelRenderer(deps) {
   function _activeLayerOrGroup() {
     return state.layers.find((l) => l.id === state.activeLayerId) || null;
   }
+  // Layers a header edit (opacity / blend / visibility) applies to: the whole
+  // multi-selection when 2+ layers are selected, otherwise just the active
+  // layer/group (Photoshop parity — set opacity/blend/visibility on many at once).
+  function _targetLayers() {
+    const ids = (state.selectedLayerIds || []).filter(Boolean);
+    if (ids.length > 1) {
+      const set = new Set(ids);
+      const arr = state.layers.filter((l) => set.has(l.id));
+      if (arr.length > 1) return arr;
+    }
+    const a = _activeLayerOrGroup();
+    return a ? [a] : [];
+  }
   function wireHeaderProps() {
     if (_headerWired) return;
     const blend = document.getElementById('ge-active-blend');
@@ -334,17 +347,19 @@ export function createLayerPanelRenderer(deps) {
     blend.innerHTML = '<option value="pass-through">Pass Through</option>'
       + BLEND_MODES.map((b) => `<option value="${b.id}">${b.name}</option>`).join('');
     blend.addEventListener('change', () => {
-      const l = _activeLayerOrGroup();
-      if (!l) return;
-      // Pass-Through is only meaningful for a group; ignore it for a pixel layer.
-      if (!l.isGroup && blend.value === 'pass-through') { blend.value = l.blendMode || 'source-over'; return; }
-      l.blendMode = blend.value;
+      const targets = _targetLayers();
+      if (!targets.length) return;
+      // Pass-Through is only meaningful for a group; skip it on pixel layers.
+      for (const l of targets) { if (l.isGroup || blend.value !== 'pass-through') l.blendMode = blend.value; }
+      const act = _activeLayerOrGroup();
+      if (act && !act.isGroup && blend.value === 'pass-through') blend.value = act.blendMode || 'source-over';
       composite();
     });
     op.addEventListener('input', () => {
-      const l = _activeLayerOrGroup();
-      if (!l) return;
-      l.opacity = parseInt(op.value, 10) / 100;
+      const targets = _targetLayers();
+      if (!targets.length) return;
+      const o = parseInt(op.value, 10) / 100;
+      for (const l of targets) l.opacity = o;
       const v = document.getElementById('ge-active-opacity-val');
       if (v) v.textContent = op.value + '%';
       composite();
@@ -821,7 +836,15 @@ export function createLayerPanelRenderer(deps) {
       visBtn.title = layer.visible ? 'Hide layer' : 'Show layer';
       visBtn.addEventListener('click', (e) => {
         e.stopPropagation();
-        layer.visible = !layer.visible;
+        const next = !layer.visible;
+        // Toggling the eye on a row that's part of a multi-selection toggles them all.
+        const ids = (state.selectedLayerIds || []).filter(Boolean);
+        if (ids.length > 1 && ids.includes(layer.id)) {
+          const set = new Set(ids);
+          for (const l of state.layers) if (set.has(l.id)) l.visible = next;
+        } else {
+          layer.visible = next;
+        }
         composite();
         render();
       });
