@@ -206,7 +206,12 @@ export function createMagneticLassoTool({ composite, drawLassoOverlay, syncToolC
       // then continue tracing from the click.
       const last = state.magLassoAnchors[state.magLassoAnchors.length - 1];
       const tail = snapSegment(last, c);
-      state.magLassoAnchors = state.magLassoAnchors.concat(tail);
+      // Append only points that actually advance from the running last anchor, so
+      // a zero-length click can't accumulate degenerate (duplicate) segments.
+      for (const p of tail) {
+        const prev = state.magLassoAnchors[state.magLassoAnchors.length - 1];
+        if (!prev || Math.hypot(p.x - prev.x, p.y - prev.y) >= 0.5) state.magLassoAnchors.push(p);
+      }
       state.magLassoPreview = c;
       rebuild();
       redraw();

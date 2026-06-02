@@ -1706,6 +1706,7 @@ function _snapshotState() {
   const snap = {
     imgWidth: state.imgWidth,
     imgHeight: state.imgHeight,
+    activeLayerId: state.activeLayerId,
     wand,
     layers: state.layers.map(l => {
       // Group (folder) entries hold no pixels — snapshot just their metadata.
@@ -1866,6 +1867,15 @@ function _buildDraftPayload() {
         smartXf: l.isSmart ? l.smartXf : null,
         sourceUrl: (l.isSmart && l.sourceCanvas) ? l.sourceCanvas.toDataURL('image/png') : null,
         linked: l.linked || null,
+        // Inpaint / paint mask sub-layers + which one is active — mirror the undo
+        // snapshot so mask work survives a draft reload (previously dropped).
+        masks: (l.masks || []).map(m => ({
+          id: m.id,
+          name: m.name,
+          visible: m.visible !== false,
+          dataUrl: m.canvas.toDataURL('image/png'),
+        })),
+        activeMaskId: l.activeMaskId || null,
       };
     }),
   };
@@ -2005,7 +2015,8 @@ function _restoreDraft(draft) {
     // Each NON-group layer image + each layer mask image is an async load.
     let pending = data.layers.filter((s) => !s.isGroup).length +
       data.layers.filter((s) => s.layerMask).length +
-      data.layers.filter((s) => s.isSmart && s.sourceUrl).length;
+      data.layers.filter((s) => s.isSmart && s.sourceUrl).length +
+      data.layers.reduce((n, s) => n + ((s.masks && s.masks.length) || 0), 0);
     if (pending === 0) {
       // No pixel loads (e.g. an all-group doc) — still materialize groups.
       data.layers.forEach((s, idx) => {
@@ -2081,6 +2092,22 @@ function _restoreDraft(draft) {
         mimg.onerror = () => { if (--pending === 0) resolve(); };
         mimg.src = s.layerMask;
         if (s.maskEnabled === false) layer.maskEnabled = false; // restore disabled state
+      }
+      // Restore inpaint / paint mask sub-layers (each a doc-sized async image) +
+      // the active-mask selection — mirrors the undo restore path.
+      if (s.masks && s.masks.length) {
+        layer.masks = [];
+        for (const ms of s.masks) {
+          const mkc = document.createElement('canvas');
+          mkc.width = state.imgWidth; mkc.height = state.imgHeight;
+          const mkctx = mkc.getContext('2d');
+          const mkimg = new Image();
+          mkimg.onload = () => { mkctx.drawImage(mkimg, 0, 0); if (--pending === 0) resolve(); };
+          mkimg.onerror = () => { if (--pending === 0) resolve(); };
+          mkimg.src = ms.dataUrl;
+          layer.masks.push({ id: ms.id, name: ms.name, canvas: mkc, ctx: mkctx, visible: ms.visible !== false });
+        }
+        layer.activeMaskId = s.activeMaskId || (layer.masks[0] && layer.masks[0].id) || null;
       }
     });
     state.nextLayerId = data.nextLayerId || (state.layers.reduce((m, l) => Math.max(m, l.id || 0), 0) + 1);
@@ -2248,7 +2275,12 @@ function _restoreState(snap) {
     }
     state._histTiles = h;
   }
-  if (!state.layers.find(l => l.id === state.activeLayerId) && state.layers.length) {
+  // Prefer the active layer captured in the snapshot (so undoing a layer
+  // delete re-selects the layer that was active then), else keep the current
+  // one if it survived, else fall back to the topmost layer.
+  if (snap.activeLayerId && state.layers.find(l => l.id === snap.activeLayerId)) {
+    state.activeLayerId = snap.activeLayerId;
+  } else if (!state.layers.find(l => l.id === state.activeLayerId) && state.layers.length) {
     state.activeLayerId = state.layers[state.layers.length - 1].id;
   }
   // Repoint the global mask plumbing at the active parent's active
@@ -2789,12 +2821,12 @@ function _showCropApply() {
 
 function _applyCrop() {
   if (!state.cropRect) return;
-  _saveState('Crop');
   const { x, y, w, h } = state.cropRect;
-  const cw = Math.round(w);
-  const ch = Math.round(h);
+  const cw = Math.max(1, Math.round(w));
+  const ch = Math.max(1, Math.round(h));
   const rx = Math.round(x);
   const ry = Math.round(y);
+  _saveState('Crop');
   if (state.cropDeletePixels === false) {
     // Keep cropped-out pixels: leave each layer's canvas intact and just
     // shift its offset so the crop's top-left becomes the new (0,0). Pixels
@@ -2807,11 +2839,22 @@ function _applyCrop() {
     }
   } else {
     for (const layer of state.layers) {
+      if (layer.isGroup) continue; // folder entries hold no pixels
       const off = state.layerOffsets.get(layer.id) || { x: 0, y: 0 };
-      const data = layer.ctx.getImageData(rx - off.x, ry - off.y, cw, ch);
+      const lw = layer.canvas.width, lh = layer.canvas.height;
+      // Read the crop region in layer-local space, CLAMPED to the layer so a crop
+      // that extends past a (possibly offset) layer never reads out of bounds
+      // (which would throw / corrupt a half-applied crop). Pixels outside the
+      // intersection stay transparent in the new, freshly-sized canvas.
+      const srcX = rx - off.x, srcY = ry - off.y;
+      const sx = Math.max(0, srcX), sy = Math.max(0, srcY);
+      const sw = Math.max(0, Math.min(lw, srcX + cw) - sx);
+      const sh = Math.max(0, Math.min(lh, srcY + ch) - sy);
+      let data = null;
+      if (sw > 0 && sh > 0) { try { data = layer.ctx.getImageData(sx, sy, sw, sh); } catch (_) {} }
       layer.canvas.width = cw;
       layer.canvas.height = ch;
-      layer.ctx.putImageData(data, 0, 0);
+      if (data) layer.ctx.putImageData(data, sx - srcX, sy - srcY); // place at its spot in the crop
       state.layerOffsets.set(layer.id, { x: 0, y: 0 });
       _resetLayerCaches(layer); // layer canvas resized by the crop — drop old-dim caches
     }
