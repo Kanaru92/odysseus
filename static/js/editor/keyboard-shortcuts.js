@@ -291,26 +291,12 @@ export function wireKeyboardShortcuts(deps) {
             if (uiModule) uiModule.showToast('Removed from group');
           } else if (uiModule) { uiModule.showToast('Layer is not in a group'); }
         } else {
-          // Group: wrap the active layer in a new folder. Folder entry sits
-          // just above its member so the panel shows it as the parent.
+          // Group — delegate to the panel's Group button, which handles the
+          // multi-selection (Ctrl/Cmd+click) AND the single-layer case, sets the
+          // pass-through blend mode, keeps members contiguous, and records history.
           if (lyr.isGroup) { if (uiModule) uiModule.showToast('Already a group'); return; }
-          saveState('Group layer');
-          const ngroups = state.layers.filter(l => l.isGroup).length;
-          const grp = {
-            id: 'group-' + (state.nextLayerId++),
-            name: 'Group ' + (ngroups + 1),
-            isGroup: true,
-            visible: true,
-            opacity: 1,
-            collapsed: false,
-          };
-          lyr.groupId = grp.id;
-          const idx = state.layers.findIndex(l => l.id === lyr.id);
-          state.layers.splice(idx + 1, 0, grp); // folder above its member
-          // Keep the member as the paint target (groups have no canvas).
-          composite();
-          if (renderLayerPanel) renderLayerPanel();
-          if (uiModule) uiModule.showToast('Grouped into "' + grp.name + '"');
+          const btn = document.getElementById('ge-group-layer');
+          if (btn) btn.click();
         }
         return;
       }

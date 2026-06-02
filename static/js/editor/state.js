@@ -216,6 +216,9 @@ export const state = {
   // ── Document + layers ──
   layers: [],
   activeLayerId: null,
+  // Multi-layer selection (Ctrl/Cmd+click rows) for Ctrl+G grouping of N layers;
+  // activeLayerId stays the primary, this is the extra set for a batch group.
+  selectedLayerIds: [],
   // Active tool ID — one of move/crop/transform/brush/eraser/clone/
   // lasso/wand/inpaint/rembg/harmonize/sharpen/upscale/style.
   tool: 'move',

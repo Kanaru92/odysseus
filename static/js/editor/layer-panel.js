@@ -348,19 +348,33 @@ export function createLayerPanelRenderer(deps) {
     // entry points stay consistent.
     const groupBtn = document.getElementById('ge-group-layer');
     groupBtn?.addEventListener('click', () => {
-      const l = _activeLayerOrGroup();
-      if (!l) { uiModule?.showToast?.('Select a layer first'); return; }
-      if (l.isGroup) { uiModule?.showToast?.('Already a group'); return; }
-      saveState('Group layer');
+      // Group the multi-selection if 2+ layers are selected; else the active layer.
+      const selIds = new Set((state.selectedLayerIds || []).filter(Boolean));
+      let members = state.layers.filter((l) => !l.isGroup && selIds.has(l.id));
+      if (members.length < 2) {
+        const l = _activeLayerOrGroup();
+        if (!l) { uiModule?.showToast?.('Select a layer first'); return; }
+        if (l.isGroup) { uiModule?.showToast?.('Already a group'); return; }
+        members = [l];
+      }
+      saveState(members.length > 1 ? 'Group layers' : 'Group layer');
       const ngroups = state.layers.filter((x) => x.isGroup).length;
       const grp = {
         id: 'group-' + (state.nextLayerId++),
         name: 'Group ' + (ngroups + 1),
         isGroup: true, visible: true, opacity: 1, collapsed: false, blendMode: 'pass-through',
       };
-      l.groupId = grp.id;
-      const idx = state.layers.findIndex((x) => x.id === l.id);
-      state.layers.splice(idx + 1, 0, grp); // folder sits above its member
+      members.forEach((m) => { m.groupId = grp.id; });
+      const memberSet = new Set(members.map((m) => m.id));
+      const ordered = state.layers.filter((l) => memberSet.has(l.id)); // members, z-order
+      const rest = state.layers.filter((l) => !memberSet.has(l.id));
+      // Insert the contiguous member block + folder above, at the topmost member's spot.
+      const topOrig = Math.max(...members.map((m) => state.layers.indexOf(m)));
+      let insertIdx = 0; for (let k = 0; k < topOrig; k++) if (!memberSet.has(state.layers[k].id)) insertIdx++;
+      rest.splice(insertIdx, 0, ...ordered, grp); // folder sits above its members
+      state.layers = rest;
+      state.activeLayerId = ordered[ordered.length - 1].id;
+      state.selectedLayerIds = [];
       composite();
       render();
       uiModule?.showToast?.('Grouped into "' + grp.name + '"');
@@ -692,6 +706,10 @@ export function createLayerPanelRenderer(deps) {
         (layer.id === state.activeLayerId && !parentIsPaintTarget ? ' active-parent' : '') +
         (layer.clipped ? ' ge-clipped' : '');
       item.dataset.layerId = layer.id;
+      // Multi-selection highlight (only meaningful when 2+ rows are selected).
+      if (state.selectedLayerIds && state.selectedLayerIds.length > 1 && state.selectedLayerIds.includes(layer.id)) {
+        item.style.boxShadow = 'inset 0 0 0 2px #4a9eff';
+      }
       // Colour-label tag — a left-edge stripe so the row reads at a glance
       // without eating panel width. Right-click the row to set/clear it.
       if (layer.colorLabel) {
@@ -801,9 +819,21 @@ export function createLayerPanelRenderer(deps) {
       }
       item.appendChild(nameEl);
 
-      item.addEventListener('click', () => {
+      item.addEventListener('click', (e) => {
         if (shouldIgnoreLayerTap()) return;
+        // Ctrl/Cmd+click → toggle this layer in the multi-selection (for Ctrl+G
+        // grouping of several layers at once). Doesn't change the mask target.
+        if ((e.ctrlKey || e.metaKey) && !layer.isGroup) {
+          const sel = new Set((state.selectedLayerIds && state.selectedLayerIds.length)
+            ? state.selectedLayerIds : (state.activeLayerId ? [state.activeLayerId] : []));
+          if (sel.has(layer.id) && sel.size > 1) sel.delete(layer.id); else sel.add(layer.id);
+          state.selectedLayerIds = [...sel];
+          state.activeLayerId = layer.id;
+          render();
+          return;
+        }
         state.activeLayerId = layer.id;
+        state.selectedLayerIds = [layer.id]; // plain click resets the multi-selection
         // Clicking the PARENT row makes layer pixels the paint target
         // (mask is no longer the target). Mask sub-rows stay in the
         // panel; clicking one re-targets it.
