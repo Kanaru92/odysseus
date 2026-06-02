@@ -6,6 +6,7 @@
  */
 import { state } from './state.js';
 import { applyFilter, FILTERS } from './filters/filters.js';
+import { runFilterAsync } from './filter-worker-client.js';
 
 // wireFilters runs once per editor open, but the ge:filter-show/hide listeners
 // live on window (not on the rebuilt container DOM), so without cleanup each
@@ -20,6 +21,7 @@ export function wireFilters({ activeLayer, saveState, composite }) {
   let origLayer = null;   // direct ref to the snapshotted layer (for cross-layer restore)
   let applied = false;
   let rafPending = false; // coalesces slider 'input' previews into one per frame
+  let previewGen = 0;     // drops stale off-thread preview results (worker is async)
 
   const $ = (id) => document.getElementById(id);
   const typeEl = () => $('ge-filter-type');
@@ -68,14 +70,24 @@ export function wireFilters({ activeLayer, saveState, composite }) {
     l.ctx.putImageData(orig, 0, 0); // start from the original each time
     const { type, amount } = opts();
     const img = l.ctx.getImageData(0, 0, l.canvas.width, l.canvas.height);
-    applyFilter(img, type, amount, extraOpts(type));
-    l.ctx.putImageData(img, 0, 0);
-    applied = false;
-    composite();
+    // Run the filter OFF the main thread so dragging the slider doesn't freeze the
+    // UI; a generation guard drops stale results, and the worker client falls back
+    // to the synchronous kernel when Workers are unavailable.
+    const gen = ++previewGen;
+    const targetId = origLayerId;
+    runFilterAsync(img, type, amount, extraOpts(type)).then((out) => {
+      if (gen !== previewGen) return;                 // superseded by a newer preview
+      const cur = activeLayer();
+      if (!orig || !cur || cur.id !== targetId) return; // layer/tool changed mid-flight
+      cur.ctx.putImageData(out, 0, 0);
+      applied = false;
+      composite();
+    });
   }
   function apply() {
     const l = activeLayer();
     if (!orig || !l || l.id !== origLayerId) return;
+    previewGen++; // invalidate any in-flight async preview so it can't land after the bake
     l.ctx.putImageData(orig, 0, 0); // restore so the undo point = pre-filter
     saveState('Filter');
     const { type, amount } = opts();
