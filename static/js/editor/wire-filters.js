@@ -80,6 +80,7 @@ export function wireFilters({ activeLayer, saveState, composite }) {
       const cur = activeLayer();
       if (!orig || !cur || cur.id !== targetId) return; // layer/tool changed mid-flight
       cur.ctx.putImageData(out, 0, 0);
+      cur._pixVer = (cur._pixVer || 0) + 1; // preview is async + skips saveState; invalidate the fx-cache
       applied = false;
       composite();
     });

@@ -1148,11 +1148,31 @@ function _applyLayerFx(source, fx) {
 // (originals never mutated). Single source of truth reused by _renderLayersTo
 // AND the merge/flatten paths so a merge can't silently drop a mask/fx/adjustment.
 function _effectiveLayerCanvas(layer) {
-  let src = _renderLayerWithAdjLayers(layer);
-  if (layer.layerMask && layer.maskEnabled !== false) src = _applyLayerMask(src, layer.layerMask);
-  if (layer.fx) src = _applyLayerFx(src, layer.fx);
-  return src;
+  const src = _renderLayerWithAdjLayers(layer); // memoized; sets layer._adjFinalKey
+  const hasMask = layer.layerMask && layer.maskEnabled !== false;
+  const hasFx = !!layer.fx;
+  if (!hasMask && !hasFx) return src; // plain / adjustment-only: nothing extra to apply
+  // Perf: cache the (expensive) layer-fx application across composites for fx-only
+  // layers, so unchanged layers aren't re-blurred every frame during a stroke on
+  // another layer. Key on pixel-version (bumped at every pixel edit) + the fx params
+  // + the adjustment-stack key. Mask layers keep the un-cached path (mask state is
+  // harder to version safely) — identical behaviour, just not memoised.
+  if (!hasMask) {
+    const key = (layer._pixVer || 0) + '|' + (layer._adjFinalKey || '') + '|' + JSON.stringify(layer.fx);
+    if (layer._fxCache && layer._fxKey === key) return layer._fxCache;
+    const out = _applyLayerFx(src, layer.fx);
+    layer._fxCache = out; layer._fxKey = key;
+    return out;
+  }
+  let out = src;
+  out = _applyLayerMask(out, layer.layerMask);
+  if (hasFx) out = _applyLayerFx(out, layer.fx);
+  return out;
 }
+// Bump a layer's pixel-version so its fx-cache (and any future pixel-keyed cache)
+// re-renders. Called at every site that mutates a layer's raw pixels.
+function _markLayerDirty(layer) { if (layer) layer._pixVer = (layer._pixVer || 0) + 1; }
+function _markAllLayersDirty() { for (const l of state.layers) l._pixVer = (l._pixVer || 0) + 1; }
 
 // WebGL2 layer compositor (lazy). Used only when state.renderBackend==='webgl2'
 // and the doc is GPU-eligible; otherwise the CPU path below runs unchanged.
@@ -1731,6 +1751,10 @@ function _saveState(label) {
   } catch (e) {
     console.error('[gallery] saveState snapshot failed (continuing without this undo step):', e);
   }
+  // Most undoable ops mutate the ACTIVE layer's pixels — invalidate just that
+  // layer's pixel cache so its fx re-renders, while OTHER layers keep their cache
+  // (the cross-layer win: painting one layer doesn't re-blur the rest every frame).
+  try { _markLayerDirty(activeLayer()); } catch {}
   try { _invalidateWandCache(); } catch (e) { console.error('[gallery] invalidateWandCache:', e); }
   try { _schedulePersist(); } catch (e) { console.error('[gallery] schedulePersist:', e); }
   try { _refreshHistoryPanelIfOpen(); } catch (e) { console.error('[gallery] refreshHistoryPanel:', e); }
@@ -2045,6 +2069,9 @@ function _initCanvasFromDims(w, h) {
 }
 
 function _restoreState(snap) {
+  // Undo/redo replaces layer pixels — invalidate the per-layer pixel caches so
+  // fx-layers re-render from the restored pixels (deferred to end too, after layers rebuild).
+  try { _markAllLayersDirty(); } catch {}
   // Restore canvas dimensions first so layer imageData fits cleanly. This
   // is what makes Ctrl+Z work for crops (which change the main canvas
   // size) in addition to paint strokes.
@@ -2482,7 +2509,9 @@ const _strokePipeline = createStrokePipeline({
   getActiveMaskLayer: () => _getActiveMaskLayer(),
   composite,
 });
-const _strokeTo      = _strokePipeline.strokeTo;
+const _strokeToRaw   = _strokePipeline.strokeTo;
+// Mark the active layer dirty on each dab so an fx-layer's cache stays fresh while painting.
+const _strokeTo      = (x, y) => { _markLayerDirty(activeLayer()); return _strokeToRaw(x, y); };
 const _cloneStrokeTo = _strokePipeline.cloneStrokeTo;
 
 // ── Brush cursor overlay ──
