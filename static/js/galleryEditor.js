@@ -2853,6 +2853,12 @@ function _promptExportAs() {
         <input id="ge-export-q" type="range" min="10" max="100" value="92" style="flex:1;">
         <span id="ge-export-q-val" style="min-width:36px;text-align:right;opacity:0.85;">92%</span>
       </label>
+      <label style="display:flex;align-items:center;gap:8px;margin:6px 0;font-size:12px;">
+        <span style="min-width:54px;opacity:0.7;">Scale</span>
+        <input id="ge-export-scale" type="range" min="10" max="400" step="5" value="100" style="flex:1;">
+        <span id="ge-export-scale-val" style="min-width:36px;text-align:right;opacity:0.85;">100%</span>
+      </label>
+      <p id="ge-export-size" style="font-size:10px;opacity:0.55;margin:0;text-align:right;"></p>
       <p id="ge-export-alpha-note" style="font-size:10px;opacity:0.55;margin:4px 0 0;"></p>
       <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;">
         <button id="ge-export-cancel" class="ge-btn">Cancel</button>
@@ -2872,15 +2878,37 @@ function _promptExportAs() {
   };
   qIn.addEventListener('input', () => { qVal.textContent = qIn.value + '%'; });
   fmtSel.addEventListener('change', sync);
+  const scaleIn = overlay.querySelector('#ge-export-scale');
+  const scaleVal = overlay.querySelector('#ge-export-scale-val');
+  const sizeEl = overlay.querySelector('#ge-export-size');
+  const syncSize = () => {
+    const s = parseInt(scaleIn.value, 10) / 100;
+    scaleVal.textContent = scaleIn.value + '%';
+    sizeEl.textContent = Math.max(1, Math.round((state.imgWidth || 0) * s)) + ' × ' + Math.max(1, Math.round((state.imgHeight || 0) * s)) + ' px';
+  };
+  scaleIn.addEventListener('input', syncSize);
+  syncSize();
   sync();
   const close = () => { overlay.remove(); document.removeEventListener('keydown', onKey, true); _activePromptClose = null; };
   _activePromptClose = close;
   const apply = () => {
     const fmt = fmtSel.value;
     const q = parseInt(qIn.value, 10) / 100;
+    const s = parseInt(scaleIn.value, 10) / 100;
     close();
-    try { downloadImage(flatten(), fmt, q, 'image'); }
-    catch (e) { uiModule.showToast('Export failed'); }
+    try {
+      let out = flatten();
+      if (s !== 1) {
+        const sc = document.createElement('canvas');
+        sc.width = Math.max(1, Math.round(out.width * s));
+        sc.height = Math.max(1, Math.round(out.height * s));
+        const sx = sc.getContext('2d');
+        sx.imageSmoothingEnabled = true; sx.imageSmoothingQuality = 'high';
+        sx.drawImage(out, 0, 0, sc.width, sc.height);
+        out = sc;
+      }
+      downloadImage(out, fmt, q, 'image');
+    } catch (e) { uiModule.showToast('Export failed'); }
   };
   const onKey = (e) => {
     if (e.key === 'Enter') { e.preventDefault(); apply(); }
