@@ -23,13 +23,26 @@ import { HISTORY_ICON, relTime } from './layer-helpers.js';
 import { historyPanelHTML } from './build/popups.js';
 
 export function createHistoryPanel({ undo, redo }) {
+  // While a multi-step jump is running, undo()/redo() each call back into
+  // refreshHistoryPanelIfOpen() (full innerHTML rebuild + per-row listener
+  // wiring). Suppress the intermediate refreshes and run a single one at the
+  // end — only the final state matters, so the O(n) DOM churn per step is
+  // pure waste.
+  let _suppressRefresh = false;
+
   function jumpToHistory(offset) {
     if (offset === 0) return;
-    if (offset < 0) {
-      for (let i = 0; i < -offset; i++) undo();
-    } else {
-      for (let i = 0; i < offset; i++) redo();
+    _suppressRefresh = true;
+    try {
+      if (offset < 0) {
+        for (let i = 0; i < -offset; i++) undo();
+      } else {
+        for (let i = 0; i < offset; i++) redo();
+      }
+    } finally {
+      _suppressRefresh = false;
     }
+    refreshHistoryPanelIfOpen();
   }
 
   function closeHistoryPanel() {
@@ -139,6 +152,7 @@ export function createHistoryPanel({ undo, redo }) {
   }
 
   function refreshHistoryPanelIfOpen() {
+    if (_suppressRefresh) return;
     if (!state.historyPanelEl) return;
     const list = state.historyPanelEl.querySelector('#ge-history-list');
     if (!list) return;

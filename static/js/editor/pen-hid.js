@@ -58,7 +58,10 @@ export function buildFieldMap(collections) {
                 reportId: rep.reportId || 0,
                 bitOffset: bit + j * size,
                 bitSize: size,
-                logicalMax: (item.logicalMaximum && item.logicalMaximum > 0) ? item.logicalMaximum : ((1 << size) - 1) || 1,
+                // Default to the field's full unsigned range. Use 2**size (not
+                // 1<<size): JS bit-shift is mod-32, so size>=31 would overflow/
+                // wrap (e.g. 32-bit -> logicalMax 1, breaking normalization).
+                logicalMax: (item.logicalMaximum && item.logicalMaximum > 0) ? item.logicalMaximum : ((2 ** size) - 1) || 1,
                 logicalMin: item.logicalMinimum || 0,
               };
             }
@@ -82,6 +85,7 @@ export function createPenHid({ onStatus } = {}) {
     if (!fieldMap) return;
     const view = e.data; // DataView, reportId stripped
     const rid = e.reportId || 0;
+    let inContact = false;
     const f = fieldMap.pressure;
     if (f && (f.reportId === rid || f.reportId === 0)) {
       const raw = readBits(view, f.bitOffset, f.bitSize);
@@ -90,22 +94,31 @@ export function createPenHid({ onStatus } = {}) {
       p = p < 0 ? 0 : p > 1 ? 1 : p;
       // Only trust it while the pen is in contact (pressure > 0); a 0 reading
       // means hover — leave the last value so a lift doesn't zero mid-stroke.
-      if (p > 0) { state.isPen = true; state.pressure = p; }
+      if (p > 0) { state.isPen = true; state.pressure = p; inContact = true; }
     }
-    for (const [k, sk] of [['tiltX', 'tiltX'], ['tiltY', 'tiltY']]) {
-      const tf = fieldMap[k];
-      if (tf && (tf.reportId === rid || tf.reportId === 0)) {
-        const raw = readBits(view, tf.bitOffset, tf.bitSize);
-        // Tilt is signed-ish degrees; map logical range to roughly [-60, 60].
-        const span = Math.max(1, tf.logicalMax - tf.logicalMin);
-        const norm = (raw - tf.logicalMin) / span; // 0..1
-        state[sk] = Math.round((norm * 2 - 1) * 60);
+    // Only update tilt while the pen is in contact, mirroring pressure: hover
+    // reports often carry no valid tilt and would clobber the last good value
+    // (a raw 0 normalizes to the min angle) when the pen lifts mid-stroke.
+    if (inContact) {
+      for (const [k, sk] of [['tiltX', 'tiltX'], ['tiltY', 'tiltY']]) {
+        const tf = fieldMap[k];
+        if (tf && (tf.reportId === rid || tf.reportId === 0)) {
+          const raw = readBits(view, tf.bitOffset, tf.bitSize);
+          // Tilt is signed-ish degrees; map logical range to roughly [-60, 60].
+          const span = Math.max(1, tf.logicalMax - tf.logicalMin);
+          const norm = (raw - tf.logicalMin) / span; // 0..1
+          state[sk] = Math.round((norm * 2 - 1) * 60);
+        }
       }
     }
   }
 
   async function connect() {
     if (!supported()) { status('WebHID not supported in this browser'); return false; }
+    // Tear down any prior connection first: a repeat connect() (the menu fires
+    // it on every click) would otherwise leak the old open device handle and
+    // stack a second inputreport listener (double state.pressure writes).
+    if (device) { await disconnect(); }
     let devices;
     try {
       devices = await navigator.hid.requestDevice({ filters: [{ usagePage: 0x0D }] }); // Digitizer

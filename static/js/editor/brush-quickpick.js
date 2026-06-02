@@ -17,6 +17,7 @@ import { BRUSH_PRESETS } from './brush/presets.js';
 export function createBrushQuickPick() {
   let panel = null;
   let onDocDown = null;
+  let armTimer = null;
 
   const sizeLabel = () => {
     const el = document.querySelector('.ge-size-label');
@@ -148,7 +149,8 @@ export function createBrushQuickPick() {
     (state.container || document.body).appendChild(panel);
     // Close on outside pointer-down or Escape.
     onDocDown = (ev) => { if (panel && !panel.contains(ev.target)) close(); };
-    setTimeout(() => {
+    armTimer = setTimeout(() => {
+      armTimer = null;
       document.addEventListener('pointerdown', onDocDown, true);
       document.addEventListener('keydown', onEsc, true);
     }, 0);
@@ -158,6 +160,7 @@ export function createBrushQuickPick() {
   function onEsc(ev) { if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); close(); } }
 
   function close() {
+    if (armTimer != null) { clearTimeout(armTimer); armTimer = null; }
     if (onDocDown) { document.removeEventListener('pointerdown', onDocDown, true); onDocDown = null; }
     document.removeEventListener('keydown', onEsc, true);
     if (panel) { try { panel.remove(); } catch {} panel = null; }

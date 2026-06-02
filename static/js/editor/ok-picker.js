@@ -27,16 +27,35 @@ export function wireOkPicker() {
   const hS = $('ge-ok-h'), sS = $('ge-ok-s'), lS = $('ge-ok-l');
   const hv = $('ge-ok-hv'), sv = $('ge-ok-sv'), lv = $('ge-ok-lv');
   const chip = $('ge-ok-chip'), hex = $('ge-ok-hex');
+  const hTrack = $('ge-ok-htrack'), sTrack = $('ge-ok-strack'), lTrack = $('ge-ok-ltrack');
   let suppress = false; // guard the fg<->slider feedback loop
 
   const grad = (stops) => `linear-gradient(90deg, ${stops.join(',')})`;
+  // Coalesce track repaints into one per frame; skip tracks whose inputs are
+  // unchanged (hue track depends on s,l; sat on h,l; lig on h,s).
+  let paintRaf = 0;
+  let pendH = NaN, pendS = NaN, pendL = NaN;
+  let lastH = NaN, lastS = NaN, lastL = NaN;
+  function doPaintTracks() {
+    paintRaf = 0;
+    const h = pendH, s = pendS, l = pendL;
+    if (s !== lastS || l !== lastL) {
+      const hue = []; for (let i = 0; i <= 12; i++) hue.push(okhslToHex((i / 12) * 360, Math.max(0.4, s), l));
+      hTrack.style.background = grad(hue);
+    }
+    if (h !== lastH || l !== lastL) {
+      const sat = []; for (let i = 0; i <= 8; i++) sat.push(okhslToHex(h, i / 8, l));
+      sTrack.style.background = grad(sat);
+    }
+    if (h !== lastH || s !== lastS) {
+      const lig = []; for (let i = 0; i <= 8; i++) lig.push(okhslToHex(h, s, i / 8));
+      lTrack.style.background = grad(lig);
+    }
+    lastH = h; lastS = s; lastL = l;
+  }
   function paintTracks(h, s, l) {
-    const hue = []; for (let i = 0; i <= 12; i++) hue.push(okhslToHex((i / 12) * 360, Math.max(0.4, s), l));
-    $('ge-ok-htrack').style.background = grad(hue);
-    const sat = []; for (let i = 0; i <= 8; i++) sat.push(okhslToHex(h, i / 8, l));
-    $('ge-ok-strack').style.background = grad(sat);
-    const lig = []; for (let i = 0; i <= 8; i++) lig.push(okhslToHex(h, s, i / 8));
-    $('ge-ok-ltrack').style.background = grad(lig);
+    pendH = h; pendS = s; pendL = l;
+    if (!paintRaf) paintRaf = requestAnimationFrame(doPaintTracks);
   }
 
   function setFromHsl(h, s, l, pushToFg) {
@@ -69,6 +88,9 @@ export function wireOkPicker() {
     if (!/^#?[0-9a-f]{6}$/i.test(v)) { syncFromFg(); return; }
     const { h, s, l } = hexToOkhsl(v);
     setFromHsl(h, s, l, true);
+    // setFromHsl skips writing hex.value while the field is focused (line guard),
+    // so normalize the just-committed input to canonical "#rrggbb" here.
+    hex.value = okhslToHex(h, s, l);
   });
 
   function syncFromFg() {

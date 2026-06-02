@@ -96,18 +96,13 @@ function findGamutIntersection(a, b, L1, C1, L0, cusp) {
         [-1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s - 1, -1.2684380046 * ldt2 + 2.6097574011 * mdt2 - 0.3413193965 * sdt2, -1.2684380046 * ldt3 + 2.6097574011 * mdt3 - 0.3413193965 * sdt3],
         [-0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s - 1, -0.0041960863 * ldt2 - 0.7034186147 * mdt2 + 1.7076147010 * sdt2, -0.0041960863 * ldt3 - 0.7034186147 * mdt3 + 1.7076147010 * sdt3],
       ];
-      let uMin = Infinity, tMin = t;
-      for (const [f, f1, f2] of terms) {
-        const u = -f1 / (f1 * f1 - 0.5 * f * f2);
-        if (u >= 0) { const tr = -f * u; if (tr < tMin && u < uMin) { /* pick smallest positive */ } }
-      }
       // Newton step (single, matches reference precision needs here).
+      let tMin = Infinity;
       for (const [f, f1, f2] of terms) {
-        const u = -f1 / (f1 * f1 - 0.5 * f * f2);
+        const u = f1 / (f1 * f1 - 0.5 * f * f2);
         if (u >= 0) { const tr = -f * u; if (tr < tMin) tMin = tr; }
       }
-      t += Math.min(0, tMin);
-      void uMin;
+      if (tMin < Infinity) t += tMin;
     }
   }
   return t;

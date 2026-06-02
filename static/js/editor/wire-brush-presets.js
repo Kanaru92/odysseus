@@ -106,7 +106,7 @@ export function wireBrushPresets() {
   if (sm) {
     sm.value = String(state.brushSmoothing || 0);
     sm.addEventListener('input', () => {
-      state.brushSmoothing = parseInt(sm.value) || 0;
+      state.brushSmoothing = parseInt(sm.value, 10) || 0;
       const lbl = document.getElementById('ge-brush-smoothing-label');
       if (lbl) lbl.textContent = sm.value + '%';
     });
@@ -142,6 +142,7 @@ export function wireBrushPresets() {
       sel.appendChild(o); sel.value = id;
     }
     state.brushPresetId = id;
+    syncDynamicsFromPreset(id);
   }
   const imp = document.getElementById('ge-brush-import');
   const impFile = document.getElementById('ge-brush-import-file');
@@ -163,7 +164,7 @@ export function wireBrushPresets() {
           const list = parseGIH(reader.result);
           if (list) list.forEach((br, i) => addImportedPreset(br.canvas, br.name || (String(f.name).replace(/\.gih$/i, '') + ' ' + (i + 1)), br.spacing));
         } else if (isBrush) {
-          parseBrushBundle(reader.result).then((res) => { if (res) addImportedPreset(res.shape, f.name, 0.1, res.grain); });
+          parseBrushBundle(reader.result).then((res) => { if (res) addImportedPreset(res.shape, f.name, 0.1, res.grain); }).catch(() => {});
         } else if (isGbr) {
           const parsed = parseGBR(reader.result);
           if (parsed) addImportedPreset(parsed.canvas, parsed.name || f.name, parsed.spacing);

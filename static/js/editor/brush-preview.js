@@ -16,6 +16,14 @@ import { samplePressure } from './pressure-response.js';
 
 const W = 240, H = 64;
 
+// Document-level delegation handlers from the previous mount. _buildEditor
+// regenerates the controls HTML (and thus the preview host) on every editor
+// open, so mountBrushPreview re-runs against a fresh element each time; without
+// removing the prior pair, the old handlers (closing over a detached canvas)
+// accumulate one set per open. Track them at module scope so a re-mount can
+// detach the previous listeners first.
+let _prevInputHandler = null, _prevChangeHandler = null;
+
 function buildRuntime() {
   return {
     size: state.brushSize,
@@ -81,18 +89,27 @@ export function mountBrushPreview() {
 
   // Test-paint: drag inside the strip to try the brush (does not touch the doc).
   let testEng = null, last = null;
-  const local = (e) => { const r = cv.getBoundingClientRect(); return { x: (e.clientX - r.left) * (W / r.width), y: (e.clientY - r.top) * (H / r.height) }; };
+  const local = (e) => {
+    const r = cv.getBoundingClientRect();
+    // r.width/height can be 0 when the panel is collapsed (display:none) while a
+    // pointer is still captured — avoid Infinity/NaN coords reaching the engine.
+    const sx = r.width ? W / r.width : 0, sy = r.height ? H / r.height : 0;
+    return { x: (e.clientX - r.left) * sx, y: (e.clientY - r.top) * sy };
+  };
   cv.addEventListener('pointerdown', (e) => {
     e.preventDefault();
     try { cv.setPointerCapture(e.pointerId); } catch {}
     ctx.clearRect(0, 0, W, H);
     try { testEng = makeEngine(); } catch { testEng = null; }
     last = local(e);
+    if (!Number.isFinite(last.x) || !Number.isFinite(last.y)) { last = null; return; }
     if (testEng) { const rt = buildRuntime(); const p = { ...last, pressure: 1 }; testEng.begin(ctx, rt); testEng.segment(ctx, p, p, rt); }
   });
   cv.addEventListener('pointermove', (e) => {
     if (!testEng || !last) return;
-    const p = local(e); const rt = buildRuntime();
+    const p = local(e);
+    if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) return;
+    const rt = buildRuntime();
     testEng.segment(ctx, { ...last, pressure: 1 }, { ...p, pressure: 1 }, rt);
     last = p;
   });
@@ -103,14 +120,22 @@ export function mountBrushPreview() {
   // Re-render on any brush-control change (delegated, debounced).
   let raf = 0;
   const schedule = () => { if (raf) return; raf = requestAnimationFrame(() => { raf = 0; if (!testEng) renderSample(); }); };
-  document.addEventListener('input', (e) => {
+  // Detach any handlers left by a prior mount before wiring the new ones, so
+  // the document listeners don't accumulate across editor re-opens.
+  if (_prevInputHandler) document.removeEventListener('input', _prevInputHandler);
+  if (_prevChangeHandler) document.removeEventListener('change', _prevChangeHandler);
+  const onInput = (e) => {
     const id = e.target && e.target.id;
     if (id && (id.startsWith('ge-brush-') || id.startsWith('ge-ok-') || id === 'ge-active-blend')) schedule();
-  });
-  document.addEventListener('change', (e) => {
+  };
+  const onChange = (e) => {
     const id = e.target && e.target.id;
     if (id && (id.startsWith('ge-brush-') || id.startsWith('ge-sm-'))) schedule();
-  });
+  };
+  document.addEventListener('input', onInput);
+  document.addEventListener('change', onChange);
+  _prevInputHandler = onInput;
+  _prevChangeHandler = onChange;
   // Initial paint (defer so fonts/layout settle).
   requestAnimationFrame(renderSample);
 

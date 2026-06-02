@@ -71,18 +71,28 @@ export function transformPopupHTML() {
  */
 export function attachSpinRepeat(root) {
   root.querySelectorAll('.ge-transform-spin button').forEach(btn => {
+    let holdTimeout = null, repeatInterval = null, started = 0;
+    const endHold = () => {
+      if (holdTimeout) clearTimeout(holdTimeout);
+      if (repeatInterval) clearInterval(repeatInterval);
+      holdTimeout = null; repeatInterval = null;
+    };
     const tick = (shift) => {
+      // Self-stop if the popup (button or target input) has been torn down
+      // while a hold was in progress — otherwise the repeat interval keeps
+      // ticking against a detached, stale transform session forever.
+      if (!btn.isConnected) { endHold(); return; }
       const targetId = btn.parentElement?.dataset?.spinFor;
       if (!targetId) return;
       const input = root.querySelector('#' + CSS.escape(targetId));
-      if (!input || input.readOnly) return;
+      if (!input || !input.isConnected) { endHold(); return; }
+      if (input.readOnly) return;
       const step = shift ? 10 : 1;
       const cur = parseInt(input.value, 10) || 0;
       const next = btn.dataset.spin === 'up' ? cur + step : cur - step;
       input.value = String(next);
       input.dispatchEvent(new Event('input', { bubbles: true }));
     };
-    let holdTimeout = null, repeatInterval = null, started = 0;
     btn.addEventListener('pointerdown', (e) => {
       e.preventDefault();
       tick(e.shiftKey);
@@ -97,11 +107,6 @@ export function attachSpinRepeat(root) {
         }, 70);
       }, 350);
     });
-    const endHold = () => {
-      if (holdTimeout) clearTimeout(holdTimeout);
-      if (repeatInterval) clearInterval(repeatInterval);
-      holdTimeout = null; repeatInterval = null;
-    };
     btn.addEventListener('pointerup', endHold);
     btn.addEventListener('pointerleave', endHold);
     btn.addEventListener('pointercancel', endHold);

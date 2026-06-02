@@ -13,6 +13,14 @@
  *   _stagedAdj?: {params?: {inBlack?: number, inWhite?: number}}
  * }} layer                            Source layer.
  */
+// Reusable sampling canvas/context shared across calls. drawHistogram is a
+// hot path (redrawn every composited rAF frame and on every Levels handle
+// drag), so allocating a fresh canvas + context + ImageData per call churned
+// GC. willReadFrequently keeps the canvas CPU-backed to avoid a GPU readback
+// stall on the per-frame getImageData.
+let _sampleCanvas = null;
+let _sampleCtx = null;
+
 export function drawHistogram(canvas, layer) {
   if (!canvas) return;
   const w = canvas.width, h = canvas.height;
@@ -26,9 +34,17 @@ export function drawHistogram(canvas, layer) {
   const maxSamples = 400;
   const sampleW = Math.min(maxSamples, sw);
   const sampleH = Math.min(maxSamples, sh);
-  const tmp = document.createElement('canvas');
-  tmp.width = sampleW; tmp.height = sampleH;
-  const tctx = tmp.getContext('2d');
+  if (!_sampleCanvas) {
+    _sampleCanvas = document.createElement('canvas');
+    _sampleCtx = _sampleCanvas.getContext('2d', { willReadFrequently: true });
+  }
+  const tmp = _sampleCanvas;
+  if (tmp.width !== sampleW || tmp.height !== sampleH) {
+    tmp.width = sampleW; tmp.height = sampleH;
+  } else {
+    _sampleCtx.clearRect(0, 0, sampleW, sampleH);
+  }
+  const tctx = _sampleCtx;
   tctx.drawImage(src, 0, 0, sampleW, sampleH);
   const img = tctx.getImageData(0, 0, sampleW, sampleH).data;
 
@@ -59,9 +75,11 @@ export function drawHistogram(canvas, layer) {
   // adjustment, if one is in flight.
   const p = layer._stagedAdj?.params;
   if (p) {
+    // Map the 0..255 value range with /255 so the markers line up with the
+    // DOM drag-handles and gamma math overlaid on this canvas (which use /255).
     ctx.fillStyle = 'rgba(0,0,0,0.9)';
-    ctx.fillRect((p.inBlack / 256) * w, 0, 1, h);
+    ctx.fillRect((p.inBlack / 255) * w, 0, 1, h);
     ctx.fillStyle = 'rgba(255,255,255,0.9)';
-    ctx.fillRect((p.inWhite / 256) * w, 0, 1, h);
+    ctx.fillRect((p.inWhite / 255) * w, 0, 1, h);
   }
 }

@@ -26,15 +26,19 @@ function wireToolSliders(prefix, fields) {
   const flPrev   = document.getElementById(`ge-${prefix}-preview-flow`);
   const softPrev = document.getElementById(`ge-${prefix}-preview-softness`);
 
+  const opLabel   = document.getElementById(`ge-${prefix}-opacity-label`);
+  const flLabel   = document.getElementById(`ge-${prefix}-flow-label`);
+  const softLabel = document.getElementById(`ge-${prefix}-softness-label`);
+
   document.getElementById(`ge-${prefix}-opacity`)?.addEventListener('input', (e) => {
     state[fields.opacity] = parseInt(e.target.value);
-    document.getElementById(`ge-${prefix}-opacity-label`).textContent = state[fields.opacity] + '%';
+    if (opLabel) opLabel.textContent = state[fields.opacity] + '%';
     if (opPrev) opPrev.style.opacity = (state[fields.opacity] / 100).toFixed(2);
   });
 
   document.getElementById(`ge-${prefix}-flow`)?.addEventListener('input', (e) => {
     state[fields.flow] = parseInt(e.target.value);
-    document.getElementById(`ge-${prefix}-flow-label`).textContent = state[fields.flow] + '%';
+    if (flLabel) flLabel.textContent = state[fields.flow] + '%';
     // Lower flow → fewer / sparser dots. Cycle dot densities by
     // swapping the dashed/dotted border style and fading opacity.
     if (flPrev) {
@@ -44,14 +48,19 @@ function wireToolSliders(prefix, fields) {
     }
   });
 
-  document.getElementById(`ge-${prefix}-softness`)?.addEventListener('input', (e) => {
+  const softInput = document.getElementById(`ge-${prefix}-softness`);
+  softInput?.addEventListener('input', (e) => {
     state[fields.softness] = parseInt(e.target.value);
-    document.getElementById(`ge-${prefix}-softness-label`).textContent = state[fields.softness] + '%';
+    if (softLabel) softLabel.textContent = state[fields.softness] + '%';
     // Preview tweens from a hard disk into a soft radial gradient as
     // softness rises (the CSS already sets the radial gradient — we
     // just tween the inner solid radius to communicate the falloff).
     if (softPrev) {
-      const innerStop = Math.max(0, 60 - state[fields.softness] * 0.55);
+      // Map across the slider's actual domain (max defaults to 300) so
+      // the inner solid radius shrinks smoothly over the whole travel
+      // instead of saturating to 0 partway through.
+      const softMax = parseInt(softInput?.max) || 300;
+      const innerStop = Math.max(0, 60 * (1 - state[fields.softness] / softMax));
       softPrev.style.background = `radial-gradient(circle, var(--fg) 0%, var(--fg) ${innerStop}%, transparent 90%)`;
     }
   });

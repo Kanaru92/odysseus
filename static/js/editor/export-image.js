@@ -12,7 +12,17 @@
 // Uncompressed 32-bit true-colour TGA with an 8-bit alpha channel.
 export function encodeTGA(canvas) {
   const w = canvas.width, h = canvas.height;
-  const data = canvas.getContext('2d').getImageData(0, 0, w, h).data;
+  // TGA stores width/height as 16-bit little-endian — anything past 65535
+  // would silently wrap and produce a corrupt file, so reject it up front.
+  if (w > 0xffff || h > 0xffff) {
+    throw new Error('TGA export supports dimensions up to 65535px');
+  }
+  // getContext('2d') returns null if the canvas was already bound to another
+  // context type (e.g. webgl); bail with a clear error instead of throwing on
+  // a null deref.
+  const sctx = canvas.getContext('2d');
+  if (!sctx) throw new Error('TGA export requires a 2D canvas');
+  const data = sctx.getImageData(0, 0, w, h).data;
   const HEADER = 18;
   const buf = new Uint8Array(HEADER + w * h * 4);
   buf[2] = 2;                         // image type: uncompressed true-color
@@ -42,6 +52,16 @@ function flattenOnWhite(canvas) {
 }
 
 const EXT = { png: 'png', jpeg: 'jpg', jpg: 'jpg', webp: 'webp', tga: 'tga' };
+// Map an actual blob MIME back to a file extension. The canvas encoder silently
+// falls back to PNG for unsupported types (e.g. WebP on engines without an
+// encoder), so the produced bytes can differ from the requested format — the
+// extension must follow the real bytes, not the request.
+const MIME_EXT = {
+  'image/png': 'png',
+  'image/jpeg': 'jpg',
+  'image/webp': 'webp',
+  'image/x-tga': 'tga',
+};
 export const EXPORT_FORMATS = [
   { id: 'png', label: 'PNG (lossless, alpha)', alpha: true, lossy: false },
   { id: 'jpeg', label: 'JPEG (no alpha)', alpha: false, lossy: true },
@@ -68,10 +88,13 @@ export function exportBlob(canvas, format, quality) {
 
 export async function downloadImage(canvas, format, quality, baseName) {
   const blob = await exportBlob(canvas, format, quality);
+  // Prefer the extension implied by the actual blob bytes; fall back to the
+  // requested format only when the blob carries no recognised MIME type.
+  const ext = MIME_EXT[blob.type] || EXT[format] || 'png';
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = (baseName || 'image') + '.' + (EXT[format] || 'png');
+  a.download = (baseName || 'image') + '.' + ext;
   document.body.appendChild(a);
   a.click();
   a.remove();
