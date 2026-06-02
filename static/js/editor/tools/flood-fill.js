@@ -12,7 +12,8 @@
  * @param {number} seedY                       Floored seed Y.
  * @param {number} tolerance                   Tolerance 0..100. Internally
  *                                             squared and scaled to RGB+A
- *                                             space (max ≈ 195k at 100).
+ *                                             space (max = 260100 at 100,
+ *                                             the true 4-channel maximum).
  * @returns {HTMLCanvasElement|null}           A `w × h` mask canvas with
  *                                             white-opaque pixels for
  *                                             visited cells, or null if
@@ -26,32 +27,55 @@ export function floodFillMask(src, w, h, seedX, seedY, tolerance) {
   const sb = src[seedIdx + 2], sa = src[seedIdx + 3];
 
   // 0..100 → squared RGB+A distance threshold. Max single-channel diff
-  // is 255, so sqrt(4 * 255²) ≈ 510; squared cap ≈ 195k at tol = 100.
-  const tol = Math.pow(tolerance * 4.42, 2);
+  // is 255, so sqrt(4 * 255²) ≈ 510; squared cap = 260100 at tol = 100,
+  // i.e. tolerance 100 selects every reachable pixel.
+  const tol = Math.pow(tolerance * 5.1, 2);
 
   const visited = new Uint8Array(w * h);
-  const stack = [seedX, seedY];
-  visited[seedY * w + seedX] = 1;
-  while (stack.length) {
-    const y = stack.pop();
-    const x = stack.pop();
-    const nbrs = [
-      [x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1],
-    ];
-    for (const [nx, ny] of nbrs) {
-      if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
-      const idx = ny * w + nx;
-      if (visited[idx]) continue;
-      const o = idx * 4;
-      const dr = src[o] - sr, dg = src[o + 1] - sg;
-      const db = src[o + 2] - sb, da = src[o + 3] - sa;
-      // RGB + alpha-aware so a click on a transparent pixel selects
-      // the transparent region cleanly.
-      if (dr * dr + dg * dg + db * db + da * da <= tol) {
-        visited[idx] = 1;
-        stack.push(nx, ny);
-      }
+  // Typed work queue (x then y interleaved); grown geometrically to avoid
+  // the unbounded growth / GC churn of a plain Array on large fills. minX/
+  // minY/maxX/maxY track the visited bounding box so the mask write below is
+  // bounded to the filled region rather than the whole document.
+  let stack = new Int32Array(64);
+  let sp = 0;
+  const push = (px, py) => {
+    if (sp + 2 > stack.length) {
+      const grown = new Int32Array(stack.length * 2);
+      grown.set(stack);
+      stack = grown;
     }
+    stack[sp++] = px;
+    stack[sp++] = py;
+  };
+
+  let minX = seedX, minY = seedY, maxX = seedX, maxY = seedY;
+  // RGB + alpha-aware so a click on a transparent pixel selects the
+  // transparent region cleanly. Visits the 4-connected neighbour at
+  // (nx, ny) without allocating per-pixel arrays.
+  const tryVisit = (nx, ny) => {
+    if (nx < 0 || ny < 0 || nx >= w || ny >= h) return;
+    const idx = ny * w + nx;
+    if (visited[idx]) return;
+    const o = idx * 4;
+    const dr = src[o] - sr, dg = src[o + 1] - sg;
+    const db = src[o + 2] - sb, da = src[o + 3] - sa;
+    if (dr * dr + dg * dg + db * db + da * da <= tol) {
+      visited[idx] = 1;
+      if (nx < minX) minX = nx; else if (nx > maxX) maxX = nx;
+      if (ny < minY) minY = ny; else if (ny > maxY) maxY = ny;
+      push(nx, ny);
+    }
+  };
+
+  push(seedX, seedY);
+  visited[seedY * w + seedX] = 1;
+  while (sp) {
+    const y = stack[--sp];
+    const x = stack[--sp];
+    tryVisit(x + 1, y);
+    tryVisit(x - 1, y);
+    tryVisit(x, y + 1);
+    tryVisit(x, y - 1);
   }
 
   const mask = document.createElement('canvas');
@@ -59,12 +83,15 @@ export function floodFillMask(src, w, h, seedX, seedY, tolerance) {
   mask.height = h;
   const mCtx = mask.getContext('2d');
   const mData = mCtx.createImageData(w, h);
-  for (let i = 0; i < w * h; i++) {
-    if (visited[i]) {
-      mData.data[i * 4]     = 255;
-      mData.data[i * 4 + 1] = 255;
-      mData.data[i * 4 + 2] = 255;
-      mData.data[i * 4 + 3] = 255;
+  // White-opaque (0xAABBGGRR little-endian = 0xFFFFFFFF) written once per
+  // visited pixel via a 32-bit view, and bounded to the visited bounding
+  // box rather than the whole document.
+  const mView = new Uint32Array(mData.data.buffer);
+  for (let yy = minY; yy <= maxY; yy++) {
+    const row = yy * w;
+    for (let xx = minX; xx <= maxX; xx++) {
+      const i = row + xx;
+      if (visited[i]) mView[i] = 0xFFFFFFFF;
     }
   }
   mCtx.putImageData(mData, 0, 0);

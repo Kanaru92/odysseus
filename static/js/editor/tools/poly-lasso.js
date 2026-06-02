@@ -22,6 +22,22 @@ export function createPolyLassoTool({ composite, drawLassoOverlay, syncToolClear
   const z = () => state.zoom || 1;
   // Close when a click lands within this many IMAGE px of the start vertex.
   const closeDist = () => 8 / z();
+  // Two clicks land at (very nearly) the same spot when the user double-clicks
+  // to close — drop a vertex that is coincident with the previous one so the
+  // polygon doesn't gain a degenerate zero-length edge.
+  const coincident = (a, b) => a && b && Math.hypot(a.x - b.x, a.y - b.y) < 1e-6;
+
+  // The rubber-band redraw recomposites the whole document; coalesce the
+  // bursty pointermove events into one repaint per animation frame so a fast
+  // mouse drag between vertices doesn't queue a full recomposite per event.
+  let rafId = 0;
+  function scheduleRedraw() {
+    if (rafId) return;
+    rafId = requestAnimationFrame(() => { rafId = 0; redraw(); });
+  }
+  function cancelScheduledRedraw() {
+    if (rafId) { cancelAnimationFrame(rafId); rafId = 0; }
+  }
 
   function redraw() {
     composite();
@@ -63,6 +79,10 @@ export function createPolyLassoTool({ composite, drawLassoOverlay, syncToolClear
       const start = state.lassoPoints[0];
       const near = start && Math.hypot(c.x - start.x, c.y - start.y) <= closeDist();
       if (near && state.lassoPoints.length >= 3) { this.close(); return; }
+      // Ignore a click coincident with the last vertex (e.g. the second click
+      // of a double-click-to-close) so we don't push a degenerate vertex.
+      const last = state.lassoPoints[state.lassoPoints.length - 1];
+      if (coincident(c, last)) { redraw(); return; }
       state.lassoPoints.push(c);
       redraw();
     },
@@ -71,12 +91,19 @@ export function createPolyLassoTool({ composite, drawLassoOverlay, syncToolClear
     move(e) {
       if (!state.polyLassoActive) return;
       state.polyLassoPreview = canvasCoords(e, state.mainCanvas);
-      redraw();
+      scheduleRedraw();
     },
 
     close() {
+      cancelScheduledRedraw();
       state.polyLassoActive = false;
       state.polyLassoPreview = null;
+      // Drop a trailing vertex left coincident with its predecessor (a
+      // double-click close fires two click() events before this runs).
+      const pts = state.lassoPoints;
+      if (pts && pts.length >= 2 && coincident(pts[pts.length - 1], pts[pts.length - 2])) {
+        pts.pop();
+      }
       if (!state.lassoPoints || state.lassoPoints.length < 3) {
         state.lassoPoints = [];
         composite();
@@ -89,6 +116,7 @@ export function createPolyLassoTool({ composite, drawLassoOverlay, syncToolClear
     },
 
     cancel() {
+      cancelScheduledRedraw();
       state.polyLassoActive = false;
       state.polyLassoPreview = null;
       state.lassoPoints = [];

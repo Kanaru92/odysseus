@@ -77,11 +77,28 @@ export function createMarqueeTool({ composite, drawLassoOverlay }) {
       // Rasterize the marquee shape and combine into the shared mask-based
       // selection (state.wandMask), so it reuses the existing overlay + Delete /
       // copy / invert / deselect machinery. Shift/Alt give the boolean ops.
-      const candidate = polygonToMask(pts, state.imgWidth, state.imgHeight);
-      const base = (mode !== 'replace' && state.wandMask) ? state.wandMask : null;
+      // The candidate must live in the ACTIVE LAYER's space (every wandMask
+      // consumer subtracts the layer offset), so rasterize at the layer canvas
+      // dimensions with the layer offset removed — matching the wand path.
+      const layer = state.layers.find(l => l.id === state.activeLayerId);
+      const off = (layer && state.layerOffsets.get(layer.id)) || { x: 0, y: 0 };
+      const lw = layer ? layer.canvas.width : state.imgWidth;
+      const lh = layer ? layer.canvas.height : state.imgHeight;
+      const layerPts = pts.map(p => ({ x: p.x - off.x, y: p.y - off.y }));
+      const candidate = polygonToMask(layerPts, lw, lh);
+      // Only combine onto the existing selection when it shares this layer's
+      // coordinate frame (same layer + matching dimensions); otherwise the
+      // boolean op would mis-register or crop across canvases — fall back to
+      // replace, mirroring the wand's compatibility guard.
+      const compatible = state.wandMask &&
+        state.wandLayerId === state.activeLayerId &&
+        state.wandMask.width === candidate.width &&
+        state.wandMask.height === candidate.height;
+      const base = (mode !== 'replace' && compatible) ? state.wandMask : null;
       state.wandMask = combineMasks(base, candidate, base ? mode : 'replace');
       state.wandLayerId = state.activeLayerId;
       state.wandLastSeed = null;
+      state.wandMaskVisible = true;
       composite();
     },
   };

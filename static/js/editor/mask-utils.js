@@ -20,8 +20,14 @@ export function dilateMask(src, px) {
   const w = src.width, h = src.height;
   const tmp = document.createElement('canvas');
   tmp.width = w; tmp.height = h;
-  const ctx = tmp.getContext('2d');
-  if (px === 0) {
+  // willReadFrequently: dilateMask is on the Edge-Stroke drag hot path and
+  // reads back via getImageData every frame; a CPU-backed surface avoids the
+  // per-frame synchronous GPU readback stall.
+  const ctx = tmp.getContext('2d', { willReadFrequently: true });
+  // Plain copy for a no-op shift. Guard non-finite px (e.g. NaN from a bad
+  // slider value): blur(NaN px) is an invalid filter and Math.abs(NaN) breaks
+  // the threshold logic, so fall back to a clean copy rather than garbage.
+  if (!Number.isFinite(px) || px === 0) {
     ctx.drawImage(src, 0, 0);
     return tmp;
   }

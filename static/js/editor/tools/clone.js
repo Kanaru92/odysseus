@@ -46,9 +46,15 @@ export function createCloneTool({ activeLayer, saveState, strokeTo, showToast })
         }
       }
       if (e.altKey || isDoubleTap) {
-        state.cloneSourceX = coords.x;
-        state.cloneSourceY = coords.y;
-        state.cloneSourceLayerId = (layer && layer.id) || state.activeLayerId;
+        const srcLayerId = (layer && layer.id) || state.activeLayerId;
+        // The snapshot is captured in source-layer-LOCAL space
+        // (drawImage(srcLayer.canvas, 0, 0)), so store the source point
+        // in that same space by subtracting the source layer's offset.
+        // Otherwise a moved/pasted source layer samples off by its offset.
+        const srcOff = state.layerOffsets.get(srcLayerId) || { x: 0, y: 0 };
+        state.cloneSourceX = coords.x - srcOff.x;
+        state.cloneSourceY = coords.y - srcOff.y;
+        state.cloneSourceLayerId = srcLayerId;
         state.cloneSourceSnapshot = null; // captured at first stroke
         showToast('Clone source set');
         return;
@@ -76,6 +82,14 @@ export function createCloneTool({ activeLayer, saveState, strokeTo, showToast })
       state.lastX = coords.x;
       state.lastY = coords.y;
       strokeTo(coords.x, coords.y);
+    },
+
+    // Release the full-document-sized source snapshot at stroke end —
+    // it only needs to live for the duration of one stroke. Without
+    // this a full-canvas bitmap stays resident in state after every
+    // clone stroke (significant retention on large documents).
+    end() {
+      state.cloneSourceSnapshot = null;
     },
   };
 }

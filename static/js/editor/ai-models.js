@@ -80,6 +80,14 @@ export function wireAIModelSelectors({ container, apiBase, openCookbookForImg2im
     const sel = e.target.closest('select');
     if (sel && sel.value !== '__serve_cookbook__') sel._prevServeValue = sel.value;
   }, true);
+  // Persist per-tool selections to localStorage. Wired once here (not
+  // re-bound per loadAIModels reload) so handlers don't accumulate; the
+  // sentinel revert is owned by the delegated 'change' handler above.
+  container.addEventListener('change', (e) => {
+    const ts = e.target.closest('select.ge-tool-model');
+    if (!ts || ts.value === '__serve_cookbook__') return;
+    try { localStorage.setItem('ge-tool-model-' + ts.dataset.geToolModel, ts.value); } catch {}
+  });
 
   const aiGenSelect = document.getElementById('ge-ai-model');
   const aiInpaintSelect = document.getElementById('ge-ai-inpaint');
@@ -182,21 +190,9 @@ export function wireAIModelSelectors({ container, apiBase, openCookbookForImg2im
       for (const ts of perToolSelects) appendServeSentinel(ts);
       if (aiGenSelect) appendServeSentinel(aiGenSelect);
       if (aiInpaintSelect) appendServeSentinel(aiInpaintSelect);
-      // Wire the sentinel on the Gen + Inpaint selects too.
-      const wireServeSentinel = (sel) => {
-        if (!sel) return;
-        let prev = sel.value;
-        sel.addEventListener('change', () => {
-          if (sel.value === '__serve_cookbook__') {
-            sel.value = prev;
-            openCookbookForImg2img();
-            return;
-          }
-          prev = sel.value;
-        });
-      };
-      wireServeSentinel(aiGenSelect);
-      wireServeSentinel(aiInpaintSelect);
+      // The sentinel revert for Gen/Inpaint/per-tool selects is owned by
+      // the delegated container 'change' handler (wired once above), so
+      // it isn't re-bound here per reload.
       // Restore each per-tool selection from localStorage.
       for (const ts of perToolSelects) {
         const key = 'ge-tool-model-' + ts.dataset.geToolModel;
@@ -206,16 +202,6 @@ export function wireAIModelSelectors({ container, apiBase, openCookbookForImg2im
             ts.value = saved;
           }
         } catch {}
-        let prevValue = ts.value;
-        ts.addEventListener('change', () => {
-          if (ts.value === '__serve_cookbook__') {
-            ts.value = prevValue;
-            openCookbookForImg2img();
-            return;
-          }
-          prevValue = ts.value;
-          try { localStorage.setItem(key, ts.value); } catch {}
-        });
       }
     } catch (e) {
       // Fetch failed — still give the user the affordance to set up
@@ -225,21 +211,8 @@ export function wireAIModelSelectors({ container, apiBase, openCookbookForImg2im
       if (aiGenSelect) aiGenSelect.innerHTML = fallback;
       if (aiInpaintSelect) aiInpaintSelect.innerHTML = fallback;
       document.querySelectorAll('select.ge-tool-model').forEach(ts => { ts.innerHTML = fallback; });
-      const wireServe = (sel) => {
-        if (!sel) return;
-        let prev = sel.value;
-        sel.addEventListener('change', () => {
-          if (sel.value === '__serve_cookbook__') {
-            sel.value = prev;
-            openCookbookForImg2img();
-            return;
-          }
-          prev = sel.value;
-        });
-      };
-      wireServe(aiGenSelect);
-      wireServe(aiInpaintSelect);
-      document.querySelectorAll('select.ge-tool-model').forEach(wireServe);
+      // Sentinel revert is owned by the delegated container 'change'
+      // handler (wired once above), so no per-element wiring here.
     }
   }
   loadAIModels();

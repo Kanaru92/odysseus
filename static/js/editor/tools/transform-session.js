@@ -49,7 +49,7 @@ export function createTransformSession({
     const silent = !!(opts && opts.silent);
     const layer = activeLayer();
     if (!layer || layer.locked) {
-      if (!silent) uiModule.showToast('Select an unlocked layer');
+      if (!silent && uiModule) uiModule.showToast('Select an unlocked layer');
       return;
     }
     if (state.transformActive) { cancelTransform(); return; } // toggle off
@@ -118,6 +118,10 @@ export function createTransformSession({
 
   function closeTransformPopup() {
     if (state.transformPopup) {
+      // Tear down the document-level drag listeners wired in wireTransformDrag
+      // so they (and the detached popup they close over) don't accumulate
+      // across repeated Free Transform sessions.
+      try { state.transformPopup._dragAbort?.abort(); } catch {}
       try { state.transformPopup.remove(); } catch {}
       state.transformPopup = null;
     }
@@ -261,6 +265,11 @@ export function createTransformSession({
   // right panel (layers area). Mobile pins via stylesheet so we use
   // setProperty 'important' to override during drag.
   function wireTransformDrag(pop) {
+    // Bound the document-level drag listeners to this popup's lifetime so they
+    // are removed when the popup closes (closeTransformPopup aborts this).
+    const ac = new AbortController();
+    pop._dragAbort = ac;
+    const sig = ac.signal;
     const isMobile = window.matchMedia('(max-width: 820px)').matches;
     const defaultRight = 20;
     const defaultTop = 60;
@@ -335,24 +344,24 @@ export function createTransformSession({
       if (e.target.closest(NON_DRAG)) return;
       e.preventDefault();
       beginDrag(e.clientX, e.clientY);
-    });
-    document.addEventListener('mousemove', (e) => moveDrag(e.clientX, e.clientY));
-    document.addEventListener('mouseup', endDrag);
+    }, { signal: sig });
+    document.addEventListener('mousemove', (e) => moveDrag(e.clientX, e.clientY), { signal: sig });
+    document.addEventListener('mouseup', endDrag, { signal: sig });
 
     dragSource.addEventListener('touchstart', (e) => {
       if (e.target.closest(NON_DRAG)) return;
       if (!e.touches || e.touches.length !== 1) return;
       e.preventDefault();
       beginDrag(e.touches[0].clientX, e.touches[0].clientY);
-    }, { passive: false });
+    }, { passive: false, signal: sig });
     document.addEventListener('touchmove', (e) => {
       if (!dragging) return;
       if (!e.touches || e.touches.length !== 1) return;
       e.preventDefault();
       moveDrag(e.touches[0].clientX, e.touches[0].clientY);
-    }, { passive: false });
-    document.addEventListener('touchend', endDrag);
-    document.addEventListener('touchcancel', endDrag);
+    }, { passive: false, signal: sig });
+    document.addEventListener('touchend', endDrag, { signal: sig });
+    document.addEventListener('touchcancel', endDrag, { signal: sig });
   }
 
   // Re-derive the active layer's pixels from the original snapshot
@@ -445,7 +454,7 @@ export function createTransformSession({
     composite();
     // Silent (Move-tool) sessions confirm on every layer/tool change, so a
     // toast each time would be noise. Free Transform still confirms loudly.
-    if (!wasSilent) uiModule.showToast('Transform applied');
+    if (!wasSilent && uiModule) uiModule.showToast('Transform applied');
   }
 
   function cancelTransform() {

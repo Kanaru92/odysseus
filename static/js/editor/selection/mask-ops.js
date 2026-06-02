@@ -32,8 +32,8 @@ export function polygonToMask(points, w, h) {
  *   intersect: base ∩ candidate            (destination-in)
  */
 export function combineMasks(base, candidate, mode = 'replace') {
-  const w = (base && base.width) || (candidate && candidate.width) || 0;
-  const h = (base && base.height) || (candidate && candidate.height) || 0;
+  const w = Math.max((base && base.width) || 0, (candidate && candidate.width) || 0);
+  const h = Math.max((base && base.height) || 0, (candidate && candidate.height) || 0);
   const out = document.createElement('canvas');
   out.width = w; out.height = h;
   const ctx = out.getContext('2d');

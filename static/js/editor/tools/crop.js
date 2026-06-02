@@ -87,7 +87,13 @@ export function createCropTool({ composite, showCropApply }) {
           dy = rawDy;
           dx = Math.sign(rawDx || 1) * (absDy * lockRatio);
         }
-        state.cropEnd = { x: state.cropStart.x + dx, y: state.cropStart.y + dy };
+        // Clamp the moving corner to canvas bounds so an aspect-locked drag
+        // can't push the rect off-canvas (move-mode clamps too; without this,
+        // Apply would read out-of-bounds → transparent pixels).
+        state.cropEnd = {
+          x: Math.max(0, Math.min(state.cropStart.x + dx, state.mainCanvas.width)),
+          y: Math.max(0, Math.min(state.cropStart.y + dy, state.mainCanvas.height)),
+        };
       }
       composite();
       // Draw crop overlay.

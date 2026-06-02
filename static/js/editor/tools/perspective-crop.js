@@ -19,10 +19,29 @@ export function createPerspectiveCropTool({ activeLayer, composite, applyCrop })
     const canvas = state.mainCanvas;
     if (!canvas || !state.pcropCorners) return;
     const z = state.zoom || 1;
+    const rot = state.viewRotation || 0;
+    if (!rot) {
+      // Fast path (no view rotation) — unchanged behaviour.
+      for (let i = 0; i < handles.length; i++) {
+        const c = state.pcropCorners[i];
+        handles[i].style.left = (canvas.offsetLeft + c.x * z) + 'px';
+        handles[i].style.top = (canvas.offsetTop + c.y * z) + 'px';
+      }
+      return;
+    }
+    // View is rotated: apply the same rotation about the canvas centre that
+    // canvasCoords() inverts, so handles track the rotated composite/pointer.
+    // The centre is invariant under CSS rotate(), so the displayed centre is the
+    // un-rotated box centre in the offsetParent (offsetLeft + canvas.width*z/2).
+    const a = rot * Math.PI / 180, cos = Math.cos(a), sin = Math.sin(a);
+    const ccx = canvas.offsetLeft + (canvas.width * z) / 2;
+    const ccy = canvas.offsetTop + (canvas.height * z) / 2;
     for (let i = 0; i < handles.length; i++) {
       const c = state.pcropCorners[i];
-      handles[i].style.left = (canvas.offsetLeft + c.x * z) + 'px';
-      handles[i].style.top = (canvas.offsetTop + c.y * z) + 'px';
+      const dx = (c.x - canvas.width / 2) * z, dy = (c.y - canvas.height / 2) * z;
+      const rx = dx * cos - dy * sin, ry = dx * sin + dy * cos;
+      handles[i].style.left = (ccx + rx) + 'px';
+      handles[i].style.top = (ccy + ry) + 'px';
     }
   }
   function onMove(e) {
@@ -38,6 +57,15 @@ export function createPerspectiveCropTool({ activeLayer, composite, applyCrop })
     try { handles[dragIdx]?.releasePointerCapture(e.pointerId); } catch {}
     dragIdx = -1;
   }
+  // Self-heal teardown: a doc switch (doc-tabs.js applyFrom) clears
+  // state.pcropActive directly without calling clearSession(), which would
+  // otherwise orphan the handle DOM nodes + the document-level capture
+  // listeners. applyFrom() ends with composite() (→ ge:composited), so when
+  // that fires with handles still present but the session no longer active,
+  // tear everything down.
+  function onComposited() {
+    if (handles.length && !state.pcropActive) removeHandles();
+  }
   function buildHandles() {
     removeHandles();
     const area = state.mainCanvas && state.mainCanvas.parentElement;
@@ -52,12 +80,14 @@ export function createPerspectiveCropTool({ activeLayer, composite, applyCrop })
     }
     document.addEventListener('pointermove', onMove, true);
     document.addEventListener('pointerup', onUp, true);
+    window.addEventListener('ge:composited', onComposited);
   }
   function removeHandles() {
     handles.forEach((h) => { try { h.remove(); } catch {} });
     handles = [];
     document.removeEventListener('pointermove', onMove, true);
     document.removeEventListener('pointerup', onUp, true);
+    window.removeEventListener('ge:composited', onComposited);
   }
   function clearSession() {
     removeHandles();
@@ -68,6 +98,9 @@ export function createPerspectiveCropTool({ activeLayer, composite, applyCrop })
 
   return {
     start() {
+      // Already mid-session: don't rebuild handles or clobber the user's
+      // in-progress corners with a fresh default quad.
+      if (state.pcropActive) return;
       const layer = activeLayer();
       if (!layer) return;
       const w = state.imgWidth, h = state.imgHeight;

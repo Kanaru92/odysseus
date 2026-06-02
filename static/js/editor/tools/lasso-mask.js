@@ -72,10 +72,40 @@ export function getLassoPath(ctx, points) {
  * @returns {HTMLCanvasElement}              A `w × h` canvas with alpha = selection strength.
  */
 export function buildLassoMask(points, w, h, offX, offY, feather, grow) {
+  // Guard: an empty / degenerate polygon yields an empty mask (mirrors
+  // getLassoPath's length check) so this helper is safe to call standalone.
+  if (!points || points.length < 3) {
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    return c;
+  }
+
+  // Compute the polygon's dirty rect (translated by the offset), padded by
+  // feather + |grow| so the feather falloff / grown edge stay inside it, then
+  // clamped to the canvas. All per-pixel passes below are bounded to this
+  // sub-rect instead of the full w×h — the rest of the canvas is untouched
+  // (and stays transparent).
+  const pad = Math.ceil((feather > 0 ? feather : 0) + Math.abs(grow || 0)) + 1;
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (let i = 0; i < points.length; i++) {
+    const px = points[i].x - offX, py = points[i].y - offY;
+    if (px < minX) minX = px;
+    if (px > maxX) maxX = px;
+    if (py < minY) minY = py;
+    if (py > maxY) maxY = py;
+  }
+  const bx0 = Math.max(0, Math.floor(minX) - pad);
+  const by0 = Math.max(0, Math.floor(minY) - pad);
+  const bx1 = Math.min(w, Math.ceil(maxX) + pad);
+  const by1 = Math.min(h, Math.ceil(maxY) + pad);
+  const bw = bx1 - bx0, bh = by1 - by0;
+
   // Step 1: draw hard mask
   const hard = document.createElement('canvas');
   hard.width = w; hard.height = h;
   const hCtx = hard.getContext('2d');
+  // Fully off-canvas polygon: nothing to rasterise, return the empty mask.
+  if (bw <= 0 || bh <= 0) return hard;
   hCtx.beginPath();
   hCtx.moveTo(points[0].x - offX, points[0].y - offY);
   for (let i = 1; i < points.length; i++) {
@@ -95,27 +125,33 @@ export function buildLassoMask(points, w, h, offX, offY, feather, grow) {
     bctx.filter = `blur(${Math.abs(grow)}px)`;
     bctx.drawImage(hard, 0, 0);
     bctx.filter = 'none';
-    const blurred = bctx.getImageData(0, 0, w, h).data;
-    const hd = hCtx.getImageData(0, 0, w, h);
+    const blurred = bctx.getImageData(bx0, by0, bw, bh).data;
+    const hd = hCtx.getImageData(bx0, by0, bw, bh);
     const out = hd.data;
     const thr = grow > 0 ? 32 : 200;
     for (let i = 0; i < out.length; i += 4) {
       const a = blurred[i + 3] >= thr ? 255 : 0;
       out[i] = a; out[i + 1] = a; out[i + 2] = a; out[i + 3] = a;
     }
-    hCtx.putImageData(hd, 0, 0);
+    hCtx.putImageData(hd, bx0, by0);
   }
 
   if (feather <= 0) return hard;
 
   // Step 2: pixel data and distance-based feather.
-  const hardData = hCtx.getImageData(0, 0, w, h);
+  // Read only the bbox sub-rect, but keep the inside/dist maps full-size and
+  // indexed by `y*w+x` so the chamfer neighbour offsets (i±1, (y±1)*w+x)
+  // stay valid; all loops below are bounded to the bbox.
+  const hardData = hCtx.getImageData(bx0, by0, bw, bh);
   const d = hardData.data;
 
-  // Build inside/outside map.
+  // Build inside/outside map (default 0 outside the bbox).
   const inside = new Uint8Array(w * h);
-  for (let i = 0; i < w * h; i++) {
-    inside[i] = d[i * 4] > 128 ? 1 : 0;
+  for (let by = 0; by < bh; by++) {
+    for (let bx = 0; bx < bw; bx++) {
+      const si = (by * bw + bx) * 4;
+      inside[(by0 + by) * w + (bx0 + bx)] = d[si] > 128 ? 1 : 0;
+    }
   }
 
   // Distance from edge (for pixels inside the selection, distance to nearest outside pixel).
@@ -123,8 +159,8 @@ export function buildLassoMask(points, w, h, offX, offY, feather, grow) {
   dist.fill(feather + 1);
 
   // Seed: edge pixels (inside pixels adjacent to outside pixels).
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
+  for (let y = by0; y < by1; y++) {
+    for (let x = bx0; x < bx1; x++) {
       const i = y * w + x;
       if (!inside[i]) { dist[i] = 0; continue; }
       const hasOutside = (x > 0 && !inside[i-1]) || (x < w-1 && !inside[i+1]) ||
@@ -133,17 +169,17 @@ export function buildLassoMask(points, w, h, offX, offY, feather, grow) {
     }
   }
 
-  // Two-pass chamfer distance transform.
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
+  // Two-pass chamfer distance transform (bounded to the bbox).
+  for (let y = by0; y < by1; y++) {
+    for (let x = bx0; x < bx1; x++) {
       const i = y * w + x;
       if (dist[i] === 0) continue;
       if (x > 0) dist[i] = Math.min(dist[i], dist[i-1] + 1);
       if (y > 0) dist[i] = Math.min(dist[i], dist[(y-1)*w+x] + 1);
     }
   }
-  for (let y = h-1; y >= 0; y--) {
-    for (let x = w-1; x >= 0; x--) {
+  for (let y = by1-1; y >= by0; y--) {
+    for (let x = bx1-1; x >= bx0; x--) {
       const i = y * w + x;
       if (dist[i] === 0) continue;
       if (x < w-1) dist[i] = Math.min(dist[i], dist[i+1] + 1);
@@ -151,21 +187,25 @@ export function buildLassoMask(points, w, h, offX, offY, feather, grow) {
     }
   }
 
-  // Pixels near the edge get reduced alpha.
+  // Pixels near the edge get reduced alpha (written only within the bbox).
   const result = document.createElement('canvas');
   result.width = w; result.height = h;
   const rCtx = result.getContext('2d');
-  const rData = rCtx.createImageData(w, h);
+  const rData = rCtx.createImageData(bw, bh);
 
-  for (let i = 0; i < w * h; i++) {
-    if (!inside[i]) continue;
-    const edgeDist = dist[i];
-    const alpha = edgeDist >= feather ? 255 : Math.round((edgeDist / feather) * 255);
-    rData.data[i*4] = alpha;
-    rData.data[i*4+1] = alpha;
-    rData.data[i*4+2] = alpha;
-    rData.data[i*4+3] = 255;
+  for (let by = 0; by < bh; by++) {
+    for (let bx = 0; bx < bw; bx++) {
+      const i = (by0 + by) * w + (bx0 + bx);
+      if (!inside[i]) continue;
+      const edgeDist = dist[i];
+      const alpha = edgeDist >= feather ? 255 : Math.round((edgeDist / feather) * 255);
+      const ri = (by * bw + bx) * 4;
+      rData.data[ri] = alpha;
+      rData.data[ri+1] = alpha;
+      rData.data[ri+2] = alpha;
+      rData.data[ri+3] = 255;
+    }
   }
-  rCtx.putImageData(rData, 0, 0);
+  rCtx.putImageData(rData, bx0, by0);
   return result;
 }

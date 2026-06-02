@@ -74,16 +74,22 @@ export function createRedEyeTool({ activeLayer, saveState, composite }) {
       const ctx = layer.ctx;
       const W = layer.canvas.width, H = layer.canvas.height;
       const radius = Math.max(2, (state.brushSize || 20) / 2);
-      saveState('Red Eye');
-      const buf = ctx.getImageData(0, 0, W, H);
-      redEyeKernel(buf.data, W, H, lx, ly, radius);
-      // Write back only the affected disc rect.
+      // Bound read + write to the affected disc rect (matches the file's stated
+      // intent: read once per click and write the disc rect back).
       const x0 = Math.max(0, Math.floor(lx - radius));
       const y0 = Math.max(0, Math.floor(ly - radius));
       const x1 = Math.min(W, Math.ceil(lx + radius));
       const y1 = Math.min(H, Math.ceil(ly + radius));
-      ctx.putImageData(buf, 0, 0, x0, y0, x1 - x0, y1 - y0);
-      composite();
+      const rw = x1 - x0, rh = y1 - y0;
+      if (rw <= 0 || rh <= 0) return; // disc fully outside the layer
+      saveState('Red Eye');
+      const buf = ctx.getImageData(x0, y0, rw, rh);
+      // Coords are buffer-local: shift the click point into the rect's frame.
+      redEyeKernel(buf.data, rw, rh, lx - x0, ly - y0, radius);
+      ctx.putImageData(buf, x0, y0);
+      // Dirty-rect composite (document space); compositor falls back to a full
+      // redraw on its own when unsafe (fx/mask/selection).
+      composite({ x: x0 + off.x, y: y0 + off.y, w: rw, h: rh });
     },
   };
 }

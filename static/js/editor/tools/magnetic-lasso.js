@@ -61,17 +61,31 @@ export function createMagneticLassoTool({ composite, drawLassoOverlay, syncToolC
     } catch { _src = null; }
   }
 
-  // Luma at DOCUMENT (x, y) — mapped to layer-local via the recorded offset,
-  // with edge clamping; 0 when there's no source.
+  // Luma of a single texel at layer-local integer (ix, iy), edge-clamped.
+  // Folds alpha in so a hard transparent/opaque boundary also reads as an edge.
+  function lumaTexel(ix, iy) {
+    const cx = ix < 0 ? 0 : (ix > _src.w - 1 ? _src.w - 1 : ix);
+    const cy = iy < 0 ? 0 : (iy > _src.h - 1 ? _src.h - 1 : iy);
+    const d = _src.data.data;
+    const o = (cy * _src.w + cx) * 4;
+    const a = d[o + 3] / 255;
+    return (0.299 * d[o] + 0.587 * d[o + 1] + 0.114 * d[o + 2]) * a;
+  }
+
+  // Luma at DOCUMENT (x, y) — mapped to layer-local via the recorded offset.
+  // Bilinearly interpolated so sub-pixel offsets (snapPoint's central difference
+  // steps by the unit perpendicular nx,ny, magnitude ≤ 1px) resolve real
+  // gradients instead of collapsing to the same truncated texel. 0 when no source.
   function luma(x, y) {
     if (!_src) return 0;
-    const ix = Math.max(0, Math.min(_src.w - 1, (x - _src.offX) | 0));
-    const iy = Math.max(0, Math.min(_src.h - 1, (y - _src.offY) | 0));
-    const d = _src.data.data;
-    const o = (iy * _src.w + ix) * 4;
-    const a = d[o + 3] / 255;
-    // Fold alpha in so a hard transparent/opaque boundary also reads as an edge.
-    return (0.299 * d[o] + 0.587 * d[o + 1] + 0.114 * d[o + 2]) * a;
+    const fx = (x - _src.offX), fy = (y - _src.offY);
+    const x0 = Math.floor(fx), y0 = Math.floor(fy);
+    const tx = fx - x0, ty = fy - y0;
+    const l00 = lumaTexel(x0, y0), l10 = lumaTexel(x0 + 1, y0);
+    const l01 = lumaTexel(x0, y0 + 1), l11 = lumaTexel(x0 + 1, y0 + 1);
+    const top = l00 + (l10 - l00) * tx;
+    const bot = l01 + (l11 - l01) * tx;
+    return top + (bot - top) * ty;
   }
 
   // Snap one sample point to the local luma-gradient maximum along the segment's
@@ -117,6 +131,24 @@ export function createMagneticLassoTool({ composite, drawLassoOverlay, syncToolC
     state.lassoPoints = pts;
   }
 
+  // Coalesce the move hot path: a raw pointermove can fire many times per frame
+  // and each redraw runs a full composite() + a full re-snap of the live tail
+  // (up to MAX_SAMPLES points). Schedule at most one rebuild+redraw per animation
+  // frame, dropping intermediate events; the latest magLassoPreview wins.
+  let _raf = 0;
+  function scheduleRedraw() {
+    if (_raf) return;
+    _raf = requestAnimationFrame(() => {
+      _raf = 0;
+      if (!state.magLassoActive) return;
+      rebuild();
+      redraw();
+    });
+  }
+  function cancelScheduledRedraw() {
+    if (_raf) { cancelAnimationFrame(_raf); _raf = 0; }
+  }
+
   function redraw() {
     composite();
     const pts = state.lassoPoints;
@@ -147,6 +179,9 @@ export function createMagneticLassoTool({ composite, drawLassoOverlay, syncToolC
     // pointerdown — start the trace, commit the current snapped tail as anchors,
     // or close if the click lands on the start anchor.
     click(e) {
+      // A click commits + renders synchronously; drop any move frame still
+      // queued so it can't fire a redundant redraw over the committed state.
+      cancelScheduledRedraw();
       const c = canvasCoords(e, state.mainCanvas);
       if (!state.magLassoActive) {
         refreshSource();
@@ -157,6 +192,13 @@ export function createMagneticLassoTool({ composite, drawLassoOverlay, syncToolC
         redraw();
         return;
       }
+      // Anchor the live tail to the actual click position before deciding to
+      // close. On touch/pen taps no hover-move precedes the click, so without
+      // this the closing segment would snap to a stale preview point (the last
+      // pointermove) instead of where the user tapped. rebuild() refreshes
+      // state.lassoPoints so the length-check + close use the true geometry.
+      state.magLassoPreview = c;
+      rebuild();
       const start = state.magLassoAnchors[0];
       const near = start && Math.hypot(c.x - start.x, c.y - start.y) <= closeDist();
       if (near && state.lassoPoints.length >= 3) { this.close(); return; }
@@ -173,14 +215,17 @@ export function createMagneticLassoTool({ composite, drawLassoOverlay, syncToolC
     // free pointermove (button up) — snap the open edge to the cursor.
     move(e) {
       if (!state.magLassoActive) return;
-      // Re-read pixels lazily — the source can change if the layer was painted.
+      // Re-capture the pixel source only if it's missing (e.g. the layer didn't
+      // exist yet when the trace began). The source is otherwise snapshotted
+      // once at trace start (refreshSource on the first click) and reused for the
+      // whole trace — a trace is short-lived and the user isn't painting during it.
       if (!_src) refreshSource();
       state.magLassoPreview = canvasCoords(e, state.mainCanvas);
-      rebuild();
-      redraw();
+      scheduleRedraw();
     },
 
     close() {
+      cancelScheduledRedraw();
       const finalize = state.lassoPoints && state.lassoPoints.length >= 3;
       const pts = finalize ? state.lassoPoints.slice() : [];
       state.magLassoActive = false;
@@ -200,6 +245,7 @@ export function createMagneticLassoTool({ composite, drawLassoOverlay, syncToolC
     },
 
     cancel() {
+      cancelScheduledRedraw();
       state.magLassoActive = false;
       state.magLassoPreview = null;
       state.magLassoAnchors = [];

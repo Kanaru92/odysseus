@@ -41,8 +41,14 @@ export function createMoveTool({ activeLayer, saveState, composite }) {
     begin(e) {
       const layer = activeLayer();
       if (!layer || layer.locked) return;
-      saveState();
       state.moving = true;
+      // Defer saveState() until the layer actually moves, so a plain click
+      // (no drag) doesn't push an empty undo snapshot / clear the redo stack.
+      state.moveSaved = false;
+      // Pin the move to the layer captured here. Resolving via activeLayer()
+      // in drag()/end() would apply this layer's base offsets to a DIFFERENT
+      // layer if the active layer changes while the button is held.
+      state.moveLayerId = layer.id;
       const coords = canvasCoords(e, state.mainCanvas);
       const off = state.layerOffsets.get(layer.id) || { x: 0, y: 0 };
       state.moveStartX = coords.x;
@@ -53,7 +59,7 @@ export function createMoveTool({ activeLayer, saveState, composite }) {
     drag(e) {
       if (!state.moving) return;
       e.preventDefault();
-      const layer = activeLayer();
+      const layer = state.layers.find(l => l.id === state.moveLayerId);
       if (!layer) return;
       const coords = canvasCoords(e, state.mainCanvas);
       let dx = coords.x - state.moveStartX;
@@ -66,6 +72,12 @@ export function createMoveTool({ activeLayer, saveState, composite }) {
       if (e.shiftKey) {
         if (Math.abs(dx) >= Math.abs(dy)) dy = 0;
         else dx = 0;
+      }
+      // Record the undo step exactly once, on the first frame the layer
+      // actually moves — matching standard Move-tool behaviour.
+      if (!state.moveSaved && (dx || dy)) {
+        saveState();
+        state.moveSaved = true;
       }
       let nx = state.moveLayerOffsetX + dx;
       let ny = state.moveLayerOffsetY + dy;
@@ -85,6 +97,8 @@ export function createMoveTool({ activeLayer, saveState, composite }) {
     },
     end() {
       state.moving = false;
+      state.moveSaved = false;
+      state.moveLayerId = null;
       state.activeSnapGuides = null;
     },
   };
