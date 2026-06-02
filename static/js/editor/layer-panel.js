@@ -323,10 +323,14 @@ export function createLayerPanelRenderer(deps) {
     const op = document.getElementById('ge-active-opacity');
     if (!blend || !op) return; // header not built yet
     _headerWired = true;
-    blend.innerHTML = BLEND_MODES.map((b) => `<option value="${b.id}">${b.name}</option>`).join('');
+    // 'Pass Through' (groups only) + the standard blend modes.
+    blend.innerHTML = '<option value="pass-through">Pass Through</option>'
+      + BLEND_MODES.map((b) => `<option value="${b.id}">${b.name}</option>`).join('');
     blend.addEventListener('change', () => {
       const l = _activeLayerOrGroup();
-      if (!l || l.isGroup) return;
+      if (!l) return;
+      // Pass-Through is only meaningful for a group; ignore it for a pixel layer.
+      if (!l.isGroup && blend.value === 'pass-through') { blend.value = l.blendMode || 'source-over'; return; }
       l.blendMode = blend.value;
       composite();
     });
@@ -352,7 +356,7 @@ export function createLayerPanelRenderer(deps) {
       const grp = {
         id: 'group-' + (state.nextLayerId++),
         name: 'Group ' + (ngroups + 1),
-        isGroup: true, visible: true, opacity: 1, collapsed: false,
+        isGroup: true, visible: true, opacity: 1, collapsed: false, blendMode: 'pass-through',
       };
       l.groupId = grp.id;
       const idx = state.layers.findIndex((x) => x.id === l.id);
@@ -490,8 +494,8 @@ export function createLayerPanelRenderer(deps) {
     const l = _activeLayerOrGroup();
     const isGroup = !!(l && l.isGroup);
     if (blend) {
-      blend.value = (l && !isGroup) ? (l.blendMode || 'source-over') : 'source-over';
-      blend.disabled = !l || isGroup; // groups composite pass-through
+      blend.value = l ? (l.blendMode || (isGroup ? 'pass-through' : 'source-over')) : 'source-over';
+      blend.disabled = !l; // groups now selectable: Pass Through (default) or a blend mode
     }
     const pct = l ? Math.round((l.opacity == null ? 1 : l.opacity) * 100) : 100;
     if (op) { op.value = String(pct); op.disabled = !l; }

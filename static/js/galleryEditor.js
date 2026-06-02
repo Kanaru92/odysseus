@@ -1007,6 +1007,7 @@ function _glRenderTo(ctx, canvas) {
     if (layer.groupId && groups[layer.groupId]) {
       const g = groups[layer.groupId];
       if (!g.visible) continue;
+      if (g.blendMode && g.blendMode !== 'pass-through') return false; // isolated group → CPU
       grpMul = (g.opacity == null ? 1 : g.opacity);
     }
     if (layer.clipped) return false; // clipping not yet on the GPU path
@@ -1049,6 +1050,43 @@ function _goldenDiff() {
   return { usedGpu: true, W, H, maxDelta, over1, over2, total: da.length, worst, diffBBox: maxX < 0 ? null : { minX, minY, maxX, maxY } };
 }
 
+// Composite an ordered list of member layers onto a target ctx (transparent
+// backdrop), honouring each member's own opacity / blend mode / mask / fx /
+// clipping — but NOT any group opacity (that's applied when the group buffer is
+// blended). Used to build an isolated group's flattened buffer.
+function _renderMembersTo(mctx, mcanvas, members) {
+  const drawWithMode = (src, o, opacity, mode) => {
+    if (_isCustomBlend(mode)) {
+      _compositeCustomBlend(src, o, opacity, mode, mctx, mcanvas);
+    } else {
+      mctx.globalAlpha = opacity;
+      mctx.globalCompositeOperation = mode;
+      mctx.drawImage(src, o.x, o.y);
+      mctx.globalAlpha = 1;
+      mctx.globalCompositeOperation = 'source-over';
+    }
+  };
+  let clipBase = null;
+  for (const layer of members) {
+    const mode = layer.blendMode || 'source-over';
+    const off = state.layerOffsets.get(layer.id) || { x: 0, y: 0 };
+    const source = _effectiveLayerCanvas(layer);
+    if (layer.clipped && clipBase) {
+      const tmp = document.createElement('canvas');
+      tmp.width = mcanvas.width; tmp.height = mcanvas.height;
+      const tc = tmp.getContext('2d');
+      tc.drawImage(source, off.x, off.y);
+      tc.globalCompositeOperation = 'destination-in';
+      tc.drawImage(clipBase.source, clipBase.off.x, clipBase.off.y);
+      tc.globalCompositeOperation = 'source-over';
+      drawWithMode(tmp, { x: 0, y: 0 }, layer.opacity, mode);
+    } else {
+      drawWithMode(source, off, layer.opacity, mode);
+      clipBase = { source, off };
+    }
+  }
+}
+
 // Draw all visible layers (honouring opacity, blend mode, clipping masks, raster
 // layer masks, and layer effects) onto an arbitrary target ctx/canvas. Shared by
 // composite() (main canvas) and Stamp Visible. No checkerboard / overlays.
@@ -1072,6 +1110,7 @@ function _renderLayersTo(ctx, canvas) {
   // ungrouped layers.
   const groups = {};
   for (const l of state.layers) if (l.isGroup) groups[l.id] = l;
+  const isoGroupsDone = new Set();
   let clipBase = null;
   for (const layer of state.layers) {
     if (layer.isGroup) continue; // groups have no pixels of their own
@@ -1080,6 +1119,20 @@ function _renderLayersTo(ctx, canvas) {
     if (layer.groupId && groups[layer.groupId]) {
       const g = groups[layer.groupId];
       if (!g.visible) continue;                 // group hidden → skip member
+      // Isolated group (explicit blend mode != Pass-Through): flatten its members
+      // to a buffer once, then blend the buffer with the group's mode + opacity —
+      // PS isolated-group semantics. Pass-Through groups keep the flat path below.
+      if (g.blendMode && g.blendMode !== 'pass-through') {
+        if (isoGroupsDone.has(g.id)) continue;
+        isoGroupsDone.add(g.id);
+        const members = state.layers.filter((l) => !l.isGroup && l.groupId === g.id && l.visible);
+        const buf = document.createElement('canvas');
+        buf.width = canvas.width; buf.height = canvas.height;
+        _renderMembersTo(buf.getContext('2d'), buf, members);
+        drawWithMode(buf, { x: 0, y: 0 }, (g.opacity == null ? 1 : g.opacity), g.blendMode);
+        clipBase = null; // a blended group buffer resets the clip base
+        continue;
+      }
       grpMul = (g.opacity == null ? 1 : g.opacity);
     }
     const mode = layer.blendMode || 'source-over';
@@ -1393,7 +1446,7 @@ function _snapshotState() {
       // Group (folder) entries hold no pixels — snapshot just their metadata.
       if (l.isGroup) {
         return { id: l.id, name: l.name, visible: l.visible, opacity: l.opacity,
-                 locked: !!l.locked, isGroup: true, collapsed: !!l.collapsed };
+                 locked: !!l.locked, isGroup: true, collapsed: !!l.collapsed, blendMode: l.blendMode || 'pass-through' };
       }
       const tiles = tileFor(l.id, l.ctx, l.canvas.width, l.canvas.height);
       return {
@@ -1497,7 +1550,7 @@ function _buildDraftPayload() {
       // Group (folder) entry — metadata only, no pixel data.
       if (l.isGroup) {
         return { id: l.id, name: l.name, visible: l.visible, opacity: l.opacity,
-                 isGroup: true, collapsed: !!l.collapsed };
+                 isGroup: true, collapsed: !!l.collapsed, blendMode: l.blendMode || 'pass-through' };
       }
       return {
         id: l.id,
@@ -1664,7 +1717,8 @@ function _restoreDraft(draft) {
       data.layers.forEach((s, idx) => {
         if (s.isGroup) state.layers[idx] = { id: s.id, name: s.name || 'Group',
           isGroup: true, visible: s.visible !== false,
-          opacity: typeof s.opacity === 'number' ? s.opacity : 1, collapsed: !!s.collapsed };
+          opacity: typeof s.opacity === 'number' ? s.opacity : 1, collapsed: !!s.collapsed,
+          blendMode: s.blendMode || 'pass-through' };
       });
       state.nextLayerId = data.nextLayerId || state.nextLayerId;
       state.activeLayerId = data.activeLayerId || (state.layers[state.layers.length - 1]?.id ?? null);
@@ -1676,7 +1730,7 @@ function _restoreDraft(draft) {
         state.layers[idx] = { id: s.id, name: s.name || 'Group', isGroup: true,
           visible: s.visible !== false,
           opacity: typeof s.opacity === 'number' ? s.opacity : 1,
-          collapsed: !!s.collapsed };
+          collapsed: !!s.collapsed, blendMode: s.blendMode || 'pass-through' };
         return;
       }
       const layer = createLayer(s.name || 'Layer', s.canvasW || state.imgWidth, s.canvasH || state.imgHeight);
@@ -1792,6 +1846,7 @@ function _restoreState(snap) {
       g.opacity = typeof s.opacity === 'number' ? s.opacity : 1;
       g.locked = !!s.locked;
       g.collapsed = !!s.collapsed;
+      g.blendMode = s.blendMode || 'pass-through';
       _rebuilt.push(g);
       continue;
     }
@@ -5709,7 +5764,7 @@ function _saveProject() {
     layers: state.layers.map(l => {
       if (l.isGroup) {
         return { id: l.id, name: l.name, visible: l.visible, opacity: l.opacity,
-                 isGroup: true, collapsed: !!l.collapsed };
+                 isGroup: true, collapsed: !!l.collapsed, blendMode: l.blendMode || 'pass-through' };
       }
       return {
         id: l.id,
@@ -6153,6 +6208,7 @@ export function openEditor(imageUrl, imageId, presetSize, displayName, draftId) 
   state.maskOverlay = null;
   window.__galleryEditLive = true;
   try { window.__geGoldenDiff = _goldenDiff; } catch {} // dev: GPU-vs-CPU golden diff
+  try { window.__geRenderLayers = (cv) => _renderLayersTo(cv.getContext('2d'), cv); } catch {} // dev: render the layer stack into a test canvas
   if (state.persistTimer) { clearTimeout(state.persistTimer); state.persistTimer = null; }
   state.persistDirty = false;
 
