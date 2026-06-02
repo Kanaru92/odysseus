@@ -300,6 +300,11 @@ export function createBrushEngine(preset) {
     /** Stamp `from` → `to` at spacing onto the flow buffer, then recompose. */
     segment(ctx, from, to, rt) {
       if (!painting || targetCtx !== ctx) doBegin(ctx, rt); // safety net
+      // Canvas resized mid-stroke while keeping the SAME ctx (e.g. an in-place
+      // width/height change) — re-snapshot + resize the flow buffers so recompose
+      // doesn't draw a stale-sized buffer. (Expand-on-paint swaps the ctx, so it
+      // already hits the safety net above; this covers the same-ctx case.)
+      else if (strokeBuf && (strokeBuf.width !== ctx.canvas.width || strokeBuf.height !== ctx.canvas.height)) doBegin(ctx, rt);
       resetDab(); // start a fresh dirty-rect union for this segment
       const dx = to.x - from.x;
       const dy = to.y - from.y;

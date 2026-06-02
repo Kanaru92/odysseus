@@ -61,8 +61,23 @@ export function mergeLayerDownAtIndex(idx) {
   // only, which silently lost Multiply/Screen/etc. and dropped custom blends) —
   // mirror the shared renderer: native modes via globalCompositeOperation, custom
   // (per-pixel) modes via blendInto against the lower layer's pixels.
-  const upperSrc = _effectiveCanvas(upper);
+  let upperSrc = _effectiveCanvas(upper);
   const dx = upperOff.x - lowerOff.x, dy = upperOff.y - lowerOff.y;
+  // If the upper layer is clipped to the lower (its base — i.e. lower itself is
+  // NOT clipped), bake the clip by intersecting upper's pixels with the base's
+  // current alpha before compositing. Otherwise merge-down lets the clipped
+  // pixels escape the base's shape (the clipping mask is silently lost). When
+  // lower is ALSO clipped the two are siblings clipping to a base further down,
+  // so the upper merges unclipped and lower keeps its own clip flag.
+  if (upper.clipped && !lower.clipped) {
+    const ct = document.createElement('canvas');
+    ct.width = upperSrc.width; ct.height = upperSrc.height;
+    const cctx = ct.getContext('2d');
+    cctx.drawImage(upperSrc, 0, 0);
+    cctx.globalCompositeOperation = 'destination-in';
+    cctx.drawImage(lower.canvas, -dx, -dy); // base alpha in the upper's local frame
+    upperSrc = ct;
+  }
   const bm = upper.blendMode || 'source-over';
   const opacity = upper.opacity == null ? 1 : upper.opacity;
   let merged = false;

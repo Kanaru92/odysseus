@@ -1379,11 +1379,17 @@ function _renderLayersTo(ctx, canvas) {
   let clipBase = null;
   for (const layer of state.layers) {
     if (layer.isGroup) continue; // groups have no pixels of their own
-    if (!layer.visible) continue;
+    if (!layer.visible) {
+      // A hidden NON-clipped layer still owns the clip "base slot": clipped
+      // layers above clip to IT, so they must hide along with it (PS clipping-
+      // group semantics) rather than fall through to an earlier, stale base.
+      if (!layer.clipped) clipBase = { hidden: true };
+      continue;
+    }
     let grpMul = 1;
     if (layer.groupId && groups[layer.groupId]) {
       const g = groups[layer.groupId];
-      if (!g.visible) continue;                 // group hidden → skip member
+      if (!g.visible) { if (!layer.clipped) clipBase = { hidden: true }; continue; } // group hidden → skip member (still owns the clip base slot)
       // Isolated group (explicit blend mode != Pass-Through): flatten its members
       // to a buffer once, then blend the buffer with the group's mode + opacity —
       // PS isolated-group semantics. Pass-Through groups keep the flat path below.
@@ -1404,6 +1410,7 @@ function _renderLayersTo(ctx, canvas) {
     const off = state.layerOffsets.get(layer.id) || { x: 0, y: 0 };
     let source = _effectiveLayerCanvas(layer);
     if (layer.clipped && clipBase) {
+      if (clipBase.hidden) continue; // the layer's clip base is hidden → hide it too
       const tmp = document.createElement('canvas');
       tmp.width = canvas.width; tmp.height = canvas.height;
       const tctx = tmp.getContext('2d');
