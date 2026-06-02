@@ -16,10 +16,12 @@ export function controlsHTML({ color, brushSize, wandTolerance }) {
       <div class="ge-color-tabs" role="tablist">
         <button type="button" class="ge-color-tab active" data-ctab="color">Color</button>
         <button type="button" class="ge-color-tab" data-ctab="ok">OK Color</button>
+        <button type="button" class="ge-color-tab" data-ctab="lab">Lab</button>
         <button type="button" class="ge-color-tab" data-ctab="swatches">Swatches</button>
       </div>
       <div class="ge-color-pane" data-cpane="color" id="ge-color-hsv"></div>
       <div class="ge-color-pane" data-cpane="ok" id="ge-okpicker" style="display:none;"></div>
+      <div class="ge-color-pane" data-cpane="lab" id="ge-labpicker" style="display:none;"></div>
       <div class="ge-color-pane ge-swatches-section" id="ge-swatches-section" data-cpane="swatches" style="display:none;">
         <div class="ge-section-title" style="display:flex;align-items:center;justify-content:space-between;gap:6px;">
           <span>Swatches</span>

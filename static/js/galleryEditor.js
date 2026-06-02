@@ -73,6 +73,7 @@ import { wireMenuBar } from './editor/wire-menu-bar.js';
 import { wireWindowMenu } from './editor/wire-window-menu.js';
 import { wireSwatches } from './editor/wire-swatches.js';
 import { wireOkPicker } from './editor/ok-picker.js';
+import { wireLabPicker } from './editor/lab-picker.js';
 import { wireHsvPane } from './editor/hsv-pane.js';
 import { mountPressureCurve } from './editor/pressure-curve.js';
 import { mountBrushPreview } from './editor/brush-preview.js';
@@ -5050,6 +5051,7 @@ function _buildEditor(container) {
   wireHsvPane();
   // OK Color Picker (OKhsl perceptual H/S/L) + Color-panel tabs.
   wireOkPicker();
+  wireLabPicker();
   // Pressure-response curve editor (drives pressure-response.js).
   mountPressureCurve();
   // Brush Settings live preview + test-paint strip.
