@@ -556,7 +556,7 @@ export function controlsHTML({ color, brushSize, wandTolerance }) {
         <label>Strength <span id="ge-liquify-strength-label">50%</span></label>
         <input type="range" id="ge-liquify-strength" min="1" max="100" value="50" title="How hard the drag pushes pixels." />
       </div>
-      <p style="font-size:10px;opacity:0.5;margin:2px 0 0;">Drag to push/warp pixels (Brush Size = radius). Great for nudging poses — pairs with Morph.</p>
+      <p style="font-size:10px;opacity:0.5;margin:2px 0 0;">Drag to push/warp pixels (Brush Size = radius). Great for nudging poses.</p>
     </div>
     <div class="ge-smudge-section" id="ge-smudge-section" style="display:none;">
       <div class="ge-section-title">Smudge</div>
@@ -646,49 +646,6 @@ export function controlsHTML({ color, brushSize, wandTolerance }) {
         <div id="ge-gradient-editor-host"></div>
       </div>
       <p style="font-size:10px;opacity:0.5;margin:2px 0 0;">Drag on the canvas to draw the gradient. The editor's stops/colours/alpha override FG→BG once used.</p>
-    </div>
-    <div class="ge-morph-section" id="ge-morph-section" style="display:none;">
-      <div class="ge-section-title ge-section-title-with-help"><span>Morph</span><span class="ge-section-help" tabindex="0" role="img" aria-label="What this does" title="Generates in-between frames between two states using FILM frame interpolation — e.g. reposition a pose on a new layer, then morph the old pose into it to recover the intermediate poses. Needs the morph server running: python scripts/morph_server.py">?</span></div>
-      <div class="ge-control-row" style="display:flex;gap:4px;">
-        <button class="ge-btn ge-btn-sm ge-morph-mode active" data-morph-mode="two-layers">Two layers</button>
-        <button class="ge-btn ge-btn-sm ge-morph-mode" data-morph-mode="active-vs-below">Active vs below</button>
-      </div>
-      <div id="ge-morph-layers">
-        <div class="ge-control-row ge-tool-model-row">
-          <label>From (A)</label>
-          <select id="ge-morph-layer-a" class="ge-tool-select" style="flex:1;min-width:0;" title="Start layer"></select>
-        </div>
-        <div class="ge-control-row ge-tool-model-row">
-          <label>To (B)</label>
-          <select id="ge-morph-layer-b" class="ge-tool-select" style="flex:1;min-width:0;" title="End layer"></select>
-        </div>
-      </div>
-      <div class="ge-control-row ge-eraser-row">
-        <label>Frames <span id="ge-morph-frames-label">10</span></label>
-        <input type="range" id="ge-morph-frames" min="3" max="60" value="10" title="Number of frames including endpoints. More = smoother but slower." />
-      </div>
-      <div class="ge-control-row ge-eraser-row">
-        <label>Max size <span id="ge-morph-maxsize-label">1024</span>px</label>
-        <input type="range" id="ge-morph-maxsize" min="256" max="2048" value="1024" step="128" title="Longest-side cap sent to the model. Lower = faster." />
-      </div>
-      <div class="ge-control-row ge-actions" style="margin-top:4px;">
-        <button class="ge-btn ge-btn-primary ge-btn-ai" id="ge-morph-generate"><span class="ge-btn-ai-mark" aria-hidden="true">✦</span> Generate</button>
-      </div>
-      <div id="ge-morph-progress" style="display:none;height:4px;background:rgba(255,255,255,0.1);border-radius:2px;margin-top:6px;overflow:hidden;">
-        <div id="ge-morph-progress-fill" style="height:100%;width:0;background:var(--ge-accent,#e06c75);transition:width .2s;"></div>
-      </div>
-      <div id="ge-morph-status" style="font-size:10px;opacity:0.6;margin-top:4px;min-height:12px;"></div>
-      <div id="ge-morph-result" style="display:none;margin-top:8px;">
-        <img id="ge-morph-preview" alt="morph frame preview" style="width:100%;border-radius:4px;display:block;background:rgba(0,0,0,0.2);" />
-        <div class="ge-control-row ge-eraser-row" style="margin-top:6px;">
-          <label>Morph <span id="ge-morph-frame-label">0</span> / <span id="ge-morph-frame-total">0</span></label>
-          <input type="range" id="ge-morph-scrubber" min="0" max="0" value="0" title="Drag to scrub the in-between live on the canvas, like the Opacity slider." />
-        </div>
-        <p style="font-size:10px;opacity:0.5;margin:2px 0 4px;">Drag to preview the morph live on the canvas, then keep it.</p>
-        <div class="ge-control-row ge-actions">
-          <button class="ge-btn ge-btn-primary" id="ge-morph-insert">Keep this frame</button>
-        </div>
-      </div>
     </div>
     <details class="ge-histogram-section" id="ge-histogram-section">
       <summary class="ge-section-title" style="cursor:pointer;list-style:revert;">Histogram</summary>

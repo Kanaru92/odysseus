@@ -132,7 +132,6 @@ import { wireImport } from './editor/wire-import.js';
 import { wireMergeButtons } from './editor/wire-merge-buttons.js';
 import { wireSelectionControls } from './editor/wire-selection-controls.js';
 import { wireInpaintControls } from './editor/wire-inpaint-controls.js';
-import { wireMorphTool } from './editor/ai-morph.js';
 import { wireBrushPresets } from './editor/wire-brush-presets.js';
 import { createGradientTool } from './editor/tools/gradient.js';
 import { wireGradientControls } from './editor/wire-gradient-controls.js';
@@ -3740,13 +3739,6 @@ function _buildEditor(container) {
       if (upscaleSection) upscaleSection.style.display = state.tool === 'upscale' ? '' : 'none';
       const styleSection = document.getElementById('ge-style-section');
       if (styleSection) styleSection.style.display = state.tool === 'style' ? '' : 'none';
-      const morphSection = document.getElementById('ge-morph-section');
-      if (morphSection) {
-        const showMorph = state.tool === 'morph';
-        morphSection.style.display = showMorph ? '' : 'none';
-        // Repopulate the layer pickers each time the panel opens.
-        if (showMorph) window.dispatchEvent(new CustomEvent('ge:morph-show'));
-      }
       const gradientSection = document.getElementById('ge-gradient-section');
       if (gradientSection) gradientSection.style.display = state.tool === 'gradient' ? '' : 'none';
       const shapeSection = document.getElementById('ge-shape-section');
@@ -4452,17 +4444,6 @@ function _buildEditor(container) {
     openCookbookForDependency: (pkg) => _openCookbookForDependency(pkg),
     composite,
     renderLayerPanel: () => _renderLayerPanel(),
-    uiModule,
-  });
-
-  // MorphBlend (FILM layer morph) — editor/ai-morph.js. Self-contained:
-  // captures A+B, polls the morph server, scrubs frames, inserts as a layer.
-  wireMorphTool({
-    createLayer,
-    composite,
-    renderLayerPanel: () => _renderLayerPanel(),
-    saveState: _saveState,
-    spinnerModule,
     uiModule,
   });
 

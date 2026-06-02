@@ -15,7 +15,7 @@ const TOOL_NAMES = {
   crop: 'Crop', transform: 'Transform', distort: 'Distort', pcrop: 'Perspective Crop', brush: 'Brush', eraser: 'Eraser', bucket: 'Paint Bucket', shapes: 'Shape',
   clone: 'Clone Stamp', eyedropper: 'Eyedropper', gradient: 'Gradient', text: 'Type',
   inpaint: 'Inpaint', rembg: 'Remove Background', sharpen: 'Sharpen',
-  morph: 'Morph', liquify: 'Liquify', smudge: 'Smudge', mixer: 'Mixer Brush', heal: 'Spot Healing', dodgeburn: 'Dodge / Burn',
+  liquify: 'Liquify', smudge: 'Smudge', mixer: 'Mixer Brush', heal: 'Spot Healing', dodgeburn: 'Dodge / Burn',
   import: 'Import', harmonize: 'Harmonize',
 };
 

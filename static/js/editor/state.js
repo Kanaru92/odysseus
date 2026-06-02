@@ -270,11 +270,6 @@ export const state = {
   // follow-up persist after the current one finishes.
   persistDirty: false,
 
-  // ── Morph (FILM frame-interpolation) ──
-  // Active source mode + the last completed morph session so the
-  // scrubber/insert controls know which frames to fetch.
-  morphMode: 'two-layers',  // 'two-layers' | 'active-vs-below'
-  morphSession: null,       // { sid, frameCount }
 
   // ── Brush engine (M1) ──
   // Routes the paint brush through the dab/spacing/pressure engine

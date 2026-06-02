@@ -36,7 +36,6 @@ export const TOOL_KEYS = {
   inpaint: '',
   rembg: '',
   sharpen: '',
-  morph: '',
   liquify: '', // forward-warp deform — bound to Ctrl+Shift+X in keyboard-shortcuts.js (no single key)
   distort: '', // free 4-corner warp (part of free transform — no single key)
   pcrop: '',   // perspective crop (de-skew a quad — no standard single key)

@@ -2,7 +2,7 @@
  * Liquify (forward-warp / push) — drag to shove pixels along the cursor motion
  * with a soft radial falloff, accumulating each move (a forward-warp
  * "push"/"warp" deform). Great for nudging forms while posing a
- * figure — complements MorphBlend. Original code.
+ * figure. Original code.
  *
  * Core (`warpRegion`) is a pure backward-map resample on a pixel buffer, so
  * it's unit-testable with no DOM.

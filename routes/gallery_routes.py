@@ -1388,69 +1388,6 @@ def setup_gallery_routes() -> APIRouter:
             logger.warning(f"Upscale failed: {e}")
             return {"error": f"Upscale failed: {e}"}
 
-    # ---- MorphBlend: FILM frame-interpolation morph between two images ----
-    # Ported from the MorphBlend plugin. The heavy lifting (the FILM
-    # model) runs in a separate, optional GPU process — scripts/morph_server.py
-    # — so morphing works even with no diffusion model loaded. These proxies
-    # keep the browser talking same-origin and behind the app's auth/session,
-    # rather than hitting the morph server's localhost port directly.
-    def _morph_base() -> str:
-        return (os.environ.get("MORPH_SERVER_URL") or "http://127.0.0.1:5557").rstrip("/")
-
-    @router.post("/api/image/morph")
-    async def morph_start(request: Request):
-        """Start a morph. Body: {image_a, image_b, num_frames?, max_size?} where
-        image_a/image_b are base64 PNGs (A = start frame, B = end frame). The
-        editor decides which layer is which. Returns {session_id} to poll."""
-        import httpx
-        body = await request.json()
-        if not body.get("image_a") or not body.get("image_b"):
-            raise HTTPException(400, "morph needs image_a and image_b")
-        try:
-            async with httpx.AsyncClient(timeout=30) as client:
-                r = await client.post(f"{_morph_base()}/morph", json=body)
-                if r.status_code != 200:
-                    raise HTTPException(r.status_code, f"Morph start failed: {r.text[:200]}")
-                return r.json()
-        except httpx.ConnectError:
-            raise HTTPException(503, "Morph server not running. Start it: python scripts/morph_server.py")
-        except httpx.TimeoutException:
-            raise HTTPException(504, "Morph server did not respond (30s)")
-
-    @router.get("/api/image/morph/status/{session_id}")
-    async def morph_status(session_id: str):
-        import httpx
-        try:
-            async with httpx.AsyncClient(timeout=15) as client:
-                r = await client.get(f"{_morph_base()}/status/{session_id}")
-                return Response(content=r.content, status_code=r.status_code,
-                                media_type="application/json")
-        except httpx.ConnectError:
-            raise HTTPException(503, "Morph server not running")
-
-    @router.get("/api/image/morph/preview/{session_id}/{idx}")
-    async def morph_preview(session_id: str, idx: int):
-        """Downscaled JPEG for the frame scrubber."""
-        import httpx
-        try:
-            async with httpx.AsyncClient(timeout=30) as client:
-                r = await client.get(f"{_morph_base()}/preview/{session_id}/{idx}")
-                return Response(content=r.content, status_code=r.status_code,
-                                media_type=r.headers.get("content-type", "image/jpeg"))
-        except httpx.ConnectError:
-            raise HTTPException(503, "Morph server not running")
-
-    @router.get("/api/image/morph/frame/{session_id}/{idx}")
-    async def morph_frame(session_id: str, idx: int):
-        """Full-res PNG for the chosen frame, decoded client-side into a layer."""
-        import httpx
-        try:
-            async with httpx.AsyncClient(timeout=60) as client:
-                r = await client.get(f"{_morph_base()}/frame/{session_id}/{idx}")
-                return Response(content=r.content, status_code=r.status_code,
-                                media_type=r.headers.get("content-type", "image/png"))
-        except httpx.ConnectError:
-            raise HTTPException(503, "Morph server not running")
 
     # ---- POST /api/image/remove-bg ----
     @router.post("/api/image/remove-bg")

@@ -15,7 +15,7 @@ Planned for the M7 build (each its own module so it stays modular/mergeable):
 - `export.js` — PNG sequence → GIF/APNG → WebM/MP4 (server mux)
 - an animation-aware branch in `composite()` (resolve each track's cel at the
   current frame, draw onion neighbours)
-- **Auto in-between** action wiring to MorphBlend (FILM) — automatic raster tweening.
+- **Auto in-between** (automatic raster tweening) — planned.
 
 Cels reference normal editor layers (`cel.layerId`), so the brush engine, masks,
 and blend modes all work on animation cels unchanged.

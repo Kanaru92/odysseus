@@ -52,7 +52,6 @@ export function buildToolbar({ currentTool, onSelectTool, onClearSelection }) {
     { id: 'rembg', ai: true, label: 'Bg Remove', icon: '✄' },
     { id: 'sharpen', ai: true, label: 'Sharpen', icon: '◈', key: 'S' },
     { id: 'filter', label: 'Filters', icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="7" x2="20" y2="7"/><circle cx="9" cy="7" r="2.2" fill="currentColor"/><line x1="4" y1="14" x2="20" y2="14"/><circle cx="15" cy="14" r="2.2" fill="currentColor"/></svg>' },
-    { id: 'morph', ai: true, label: 'Morph', icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="12" r="3.2"/><circle cx="18" cy="12" r="3.2"/><path d="M9.5 12h5"/><path d="M13 10l2 2-2 2"/></svg>' },
   ];
   // Tool shortcut letters come from the central keymap (keymap.js) so the
   // toolbar and keyboard handler stay in sync on the industry-standard layout.
