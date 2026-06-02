@@ -21,6 +21,7 @@ import {
   buildLassoMask as _buildLassoMaskImpl,
 } from './editor/tools/lasso-mask.js';
 import { floodFillMask as _floodFillMask } from './editor/tools/flood-fill.js';
+import { runFloodAsync } from './editor/filter-worker-client.js';
 import { colorRangeMask as _colorRangeMask } from './editor/tools/color-range.js';
 import { diffusionFill as _diffusionFill } from './editor/tools/content-fill.js';
 import { drawHistogram as _drawHistogram } from './editor/fx/histogram.js';
@@ -3696,31 +3697,36 @@ function _runMagicWand(cx, cy, mode = 'replace', opts = {}) {
     : _getWandSource(layer).data;
   // Pixel-level flood fill lives in editor/tools/flood-fill.js.
   // Returns a mask canvas at (w × h) with white where the fill landed.
-  const mask = _floodFillMask(src, w, h, lx, ly, state.wandTolerance);
-  if (!mask) return;
-  // Merge with existing selection per `mode`. If the existing mask is
-  // for a different layer or has different dimensions, treat as replace
-  // since merging doesn't make sense across canvases.
-  const compatible = state.wandMask && state.wandLayerId === layer.id &&
-    state.wandMask.width === mask.width && state.wandMask.height === mask.height;
-  if (compatible && mode === 'add') {
-    // Union: paint new selection on top of the existing one.
-    state.wandMask.getContext('2d').drawImage(mask, 0, 0);
-    state.wandMask._ants = null; // invalidate marching-ants boundary cache
-  } else if (compatible && mode === 'subtract') {
-    // Difference: erase new selection from the existing one.
-    const ec = state.wandMask.getContext('2d');
-    ec.save();
-    ec.globalCompositeOperation = 'destination-out';
-    ec.drawImage(mask, 0, 0);
-    ec.restore();
-    state.wandMask._ants = null;
-  } else {
-    state.wandMask = mask;
-    state.wandLayerId = layer.id;
-  }
-  composite();
-  _syncToolClearIndicators();
+  // Flood off the main thread (the full-canvas BFS freezes the UI on big docs,
+  // especially the live Tolerance retune). A generation guard drops stale results
+  // from a rapid tolerance drag; falls back to the synchronous flood if no worker.
+  const gen = (state._wandFloodGen = (state._wandFloodGen || 0) + 1);
+  const targetLayerId = layer.id;
+  runFloodAsync(src, w, h, lx, ly, state.wandTolerance).then((mask) => {
+    if (gen !== state._wandFloodGen) return; // a newer wand flood superseded this one
+    if (!mask) return;
+    // Merge with existing selection per `mode`. If the existing mask is for a
+    // different layer or has different dimensions, treat as replace (merging
+    // doesn't make sense across canvases).
+    const compatible = state.wandMask && state.wandLayerId === targetLayerId &&
+      state.wandMask.width === mask.width && state.wandMask.height === mask.height;
+    if (compatible && mode === 'add') {
+      state.wandMask.getContext('2d').drawImage(mask, 0, 0); // union
+      state.wandMask._ants = null; // invalidate marching-ants boundary cache
+    } else if (compatible && mode === 'subtract') {
+      const ec = state.wandMask.getContext('2d');
+      ec.save();
+      ec.globalCompositeOperation = 'destination-out';
+      ec.drawImage(mask, 0, 0); // difference
+      ec.restore();
+      state.wandMask._ants = null;
+    } else {
+      state.wandMask = mask;
+      state.wandLayerId = targetLayerId;
+    }
+    composite();
+    _syncToolClearIndicators();
+  });
 }
 
 // Color Range — select every pixel matching the foreground colour within the

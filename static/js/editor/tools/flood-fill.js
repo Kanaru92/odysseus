@@ -20,6 +20,15 @@
  *                                             the seed is out of bounds.
  */
 export function floodFillMask(src, w, h, seedX, seedY, tolerance) {
+  const v = floodFillVisited(src, w, h, seedX, seedY, tolerance);
+  if (!v) return null;
+  return visitedToMask(v.visited, w, h, v.minX, v.minY, v.maxX, v.maxY);
+}
+
+// Pure BFS core (NO DOM) — returns the visited grid + bounding box so it can run
+// in a Web Worker on a transferred buffer; the caller builds the mask canvas via
+// visitedToMask(). Returns null if the seed is out of bounds.
+export function floodFillVisited(src, w, h, seedX, seedY, tolerance) {
   if (seedX < 0 || seedY < 0 || seedX >= w || seedY >= h) return null;
 
   const seedIdx = (seedY * w + seedX) * 4;
@@ -78,20 +87,26 @@ export function floodFillMask(src, w, h, seedX, seedY, tolerance) {
     tryVisit(x, y - 1);
   }
 
+  return { visited, minX, minY, maxX, maxY };
+}
+
+// Build a white-opaque mask canvas (w × h) from a visited grid + its bounding box.
+// White-opaque (0xAABBGGRR little-endian = 0xFFFFFFFF) is written once per visited
+// pixel via a 32-bit view, bounded to the visited bbox rather than the whole doc.
+export function visitedToMask(visited, w, h, minX, minY, maxX, maxY) {
   const mask = document.createElement('canvas');
   mask.width = w;
   mask.height = h;
   const mCtx = mask.getContext('2d');
   const mData = mCtx.createImageData(w, h);
-  // White-opaque (0xAABBGGRR little-endian = 0xFFFFFFFF) written once per
-  // visited pixel via a 32-bit view, and bounded to the visited bounding
-  // box rather than the whole document.
   const mView = new Uint32Array(mData.data.buffer);
-  for (let yy = minY; yy <= maxY; yy++) {
-    const row = yy * w;
-    for (let xx = minX; xx <= maxX; xx++) {
-      const i = row + xx;
-      if (visited[i]) mView[i] = 0xFFFFFFFF;
+  if (maxX >= minX && maxY >= minY) {
+    for (let yy = minY; yy <= maxY; yy++) {
+      const row = yy * w;
+      for (let xx = minX; xx <= maxX; xx++) {
+        const i = row + xx;
+        if (visited[i]) mView[i] = 0xFFFFFFFF;
+      }
     }
   }
   mCtx.putImageData(mData, 0, 0);
