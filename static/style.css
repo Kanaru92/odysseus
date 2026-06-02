@@ -25340,6 +25340,54 @@ button .spinner-whirlpool {
   box-shadow: 0 4px 14px color-mix(in srgb, var(--fg) 25%, transparent);
   border-radius: 4px;
 }
+/* Group drop-target — highlight a folder header while a drag hovers inside its
+   member band so it's clear the row will nest. Toggled from layer-panel.js. */
+.ge-layer-group.ge-drop-into {
+  background: color-mix(in srgb, var(--red) 16%, transparent) !important;
+  outline: 1px solid color-mix(in srgb, var(--red) 60%, transparent);
+  outline-offset: -1px;
+  border-radius: 4px;
+}
+/* Thin alt-clickable boundary between two layer rows: toggles a clipping mask
+   on the upper layer (clip it to the one below). Overlaps the row gap so it
+   adds no visible spacing; lights up on alt-hover and when already clipping. */
+.ge-clip-zone {
+  height: 6px;
+  margin: -3px 0;
+  position: relative;
+  z-index: 2;
+  cursor: alias;
+  flex-shrink: 0;
+}
+.ge-clip-zone::after {
+  content: '';
+  position: absolute;
+  left: 8px; right: 8px; top: 50%;
+  height: 0;
+  border-top: 1px dashed transparent;
+  transform: translateY(-50%);
+  transition: border-color 0.1s;
+}
+.ge-clip-zone:hover::after,
+.ge-clip-zone.clipped::after {
+  border-top-color: color-mix(in srgb, var(--red) 60%, transparent);
+}
+/* A clipped layer reads as nested under the one below: indent + a small
+   down-elbow arrow at the row's leading edge (PS clipping indicator). */
+.ge-layer-item.ge-clipped {
+  margin-left: 16px;
+}
+.ge-layer-item.ge-clipped::before {
+  content: '↳';
+  position: absolute;
+  left: -12px;
+  top: 50%;
+  transform: translateY(-50%) scaleX(-1);
+  font-size: 11px;
+  opacity: 0.6;
+  color: var(--fg);
+  pointer-events: none;
+}
 .ge-layer-btn {
   border: none;
   background: none;

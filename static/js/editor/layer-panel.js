@@ -62,6 +62,125 @@ export function createLayerPanelRenderer(deps) {
     return Date.now() < (window.__geSuppressLayerTapUntil || 0);
   }
 
+  // ── Group-aware reorder ────────────────────────────────────────────────
+  // The shared dragSort module only hands us the final VISUAL row order
+  // (top→bottom). On its own that just shuffles array indices — it never
+  // touches `groupId`, so a row "dropped into" a folder never actually
+  // joins it, and a non-member dropped mid-band splits the folder visually.
+  //
+  // This rebuilds `state.layers` from the visual order so that:
+  //   • a row whose visual slot is INSIDE a folder's contiguous band joins
+  //     that folder (groupId := folder.id),
+  //   • a row outside every band is ungrouped (groupId := null),
+  //   • each folder's members stay contiguous and directly below the folder
+  //     row, and array order always mirrors the rendered order.
+  //
+  // Membership rule (PS-like): walking the visual order top→bottom, every
+  // non-folder row is "open" under the most recent folder until we hit a row
+  // that the drag explicitly placed OUTSIDE the band. Because the panel only
+  // ever renders members immediately under their (expanded) folder, the
+  // contiguous run directly under a folder header == that folder's band. A
+  // row dragged onto the header or anywhere inside the run is a member; the
+  // first row at/after a run that was already a non-member ends the band.
+  //
+  // `orderedTopIds` is the visual order, top row first (folders + members +
+  // standalone rows, but NOT sub-rows — those are filtered by the caller via
+  // the `.ge-layer-item[data-layer-id]` selector).
+  //
+  // Membership is intent-driven, not re-derived from geometry: every row
+  // keeps its current `groupId` EXCEPT the one row the user moved, which the
+  // caller resolves to `forceIntoId` (join a folder) or `forceUngroupId`
+  // (leave its folder). We then canonicalise the array so each folder's
+  // members sit contiguously, directly below the folder, following the new
+  // visual order — keeping array order == rendered order.
+  function reorderLayersFromVisual(orderedTopIds, opts = {}) {
+    const byId = new Map(state.layers.map((l) => [l.id, l]));
+    const rows = orderedTopIds.map((id) => byId.get(id)).filter(Boolean);
+    if (rows.length !== state.layers.length) return false; // refuse partial maps
+
+    const forceUngroup = opts.forceUngroupId || null; // id pulled OUT this drop
+    const forceInto = opts.forceIntoId || null;       // folder id joined this drop
+    const validGroupIds = new Set(rows.filter((l) => l.isGroup).map((l) => l.id));
+
+    // Apply the single moved row's intent.
+    if (forceInto && validGroupIds.has(forceInto)) {
+      const tgt = byId.get(opts.movedId);
+      if (tgt && !tgt.isGroup) tgt.groupId = forceInto;
+    }
+    if (forceUngroup) {
+      const tgt = byId.get(forceUngroup);
+      if (tgt) tgt.groupId = null;
+    }
+    // Drop stale membership (folder no longer present).
+    for (const l of rows) {
+      if (!l.isGroup && l.groupId && !validGroupIds.has(l.groupId)) l.groupId = null;
+    }
+
+    // Canonical rebuild, bottom→top (array order == reverse of visual order).
+    // Walk the visual order top→bottom; emit each folder followed by its
+    // members (preserving their relative visual order), so in the final
+    // bottom-up array members land immediately below their folder.
+    const visualTopDown = rows;
+    const placed = new Set();
+    const visualOut = []; // top→bottom canonical order
+    for (const l of visualTopDown) {
+      if (placed.has(l.id)) continue;
+      if (l.isGroup) {
+        visualOut.push(l); placed.add(l.id);
+        for (const m of visualTopDown) {
+          if (!placed.has(m.id) && !m.isGroup && m.groupId === l.id) {
+            visualOut.push(m); placed.add(m.id);
+          }
+        }
+      } else if (!l.groupId) {
+        visualOut.push(l); placed.add(l.id);
+      }
+      // members are emitted with their folder above; skip in-place here.
+    }
+    // Any leftover (e.g. member whose folder sits BELOW it visually) — append
+    // next to its folder if possible, else as standalone.
+    for (const l of visualTopDown) {
+      if (placed.has(l.id)) continue;
+      visualOut.push(l); placed.add(l.id);
+    }
+    if (visualOut.length !== state.layers.length) return false;
+    state.layers = visualOut.reverse(); // visual top→bottom → array bottom→top
+    return true;
+  }
+
+  // Determine the drop intent from the placeholder's resting slot in the
+  // live DOM: is the gap the user released over INSIDE a folder's member
+  // band (→ join that folder) or clear of every band (→ ungroup)? Returns
+  // { forceIntoId, forceUngroupId } for the dragged layer id.
+  function dropIntentFor(draggedId) {
+    const list = document.getElementById('ge-layers-list');
+    if (!list) return {};
+    const rows = Array.from(list.querySelectorAll('.ge-layer-item[data-layer-id]'));
+    const idx = rows.findIndex((r) => r.dataset.layerId === draggedId);
+    if (idx < 0) return {};
+    const byId = new Map(state.layers.map((l) => [l.id, l]));
+    // Walk UP from the dragged row's new slot to find the nearest folder
+    // header with no intervening folder; the rows between are its band.
+    let intoId = null;
+    for (let i = idx - 1; i >= 0; i--) {
+      const l = byId.get(rows[i].dataset.layerId);
+      if (!l) continue;
+      if (l.isGroup) { intoId = l.id; break; }
+      if (!l.groupId) break; // hit a standalone row → not inside a band
+    }
+    // Also treat "dropped directly under a folder header" (idx-1 is a folder)
+    // as joining even if that folder currently has no members.
+    if (!intoId && idx > 0) {
+      const above = byId.get(rows[idx - 1].dataset.layerId);
+      if (above && above.isGroup) intoId = above.id;
+    }
+    const dragged = byId.get(draggedId);
+    const wasGrouped = dragged && dragged.groupId;
+    if (intoId) return { forceIntoId: intoId };
+    if (wasGrouped) return { forceUngroupId: draggedId };
+    return {};
+  }
+
   // Inline layer preview (PS-style): a small thumbnail of the layer's pixels
   // over a checkerboard so transparency reads. Layer canvases are document-
   // sized, so a straight fit-draw is faithful. Regenerated per render (cheap at
@@ -297,6 +416,32 @@ export function createLayerPanelRenderer(deps) {
     }
     list.innerHTML = '';
 
+    // The parent layer rendered just above the current row — used to anchor
+    // the alt-click clip hit-zone between two rows (clips the UPPER layer to
+    // the one below). Reset each render.
+    let prevParentLayer = null;
+
+    // Alt-clickable boundary between two layer rows. Alt-clicking it toggles
+    // the UPPER layer's `clipped` flag (clip it to the layer below) — the same
+    // flag the action-row "Clip" button drives (PS Alt-click between layers).
+    const makeClipZone = (upper) => {
+      const z = document.createElement('div');
+      z.className = 'ge-clip-zone' + (upper.clipped ? ' clipped' : '');
+      z.dataset.clipUpper = upper.id;
+      z.title = 'Alt-click to ' + (upper.clipped ? 'release' : 'create') +
+        ' a clipping mask (clip the layer above to the one below)';
+      z.addEventListener('click', (e) => {
+        if (!e.altKey) return; // only alt-click toggles; plain clicks pass
+        e.preventDefault();
+        e.stopPropagation();
+        saveState(upper.clipped ? `Release clip "${upper.name}"` : `Clip "${upper.name}" to below`);
+        upper.clipped = !upper.clipped;
+        composite();
+        render();
+      });
+      return z;
+    };
+
     // Render in reverse order (top layer first).
     for (let i = state.layers.length - 1; i >= 0; i--) {
       const layer = state.layers[i];
@@ -416,6 +561,11 @@ export function createLayerPanelRenderer(deps) {
         if (pg && pg.collapsed) continue;
       }
 
+      // Clip hit-zone between this row and the parent row above it. The UPPER
+      // layer (rendered on the previous iteration) is the one that gets
+      // clipped to the layer below (this row). No zone above the topmost row.
+      if (prevParentLayer) list.appendChild(makeClipZone(prevParentLayer));
+
       const item = document.createElement('div');
       // Parent row is highlighted ONLY when it's actually the paint
       // target — activated AND no mask sub-layer is currently active.
@@ -423,7 +573,8 @@ export function createLayerPanelRenderer(deps) {
         !(layer.masks && layer.activeMaskId && layer.masks.some(m => m.id === layer.activeMaskId));
       item.className = 'ge-layer-item' +
         (parentIsPaintTarget ? ' active' : '') +
-        (layer.id === state.activeLayerId && !parentIsPaintTarget ? ' active-parent' : '');
+        (layer.id === state.activeLayerId && !parentIsPaintTarget ? ' active-parent' : '') +
+        (layer.clipped ? ' ge-clipped' : '');
       item.dataset.layerId = layer.id;
       // Indent + accent members so the folder hierarchy reads at a glance.
       if (layer.groupId && state.layers.some(l => l.isGroup && l.id === layer.groupId)) {
@@ -526,6 +677,7 @@ export function createLayerPanelRenderer(deps) {
       });
 
       list.appendChild(item);
+      prevParentLayer = layer; // anchor the next row's clip hit-zone
 
       // Adjustment sub-layer rows, indented under the parent.
       if (layer.adjLayers && layer.adjLayers.length) {
@@ -708,25 +860,93 @@ export function createLayerPanelRenderer(deps) {
     // because `enable()` cleans up the previous instance keyed on
     // instanceKey.
     if (dragSortModule) {
+      // Snapshot the visual order at drag-start so onReorder can tell which
+      // single row the user moved (→ compute its group drop-intent).
+      const list = document.getElementById('ge-layers-list');
+      let preDragIds = [];
+      if (list && !list.__geDragStartWired) {
+        list.__geDragStartWired = true;
+        const snap = () => {
+          preDragIds = Array.from(
+            list.querySelectorAll('.ge-layer-item[data-layer-id]')
+          ).map((el) => el.dataset.layerId);
+        };
+        list.addEventListener('mousedown', (e) => {
+          if (e.target.closest('.ge-layer-drag')) snap();
+        }, true);
+        list.addEventListener('touchstart', (e) => {
+          if (e.target.closest('.ge-layer-drag')) snap();
+        }, { capture: true, passive: true });
+
+        // Live drop-target hint: while a row is being dragged, light up the
+        // folder header whose member band the cursor is currently over.
+        const hoverHint = (clientY) => {
+          const dragging = list.querySelector('.ge-layer-item.dragging, .ge-layer-item.touch-dragging');
+          list.querySelectorAll('.ge-layer-group.ge-drop-into')
+            .forEach((el) => el.classList.remove('ge-drop-into'));
+          if (!dragging || dragging.classList.contains('ge-layer-group')) return;
+          const ph = list.querySelector('.drag-placeholder');
+          const probeY = ph ? (ph.getBoundingClientRect().top + ph.getBoundingClientRect().height / 2) : clientY;
+          const rows = Array.from(list.querySelectorAll('.ge-layer-item[data-layer-id]'));
+          // Find nearest folder header above the probe with an open band.
+          let folder = null;
+          for (const r of rows) {
+            const rect = r.getBoundingClientRect();
+            if (rect.top + rect.height / 2 > probeY) break;
+            if (r.classList.contains('ge-layer-group')) folder = r;
+            else if (!r.classList.contains('ge-grouped-member')) folder = null;
+          }
+          if (folder) folder.classList.add('ge-drop-into');
+        };
+        list.addEventListener('mousemove', (e) => hoverHint(e.clientY));
+        list.addEventListener('touchmove', (e) => {
+          if (e.touches && e.touches[0]) hoverHint(e.touches[0].clientY);
+        }, { passive: true });
+      }
       dragSortModule.enable('ge-layers-list', '.ge-layer-item', {
         instanceKey: 'ge-layers',
         handleSelector: '.ge-layer-drag',
+        // Sub-rows (adjustment / mask) aren't reorderable layers.
+        excludeSelector: '.ge-adj-sub-item',
         onReorder: (orderedItems) => {
-          // DOM is top→bottom = reverse of array order, so the new
-          // array is the reverse of the DOM order.
-          const byId = new Map(state.layers.map(l => [l.id, l]));
-          const newLayers = orderedItems
-            .map(el => byId.get(el.dataset.layerId))
-            .filter(Boolean)
-            .reverse();
-          if (newLayers.length === state.layers.length) {
-            state.layers = newLayers;
+          // Visual order, top row first — only true layer/group rows.
+          const orderedIds = orderedItems
+            .filter((el) => el.dataset.layerId)
+            .map((el) => el.dataset.layerId);
+          if (orderedIds.length !== state.layers.length) return;
+
+          // Which single row moved? The first id whose new index differs
+          // from its pre-drag index is the dragged one.
+          let movedId = null;
+          for (let i = 0; i < orderedIds.length; i++) {
+            if (orderedIds[i] !== preDragIds[i]) { movedId = orderedIds[i]; break; }
+          }
+          // The new DOM already reflects the drop slot, so dropIntentFor()
+          // can read the dragged row's neighbours to decide join/ungroup.
+          const intent = movedId ? dropIntentFor(movedId) : {};
+          intent.movedId = movedId;
+
+          const prevActive = state.activeLayerId;
+          if (reorderLayersFromVisual(orderedIds, intent)) {
+            if (state.layers.some((l) => l.id === prevActive)) {
+              state.activeLayerId = prevActive; // preserve selection
+            }
             saveState();
+            render();    // re-render so indent / membership styling updates
             composite();
           }
         },
       });
     }
+  }
+
+  // Expose the pure reorder logic so headless tests can drive a "drop" without
+  // synthesising HTML5 drag events (which don't fire reliably headless).
+  if (typeof window !== 'undefined') {
+    window.__geLayerPanel = window.__geLayerPanel || {};
+    window.__geLayerPanel.reorderLayersFromVisual = reorderLayersFromVisual;
+    window.__geLayerPanel.dropIntentFor = dropIntentFor;
+    window.__geLayerPanel.render = () => render();
   }
 
   return { render };
