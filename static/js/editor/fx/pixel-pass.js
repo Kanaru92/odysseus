@@ -128,6 +128,17 @@ export function applyAdjustment(srcCanvas, adj) {
     return out;
   }
 
+  if (adj.type === 'desaturate') {
+    // PS "Desaturate" = HSL lightness ((max+min)/2), distinct from the luma-based
+    // Black & White above.
+    for (let i = 0; i < d.length; i += 4) {
+      const v = (Math.max(d[i], d[i + 1], d[i + 2]) + Math.min(d[i], d[i + 1], d[i + 2])) / 2;
+      d[i] = d[i + 1] = d[i + 2] = v;
+    }
+    octx.putImageData(img, 0, 0);
+    return out;
+  }
+
   if (adj.type === 'vibrance') {
     // Boost saturation more for less-saturated pixels (protects already-vivid
     // colours / skin), unlike a flat Saturation. d is Uint8ClampedArray → auto-clamps.

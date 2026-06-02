@@ -63,7 +63,7 @@ export function wireKeyboardShortcuts(deps) {
     wandDeleteSelection, wandCopyToNewLayer,
     lassoDeleteSelection, lassoCopyToLayer, lassoToMask,
     buildLassoMask, drawLassoOverlay,
-    swapColors, defaultColors, toggleMaskView,
+    swapColors, defaultColors, toggleMaskView, runCommand,
     activeLayer, uiModule, renderLayerPanel, fillActiveLayer, stampVisible,
     confirmDistort, cancelDistort,
     polyLassoClose, polyLassoCancel,
@@ -215,6 +215,14 @@ export function wireKeyboardShortcuts(deps) {
           e.preventDefault();
           e.stopPropagation();
         }
+      }
+      // Ctrl+I (no Shift/Alt) — invert the active layer (PS image invert).
+      if (!e.altKey && !e.shiftKey && e.code === 'KeyI' && runCommand) {
+        e.preventDefault(); e.stopPropagation(); runCommand('invert');
+      }
+      // Ctrl+Shift+U — Desaturate the active layer (PS).
+      if (e.shiftKey && e.code === 'KeyU' && runCommand) {
+        e.preventDefault(); e.stopPropagation(); runCommand('adjust', { type: 'desaturate' });
       }
       // Ctrl+Alt+J — new empty layer.
       if (e.altKey && e.code === 'KeyJ') {

@@ -94,6 +94,7 @@ export function adjLayerLabel(type) {
     'color-balance': 'Color Balance',
     'invert': 'Invert',
     'black-white': 'Black & White',
+    'desaturate': 'Desaturate',
     'vibrance': 'Vibrance',
     'exposure': 'Exposure',
     'posterize': 'Posterize',

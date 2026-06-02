@@ -5208,6 +5208,7 @@ function _buildEditor(container) {
     swapColors: _swapColors,
     defaultColors: _defaultColors,
     toggleMaskView: _toggleMaskView,
+    runCommand,
     activeLayer,
     uiModule,
     renderLayerPanel: () => _renderLayerPanel(),

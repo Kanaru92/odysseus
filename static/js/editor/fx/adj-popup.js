@@ -152,6 +152,7 @@ export function createAdjPopupSystem({ composite, saveState, renderLayerPanel })
       { type: 'threshold',           label: 'Threshold' },
       { type: 'invert',              label: 'Invert' },
       { type: 'black-white',         label: 'Black & White' },
+      { type: 'desaturate',          label: 'Desaturate' },
     ];
     menu.innerHTML = items.map(i =>
       `<button class="ge-fx-menu-item" data-fx-type="${i.type}"><span class="ge-fx-menu-icon">${ADJ_ICONS[i.type] || ''}</span><span>${i.label}</span></button>`
