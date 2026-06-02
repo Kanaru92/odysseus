@@ -148,6 +148,11 @@ export function createAdjPopupSystem({ composite, saveState, renderLayerPanel })
       { type: 'gradient-map',        label: 'Gradient Map' },
       { type: 'channel-mixer',       label: 'Channel Mixer' },
       { type: 'selective-color',     label: 'Selective Color' },
+      { type: 'shadows-highlights',  label: 'Shadows/Highlights' },
+      { type: 'vignette',            label: 'Vignette' },
+      { type: 'clarity',             label: 'Clarity' },
+      { type: 'chromatic-aberration', label: 'Chromatic Aberration' },
+      { type: 'lens-distortion',     label: 'Lens Distortion' },
       { type: 'grain',               label: 'Grain' },
       { type: 'posterize',           label: 'Posterize' },
       { type: 'threshold',           label: 'Threshold' },
@@ -602,6 +607,23 @@ export function createAdjPopupSystem({ composite, saveState, renderLayerPanel })
         <label style="margin-left:auto;">Highlights</label>
         <input type="color" class="ge-adj-color" data-color-key="hi" value="${p.hi || '#ffffff'}" style="width:34px;height:24px;padding:0;border:1px solid var(--border);border-radius:4px;background:none;" />
       </div>`;
+    } else if (type === 'shadows-highlights') {
+      body.innerHTML =
+        sliderRow('shadows', 'Shadows', 0, 100, Math.round(p.shadows || 0), '') +
+        sliderRow('highlights', 'Highlights', 0, 100, Math.round(p.highlights || 0), '') +
+        sliderRow('radius', 'Radius', 0, 200, Math.round(p.radius || 0), '');
+    } else if (type === 'vignette') {
+      body.innerHTML =
+        sliderRow('amount', 'Amount', -100, 100, Math.round(p.amount || 0), '') +
+        sliderRow('midpoint', 'Midpoint', 0, 100, Math.round(p.midpoint ?? 50), '') +
+        sliderRow('roundness', 'Roundness', -100, 100, Math.round(p.roundness || 0), '') +
+        sliderRow('feather', 'Feather', 0, 100, Math.round(p.feather ?? 50), '');
+    } else if (type === 'clarity') {
+      body.innerHTML = sliderRow('amount', 'Clarity', -100, 100, Math.round(p.amount || 0), '');
+    } else if (type === 'chromatic-aberration') {
+      body.innerHTML = sliderRow('amount', 'Amount', 0, 20, Math.round(p.amount || 0), '');
+    } else if (type === 'lens-distortion') {
+      body.innerHTML = sliderRow('amount', 'Amount', -100, 100, Math.round(p.amount || 0), '');
     } else if (type === 'grain') {
       body.innerHTML = sliderRow('amount', 'Amount', 0, 100, Math.round(p.amount || 0), '%');
     } else if (type === 'channel-mixer') {
@@ -692,6 +714,10 @@ export function createAdjPopupSystem({ composite, saveState, renderLayerPanel })
     } else if (type === 'selective-color') {
       const fam = layer._scFam || 'reds';
       if (p[fam]) p[fam][key] = 0;
+    } else if (defaults && key in defaults) {
+      // Flat-param adjustments (vibrance/exposure/shadows-highlights/vignette/
+      // clarity/chromatic-aberration/lens-distortion/…) revert to their default.
+      p[key] = defaults[key];
     }
     layer._adjFinalKey = null;
     composite();

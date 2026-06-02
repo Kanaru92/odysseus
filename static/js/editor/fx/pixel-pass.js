@@ -1,3 +1,9 @@
+import { applyShadowsHighlights } from './shadows-highlights.js';
+import { vignettePixels } from './vignette.js';
+import { clarity } from './clarity.js';
+import { chromaticAberration } from './chromatic-aberration.js';
+import { lensDistortPixels } from './lens-distortion.js';
+
 /**
  * Apply a Brightness/Contrast, Hue/Saturation, Levels, or Color Balance
  * adjustment to a source canvas and return a fresh canvas with the
@@ -48,6 +54,13 @@ export function applyAdjustment(srcCanvas, adj) {
   octx.drawImage(srcCanvas, 0, 0);
   const img = octx.getImageData(0, 0, w, h);
   const d = img.data;
+
+  // Buffer-based adjustments delegated to dedicated fx modules (each mutates `d`).
+  if (adj.type === 'shadows-highlights') { applyShadowsHighlights(d, w, h, adj.params || {}); octx.putImageData(img, 0, 0); return out; }
+  if (adj.type === 'vignette') { vignettePixels(d, w, h, adj.params || {}); octx.putImageData(img, 0, 0); return out; }
+  if (adj.type === 'clarity') { clarity(d, w, h, adj.params || {}); octx.putImageData(img, 0, 0); return out; }
+  if (adj.type === 'chromatic-aberration') { chromaticAberration(d, w, h, adj.params || {}); octx.putImageData(img, 0, 0); return out; }
+  if (adj.type === 'lens-distortion') { d.set(lensDistortPixels(d, w, h, adj.params || {})); octx.putImageData(img, 0, 0); return out; }
 
   if (adj.type === 'levels') {
     const l = adj.params;

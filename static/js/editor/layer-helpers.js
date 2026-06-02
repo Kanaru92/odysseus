@@ -83,6 +83,11 @@ export function defaultAdjParams(type) {
       const z = () => ({ c: 0, m: 0, y: 0, k: 0 });
       return { reds: z(), yellows: z(), greens: z(), cyans: z(), blues: z(), magentas: z(), whites: z(), neutrals: z(), blacks: z(), relative: true };
     }
+    case 'shadows-highlights':   return { shadows: 30, highlights: 20, radius: 0 };
+    case 'vignette':             return { amount: -35, midpoint: 50, roundness: 0, feather: 50 };
+    case 'clarity':              return { amount: 30 };
+    case 'chromatic-aberration': return { amount: 3 };
+    case 'lens-distortion':      return { amount: -40 };
   }
   return {};
 }
@@ -107,6 +112,11 @@ export function adjLayerLabel(type) {
     'gradient-map': 'Gradient Map',
     'channel-mixer': 'Channel Mixer',
     'selective-color': 'Selective Color',
+    'shadows-highlights': 'Shadows/Highlights',
+    'vignette': 'Vignette',
+    'clarity': 'Clarity',
+    'chromatic-aberration': 'Chromatic Aberration',
+    'lens-distortion': 'Lens Distortion',
     'grain': 'Grain',
   }[type] || type;
 }
