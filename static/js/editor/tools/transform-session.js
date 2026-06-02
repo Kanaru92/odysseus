@@ -433,6 +433,22 @@ export function createTransformSession({
   }
 
   function confirmTransform() {
+    // Remember a NON-silent, meaningful transform (relative scale/rot/flip) so
+    // Transform Again can replay it onto another layer.
+    if (!state.transformSilent) {
+      const ow = state.transformOrigW || 1, oh = state.transformOrigH || 1;
+      const changed = (state.transformPendingRot || 0) !== 0 || state.transformPendingFlipH || state.transformPendingFlipV
+        || state.transformPendingW !== ow || state.transformPendingH !== oh;
+      if (changed) {
+        state.lastTransform = {
+          scaleX: state.transformPendingW / ow,
+          scaleY: state.transformPendingH / oh,
+          rot: state.transformPendingRot || 0,
+          flipH: !!state.transformPendingFlipH,
+          flipV: !!state.transformPendingFlipV,
+        };
+      }
+    }
     // Persist the applied transform onto a Smart Object so it serializes and so
     // the NEXT transform session re-derives from the pristine source again.
     if (state.transformLayer && state.transformLayer.isSmart) {

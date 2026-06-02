@@ -58,7 +58,7 @@ export function wireKeyboardShortcuts(deps) {
     toolbar, toolKeyMap,
     composite, saveState, undo, redo,
     toggleShortcuts, confirmTransform, cancelTransform, startTransform,
-    resizeCustomPrompt, addEmptyLayer, brushSizeSync,
+    repeatLastTransform, resizeCustomPrompt, addEmptyLayer, brushSizeSync,
     invertSelection,
     wandDeleteSelection, wandCopyToNewLayer,
     lassoDeleteSelection, lassoCopyToLayer, lassoToMask,
@@ -188,7 +188,9 @@ export function wireKeyboardShortcuts(deps) {
         e.preventDefault();
         document.getElementById('ge-merge-down')?.click();
       }
-      if (e.shiftKey && e.key === 'T') { e.preventDefault(); resizeCustomPrompt(); }
+      // Ctrl+Shift+T — Transform Again (PS standard). Falls back to the custom
+      // resize prompt if transform-again isn't wired (defensive).
+      if (e.shiftKey && e.key === 'T') { e.preventDefault(); if (repeatLastTransform) repeatLastTransform(); else resizeCustomPrompt(); }
       if (e.altKey && e.key === 't') { e.preventDefault(); startTransform(); }
       // Ctrl+Shift+X — Liquify (forward-warp deform). e.code dodges the
       // Shift-modified key value; matches the standard deform-tool binding.

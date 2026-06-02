@@ -19,6 +19,8 @@ export const state = {
   // Drag-resize / rotate session state. While `transformActive` is
   // false every field below should be considered stale.
   transformActive: false,
+  // Last committed (non-silent) transform's RELATIVE params, for Transform Again.
+  lastTransform: null,
   transformLayer: null,
   transformOrigW: 0,
   transformOrigH: 0,

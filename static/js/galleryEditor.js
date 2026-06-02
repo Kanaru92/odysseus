@@ -3118,6 +3118,26 @@ const _reapplyTransform    = _transformSession.reapplyTransform;
 const _confirmTransform    = _transformSession.confirmTransform;
 const _cancelTransform     = _transformSession.cancelTransform;
 
+// Transform Again (PS Ctrl+Shift+T) — replay the last committed transform's
+// relative scale / rotation / flip onto the active layer.
+function _repeatLastTransform() {
+  const lt = state.lastTransform;
+  if (!lt) { if (uiModule) uiModule.showToast('No transform to repeat'); return; }
+  const layer = activeLayer();
+  if (!layer || layer.locked) { if (uiModule) uiModule.showToast('Select an unlocked layer'); return; }
+  if (state.transformActive) _confirmTransform(); // commit any in-progress session first
+  _startTransform({ silent: true });               // snapshots the layer; pending = original size
+  if (!state.transformActive) return;              // start bailed (locked / no layer)
+  state.transformPendingW = Math.max(1, Math.round(state.transformOrigW * lt.scaleX));
+  state.transformPendingH = Math.max(1, Math.round(state.transformOrigH * lt.scaleY));
+  state.transformPendingRot = lt.rot || 0;
+  state.transformPendingFlipH = !!lt.flipH;
+  state.transformPendingFlipV = !!lt.flipV;
+  _reapplyTransform();
+  _confirmTransform();
+  if (uiModule) uiModule.showToast('Transform repeated');
+}
+
 // ── Lasso tool ──
 
 // Lasso tool — full implementation in editor/tools/lasso.js.
@@ -5662,6 +5682,7 @@ function _buildEditor(container) {
     confirmTransform: _confirmTransform,
     cancelTransform: _cancelTransform,
     startTransform: _startTransform,
+    repeatLastTransform: _repeatLastTransform,
     resizeCustomPrompt: _resizeCustomPrompt,
     addEmptyLayer: _addEmptyLayer,
     brushSizeSync: _brushSizeSync,
