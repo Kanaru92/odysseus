@@ -592,15 +592,36 @@ export function controlsHTML({ color, brushSize, wandTolerance }) {
         <label>Size <span id="ge-text-size-label">48</span></label>
         <input type="range" id="ge-text-size" min="8" max="200" value="48" title="Text size in pixels." />
       </div>
+      <div class="ge-control-row ge-eraser-row">
+        <label>Leading <span id="ge-text-leading-label">1.25</span></label>
+        <input type="range" id="ge-text-leading" min="0.8" max="3" step="0.05" value="1.25" title="Line height (leading)." />
+      </div>
       <div class="ge-control-row ge-tool-model-row">
         <label>Font</label>
         <select id="ge-text-font" class="ge-tool-select" style="flex:1;min-width:0;">
           <option value="sans-serif">Sans</option>
           <option value="serif">Serif</option>
           <option value="monospace">Mono</option>
+          <option value="Arial, sans-serif">Arial</option>
+          <option value="Helvetica, Arial, sans-serif">Helvetica</option>
+          <option value="'Times New Roman', serif">Times</option>
+          <option value="Georgia, serif">Georgia</option>
+          <option value="'Courier New', monospace">Courier</option>
+          <option value="Verdana, sans-serif">Verdana</option>
+          <option value="'Trebuchet MS', sans-serif">Trebuchet</option>
+          <option value="Tahoma, sans-serif">Tahoma</option>
+          <option value="Impact, sans-serif">Impact</option>
         </select>
       </div>
-      <p style="font-size:10px;opacity:0.5;margin:2px 0 0;">Click the canvas to add text (uses the foreground colour). Ctrl+Enter or click away to commit.</p>
+      <div class="ge-control-row" style="gap:4px;align-items:center;">
+        <button id="ge-text-bold" class="ge-text-style-btn" title="Bold" style="font-weight:bold;">B</button>
+        <button id="ge-text-italic" class="ge-text-style-btn" title="Italic" style="font-style:italic;">I</button>
+        <span style="flex:1;"></span>
+        <button id="ge-text-align-left" class="ge-text-style-btn active" title="Align left">&#8676;</button>
+        <button id="ge-text-align-center" class="ge-text-style-btn" title="Align center">&#8596;</button>
+        <button id="ge-text-align-right" class="ge-text-style-btn" title="Align right">&#8677;</button>
+      </div>
+      <p style="font-size:10px;opacity:0.5;margin:2px 0 0;">Click to add text; double-click a text layer to re-edit. Ctrl+Enter or click away to commit.</p>
     </div>
     <div class="ge-dodgeburn-section" id="ge-dodgeburn-section" style="display:none;">
       <div class="ge-section-title">Dodge / Burn</div>

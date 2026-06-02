@@ -2712,9 +2712,10 @@ function _promptImageSize() {
   setTimeout(() => { wIn.focus(); wIn.select(); }, 0);
 }
 
-// Text tool was removed from the toolbar; the _placeText implementation
-// (and the `state.tool === 'text'` dispatcher branch) used to live here
-// but had no remaining call sites and was dead code.
+// Type tool: the live implementation is _renderTextLayer/_placeTextLayer/
+// _openTextEditor/_commitText (below), wired via the toolbar ('T'), the
+// pointerdown dispatcher (`state.tool === 'text'`), the Type options section,
+// and dblclick-to-re-edit. (This file previously had a stale "removed" note here.)
 
 // ── Free Transform (Ctrl+Alt+T) ──
 
@@ -3258,17 +3259,28 @@ function _renderTextLayer(layer) {
   if (!t) return;
   const ctx = layer.ctx;
   ctx.clearRect(0, 0, layer.canvas.width, layer.canvas.height);
+  ctx.save();
   ctx.fillStyle = t.color || '#000000';
   ctx.textBaseline = 'top';
-  ctx.font = `${t.size}px ${t.font || 'sans-serif'}`;
+  ctx.textAlign = t.align || 'left';
+  const style = (t.italic ? 'italic ' : '') + (t.bold ? 'bold ' : '');
+  ctx.font = `${style}${t.size}px ${t.font || 'sans-serif'}`;
+  if (t.tracking) { try { ctx.letterSpacing = t.tracking + 'px'; } catch {} }
+  const lh = t.size * (t.leading != null ? t.leading : 1.25);
   const lines = String(t.content || '').split('\n');
-  for (let i = 0; i < lines.length; i++) ctx.fillText(lines[i], t.x, t.y + i * t.size * 1.25);
+  for (let i = 0; i < lines.length; i++) ctx.fillText(lines[i], t.x, t.y + i * lh);
+  ctx.restore();
 }
 function _placeTextLayer(e) {
   const c = _canvasCoords(e, state.mainCanvas);
   _saveState('Text');
   const layer = createLayer('Text', state.imgWidth, state.imgHeight);
-  layer.text = { content: '', x: Math.round(c.x), y: Math.round(c.y), size: state.textSize || 48, color: state.color || '#000000', font: state.textFont || 'sans-serif' };
+  layer.text = {
+    content: '', x: Math.round(c.x), y: Math.round(c.y),
+    size: state.textSize || 48, color: state.color || '#000000', font: state.textFont || 'sans-serif',
+    align: state.textAlign || 'left', leading: state.textLeading != null ? state.textLeading : 1.25,
+    bold: !!state.textBold, italic: !!state.textItalic, tracking: state.textTracking || 0,
+  };
   state.layers.push(layer);
   state.activeLayerId = layer.id;
   _renderLayerPanel();
@@ -3284,6 +3296,23 @@ function _positionTextEditor(inp, layer) {
   inp.style.top = (rect.top - arect.top + layer.text.y * z) + 'px';
   inp.style.fontSize = (layer.text.size * z) + 'px';
   inp.style.color = layer.text.color;
+  inp.style.fontWeight = layer.text.bold ? 'bold' : 'normal';
+  inp.style.fontStyle = layer.text.italic ? 'italic' : 'normal';
+  inp.style.textAlign = layer.text.align || 'left';
+  inp.style.letterSpacing = (layer.text.tracking || 0) + 'px';
+  inp.style.lineHeight = String(layer.text.leading != null ? layer.text.leading : 1.25);
+}
+// Live-apply a patch ({color/align/leading/bold/italic/tracking/size/font}) to the
+// text layer currently being edited, re-render + reposition the inline editor.
+function _updateActiveText(patch) {
+  if (!state.textEditingLayerId) return;
+  const l = state.layers.find((x) => x.id === state.textEditingLayerId);
+  if (!l || !l.text) return;
+  Object.assign(l.text, patch);
+  _renderTextLayer(l);
+  const inp = document.getElementById('ge-text-input');
+  if (inp) _positionTextEditor(inp, l);
+  composite();
 }
 function _openTextEditor(layer) {
   const area = state.container.querySelector('.ge-canvas-area');
@@ -4450,6 +4479,9 @@ function _buildEditor(container) {
   canvasArea.addEventListener('dblclick', (e) => {
     if (state.tool === 'polylasso' && state.polyLassoActive) { e.preventDefault(); _polyLassoTool.close(); }
     if (state.tool === 'maglasso' && state.magLassoActive) { e.preventDefault(); _magLassoTool.close(); }
+    // Double-click a text layer to re-edit it (Type is no longer write-once).
+    const al = activeLayer();
+    if (al && al.text && !state.textEditingLayerId) { e.preventDefault(); _openTextEditor(al); }
   });
 
   editorBody.appendChild(canvasArea);
@@ -4542,7 +4574,7 @@ function _buildEditor(container) {
   // brush use.)
 
   // Wire up controls — foreground color (first .ge-color-picker = FG).
-  controls.querySelector('.ge-color-picker').addEventListener('input', (e) => { state.color = e.target.value; });
+  controls.querySelector('.ge-color-picker').addEventListener('input', (e) => { state.color = e.target.value; if (state.textEditingLayerId) _updateActiveText({ color: state.color }); });
   // Background color + swap (X) / default (D).
   controls.querySelector('.ge-bg-color')?.addEventListener('input', (e) => { state.bgColor = e.target.value; });
   function _syncColorSwatches() {
@@ -5003,6 +5035,35 @@ function _buildEditor(container) {
       if (l && l.text) { l.text.font = state.textFont; _renderTextLayer(l); const inp = document.getElementById('ge-text-input'); if (inp) inp.style.fontFamily = state.textFont; composite(); }
     }
   });
+  // Type: leading slider, bold/italic toggles, alignment buttons — all live-apply
+  // to the text layer being edited via _updateActiveText.
+  const _textLeadingEl = document.getElementById('ge-text-leading');
+  _textLeadingEl?.addEventListener('input', () => {
+    state.textLeading = parseFloat(_textLeadingEl.value) || 1.25;
+    const lbl = document.getElementById('ge-text-leading-label'); if (lbl) lbl.textContent = state.textLeading.toFixed(2);
+    _updateActiveText({ leading: state.textLeading });
+  });
+  const _bindTextToggle = (id, key, stateKey) => {
+    const el = document.getElementById(id);
+    el?.addEventListener('click', () => {
+      state[stateKey] = !state[stateKey];
+      el.classList.toggle('active', state[stateKey]);
+      _updateActiveText({ [key]: state[stateKey] });
+    });
+  };
+  _bindTextToggle('ge-text-bold', 'bold', 'textBold');
+  _bindTextToggle('ge-text-italic', 'italic', 'textItalic');
+  const _alignIds = ['ge-text-align-left', 'ge-text-align-center', 'ge-text-align-right'];
+  const _bindTextAlign = (id, val) => {
+    document.getElementById(id)?.addEventListener('click', () => {
+      state.textAlign = val;
+      _alignIds.forEach((a) => document.getElementById(a)?.classList.toggle('active', a === id));
+      _updateActiveText({ align: val });
+    });
+  };
+  _bindTextAlign('ge-text-align-left', 'left');
+  _bindTextAlign('ge-text-align-center', 'center');
+  _bindTextAlign('ge-text-align-right', 'right');
 
   // Layer mask button: click = add / toggle editing; right-click = delete.
   const _maskBtn = document.getElementById('ge-layer-mask');
