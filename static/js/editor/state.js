@@ -205,10 +205,13 @@ export const state = {
   // so the editor can reopen with fresh dimensions.
   mainCanvas: null,
   mainCtx: null,
-  // Render backend for the layer composite: 'canvas2d' (default) or 'webgl2'
-  // (GPU compositor — only used when every visible layer's blend mode is
-  // GPU-exact and there's no clipping; falls back to canvas2d otherwise).
-  renderBackend: 'canvas2d',
+  // Render backend for the layer composite: 'webgl2' (GPU compositor) or
+  // 'canvas2d'. WebGL2 is used only when available + a one-time self-test passes
+  // + the doc is GPU-eligible (all visible blend modes supported, no clipping/
+  // isolated groups, integer offsets); it transparently falls back to canvas2d
+  // otherwise (and on context loss). The painting hot path stays on the CPU
+  // dirty-rect fast path regardless; the GPU accelerates full/custom-blend composites.
+  renderBackend: 'webgl2',
 
   // ── Document + layers ──
   layers: [],

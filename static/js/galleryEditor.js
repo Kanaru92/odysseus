@@ -982,20 +982,41 @@ function _effectiveLayerCanvas(layer) {
 // WebGL2 layer compositor (lazy). Used only when state.renderBackend==='webgl2'
 // and the doc is GPU-eligible; otherwise the CPU path below runs unchanged.
 const _glCompositor = createWebGLCompositor();
-// Blend modes whose GPU (W3C) result is pixel-identical to the CPU path
-// (canvas globalCompositeOperation). Custom JS-loop modes use an opaque-backdrop
-// shortcut on CPU, so they're excluded until that path is reconciled; the
-// non-separable component modes (hue/sat/color/lum) aren't on the GPU at all.
-const _GPU_EXACT_MODES = new Set([
-  'source-over', 'multiply', 'screen', 'darken', 'lighten', 'overlay',
-  'hard-light', 'color-dodge', 'color-burn', 'soft-light', 'difference', 'exclusion',
-]);
+// One-time per-session GPU self-test: composite a known fixture on the GPU and
+// compare to the CPU result. If the hardware/driver produces wrong pixels, we
+// permanently disable the GPU path (fall back to CPU). null = not yet run.
+let _glSelfTestOk = null;
+function _runGlSelfTest() {
+  try {
+    const W = 16, H = 16;
+    const bg = document.createElement('canvas'); bg.width = W; bg.height = H;
+    const bx = bg.getContext('2d'); bx.fillStyle = '#3060c0'; bx.fillRect(0, 0, W, H);
+    const top = document.createElement('canvas'); top.width = W; top.height = H;
+    const tx = top.getContext('2d'); tx.fillStyle = 'rgba(220,40,40,0.7)'; tx.fillRect(0, 0, W, H);
+    const gc = _glCompositor.composite(W, H, [
+      { canvas: bg, x: 0, y: 0, opacity: 1, mode: 'source-over' },
+      { canvas: top, x: 0, y: 0, opacity: 1, mode: 'multiply' },
+    ]);
+    if (!gc) return false;
+    const ga = document.createElement('canvas'); ga.width = W; ga.height = H;
+    ga.getContext('2d').drawImage(gc, 0, 0);
+    const gd = ga.getContext('2d').getImageData(0, 0, W, H).data;
+    const ca = document.createElement('canvas'); ca.width = W; ca.height = H;
+    const cc = ca.getContext('2d');
+    cc.drawImage(bg, 0, 0); cc.globalCompositeOperation = 'multiply'; cc.drawImage(top, 0, 0);
+    const cd = cc.getImageData(0, 0, W, H).data;
+    let maxD = 0; for (let i = 0; i < cd.length; i++) { const d = Math.abs(cd[i] - gd[i]); if (d > maxD) maxD = d; }
+    return maxD <= 4;
+  } catch (_) { return false; }
+}
 
 // GPU layer render. Returns true if it composited the stack onto ctx, false to
 // fall back to the CPU loop (ineligible doc, no WebGL2, or a failure).
 function _glRenderTo(ctx, canvas) {
   const W = canvas.width, H = canvas.height;
   if (!_glCompositor.available(W, H)) return false;
+  if (_glSelfTestOk === null) _glSelfTestOk = _runGlSelfTest(); // gate on hardware correctness
+  if (!_glSelfTestOk) return false;
   const maxT = _glCompositor.maxTextureSize();
   if (maxT && (W > maxT || H > maxT)) return false;
   const groups = {};
@@ -1012,7 +1033,11 @@ function _glRenderTo(ctx, canvas) {
     }
     if (layer.clipped) return false; // clipping not yet on the GPU path
     const mode = layer.blendMode || 'source-over';
-    if (!_GPU_EXACT_MODES.has(mode)) return false;
+    // Every GPU-supported mode (native + the separable custom modes) now matches
+    // the CPU path exactly (blendInto reconciled to the same W3C math). Modes the
+    // compositor doesn't implement (hue/sat/color/lum, darker/lighter-color,
+    // dissolve) fall back to CPU.
+    if (!_glCompositor.isSupported(mode)) return false;
     const off = state.layerOffsets.get(layer.id) || { x: 0, y: 0 };
     // Fractional offsets: CPU drawImage bilinear-resamples (soft edges) but the
     // GPU samples NEAREST — bail to CPU so the two never diverge on a moved layer.

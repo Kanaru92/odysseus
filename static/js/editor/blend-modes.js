@@ -116,23 +116,33 @@ export function blendInto(mode, back, src, opacity = 1) {
   }
   const lum = mode === 'darker-color' || mode === 'lighter-color';
   for (let i = 0; i < src.length; i += 4) {
-    const a = (src[i + 3] / 255) * opacity;
-    if (a <= 0) continue; // fully transparent source → backdrop unchanged
+    const as = (src[i + 3] / 255) * opacity; // source alpha
+    if (as <= 0) continue; // fully transparent source → backdrop unchanged
+    const ab = back[i + 3] / 255;            // backdrop alpha
     const br = back[i] / 255, bg = back[i + 1] / 255, bb = back[i + 2] / 255;
     const sr = src[i] / 255, sg = src[i + 1] / 255, sb = src[i + 2] / 255;
-    let rr, rg, rb;
+    let Br, Bg, Bb; // per-channel blend B(b, s)
     if (lum) {
       const lb = 0.299 * br + 0.587 * bg + 0.114 * bb;
       const ls = 0.299 * sr + 0.587 * sg + 0.114 * sb;
       const pick = mode === 'darker-color' ? ls < lb : ls > lb;
-      rr = pick ? sr : br; rg = pick ? sg : bg; rb = pick ? sb : bb;
+      Br = pick ? sr : br; Bg = pick ? sg : bg; Bb = pick ? sb : bb;
     } else {
-      rr = sep(mode, br, sr); rg = sep(mode, bg, sg); rb = sep(mode, bb, sb);
+      Br = sep(mode, br, sr); Bg = sep(mode, bg, sg); Bb = sep(mode, bb, sb);
     }
-    back[i]     = Math.round((a * rr + (1 - a) * br) * 255);
-    back[i + 1] = Math.round((a * rg + (1 - a) * bg) * 255);
-    back[i + 2] = Math.round((a * rb + (1 - a) * bb) * 255);
-    back[i + 3] = 255;
+    // W3C compositing + blending (source-over), STRAIGHT alpha — matches the GLSL
+    // compositor exactly. Over an opaque backdrop (ab=1) this equals the old
+    // a·B+(1−a)·b; over a transparent backdrop it yields the correct source
+    // instead of forcing opaque black.
+    const ao = as + ab * (1 - as);
+    if (ao <= 0) { back[i] = back[i + 1] = back[i + 2] = back[i + 3] = 0; continue; }
+    const Csr = (1 - ab) * sr + ab * Br;
+    const Csg = (1 - ab) * sg + ab * Bg;
+    const Csbl = (1 - ab) * sb + ab * Bb;
+    back[i]     = Math.round(((as * Csr + ab * (1 - as) * br) / ao) * 255);
+    back[i + 1] = Math.round(((as * Csg + ab * (1 - as) * bg) / ao) * 255);
+    back[i + 2] = Math.round(((as * Csbl + ab * (1 - as) * bb) / ao) * 255);
+    back[i + 3] = Math.round(ao * 255);
   }
   return back;
 }
