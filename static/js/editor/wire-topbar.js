@@ -40,8 +40,8 @@ import { state } from './state.js';
 // trigger buttons were removed (they duplicated the app menu bar). Those two
 // dropdown divs remain in the DOM but are permanently hidden relay registries,
 // so they never need open/close coordination here.
-const TOPBAR_MENU_IDS = ['ge-resize-menu', 'ge-save-menu'];
-const TOPBAR_TRIGGER_IDS = ['ge-resize-menu-btn', 'ge-save-menu-btn'];
+const TOPBAR_MENU_IDS = ['ge-resize-menu', 'ge-save-menu', 'ge-edge-menu'];
+const TOPBAR_TRIGGER_IDS = ['ge-resize-menu-btn', 'ge-save-menu-btn', 'ge-edge-menu-btn'];
 
 /**
  * Close every topbar dropdown except an optional "keep open" one.
@@ -103,6 +103,7 @@ export function wireTopbar(deps) {
       saveBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         const willOpen = saveMenu.hidden;
+        if (willOpen) closeOtherTopbarMenus('ge-save-menu');
         setSaveMenuOpen(willOpen);
         if (willOpen) positionSaveMenu();
       });
@@ -149,7 +150,7 @@ export function wireTopbar(deps) {
     const layer = activeLayer();
     if (!layer || layer.locked) { uiModule.showToast('Select an unlocked layer'); return; }
     const widthInput = document.getElementById('ge-edge-width');
-    const width = parseInt(widthInput?.value || '8');
+    const width = parseInt(widthInput?.value || '8', 10);
     if (isNaN(width) || width < 1) { uiModule.showToast('Invalid width'); return; }
     saveState();
     applyEdgeFeather(layer, width, hardDelete);

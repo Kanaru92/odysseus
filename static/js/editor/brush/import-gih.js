@@ -23,7 +23,10 @@ export function parseGIH(arrayBuffer) {
     const m = params.match(/ncells:(\d+)/);
     if (m) ncells = parseInt(m[1], 10);
     else ncells = parseInt(params.trim().split(/\s+/)[0], 10) || 0;
-    if (!ncells || ncells > 4096) ncells = 4096; // safety; the EOF check stops us anyway
+    // 4096 is only a safety ceiling (the EOF check stops us anyway); when the
+    // count is unparseable/zero, use it as the max iteration cap rather than a
+    // real count, and clamp any oversized parsed count down to it.
+    if (!Number.isFinite(ncells) || ncells <= 0 || ncells > 4096) ncells = 4096;
 
     const dv = new DataView(arrayBuffer);
     let off = nl2 + 1;
@@ -33,7 +36,9 @@ export function parseGIH(arrayBuffer) {
       const width = dv.getUint32(off + 8);
       const height = dv.getUint32(off + 12);
       const bpp = dv.getUint32(off + 16);
-      if (!width || !height || (bpp !== 1 && bpp !== 4)) break;
+      // Bound dimensions like parseGBR (import-gbr.js:21) so an oversized/corrupt
+      // frame can't compute an absurd frameLen from unbounded width*height*bpp.
+      if (!width || !height || width > 4096 || height > 4096 || (bpp !== 1 && bpp !== 4)) break;
       const frameLen = headerSize + width * height * bpp;
       if (off + frameLen > dv.byteLength) break;
       const parsed = parseGBR(arrayBuffer.slice(off, off + frameLen));

@@ -51,10 +51,28 @@ export function wireActions({ saveState, composite }) {
   function load() { try { const v = JSON.parse(localStorage.getItem(LS_KEY)); return Array.isArray(v) ? v : []; } catch { return []; } }
   function persist() { try { localStorage.setItem(LS_KEY, JSON.stringify(saved)); } catch {} }
 
+  // Snapshot args by value. runCommand hands recorders the SAME args object it
+  // passed to run(), and the caller may mutate/reuse it after the call — keeping
+  // the reference would let later mutations corrupt an already-recorded step.
+  // A JSON round-trip matches the persistence contract (steps are serialized to
+  // localStorage anyway); non-JSON values are dropped, same as on save.
+  function cloneArgs(args) {
+    if (args == null) return args;
+    try { return JSON.parse(JSON.stringify(args)); } catch { return {}; }
+  }
+
+  const EMPTY_STEPS_HTML = '<div class="ge-actions-empty">No steps. Click ● Record, then run adjustments / fills / flips / layer ops.</div>';
+  function stepHTML(s) { return `<div class="ge-actions-step">${(s.label || s.id).replace(/[<>&]/g, '')}</div>`; }
   function renderSteps() {
-    stepsEl.innerHTML = steps.length
-      ? steps.map((s) => `<div class="ge-actions-step">${(s.label || s.id).replace(/[<>&]/g, '')}</div>`).join('')
-      : '<div class="ge-actions-empty">No steps. Click ● Record, then run adjustments / fills / flips / layer ops.</div>';
+    stepsEl.innerHTML = steps.length ? steps.map(stepHTML).join('') : EMPTY_STEPS_HTML;
+  }
+  // Append a single step row instead of rebuilding the whole list. The recorder
+  // callback fires once per recorded command, so a full innerHTML regeneration
+  // there is O(n) per op (quadratic over a recording session).
+  function appendStepEl(s) {
+    const empty = stepsEl.querySelector('.ge-actions-empty');
+    if (empty) empty.remove();
+    stepsEl.insertAdjacentHTML('beforeend', stepHTML(s));
   }
   function renderSaved() {
     savedEl.innerHTML = '';
@@ -83,8 +101,9 @@ export function wireActions({ saveState, composite }) {
       steps = []; renderSteps();
       unsub = onCommandRun((step) => {
         const c = getCommand(step.id);
-        steps.push({ id: step.id, args: step.args, label: c ? c.label : step.id });
-        renderSteps();
+        const entry = { id: step.id, args: cloneArgs(step.args), label: c ? c.label : step.id };
+        steps.push(entry);
+        appendStepEl(entry);
       });
     } else if (unsub) { unsub(); unsub = null; }
   }
@@ -93,8 +112,13 @@ export function wireActions({ saveState, composite }) {
   // own history snapshot and without re-recording.
   function playSteps(list) {
     if (!list || !list.length) return;
+    // Skip if no step maps to a known command (e.g. a saved action whose ops no
+    // longer exist) — otherwise saveState() would push a spurious empty undo
+    // entry for a play that does nothing.
+    const runnable = list.filter((s) => getCommand(s.id));
+    if (!runnable.length) return;
     saveState('Play action');
-    for (const s of list) {
+    for (const s of runnable) {
       try { runCommand(s.id, s.args, { history: false, record: false, composite: false }); } catch (e) { console.error('[actions] step failed', s.id, e); }
     }
     if (composite) composite();
@@ -107,11 +131,27 @@ export function wireActions({ saveState, composite }) {
     if (!steps.length) return;
     const name = window.prompt('Action name', 'Action ' + (saved.length + 1));
     if (name == null) return;
-    saved.push({ name: name.trim() || ('Action ' + (saved.length + 1)), steps: steps.map((s) => ({ id: s.id, args: s.args })) });
+    saved.push({ name: name.trim() || ('Action ' + (saved.length + 1)), steps: steps.map((s) => ({ id: s.id, args: cloneArgs(s.args) })) });
     persist(); renderSaved();
   });
   panel.querySelector('.ge-actions-close').addEventListener('click', () => { panel.style.display = 'none'; });
 
   renderSteps();
   renderSaved();
+
+  // wireActions runs per editor open; the recorder subscription (onCommandRun)
+  // outlives the panel if the editor is torn down mid-recording, leaking the
+  // closure (and silently capturing commands into a detached panel). Watch for
+  // the panel being detached and stop recording — setRecording(false) calls
+  // unsub() — then stop observing. Mirrors wire-menu-bar.js's lifecycle teardown.
+  if (typeof MutationObserver !== 'undefined') {
+    const observer = new MutationObserver(() => {
+      if (!panel.isConnected) {
+        if (recording) setRecording(false);
+        else if (unsub) { unsub(); unsub = null; }
+        observer.disconnect();
+      }
+    });
+    observer.observe(document, { childList: true, subtree: true });
+  }
 }

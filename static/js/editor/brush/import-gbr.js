@@ -20,7 +20,7 @@ export function parseGBR(arrayBuffer) {
     const bpp = dv.getUint32(16);
     if (!width || !height || width > 4096 || height > 4096) return null;
     if (bpp !== 1 && bpp !== 4) return null;
-    const spacingPct = version >= 2 ? dv.getUint32(24) : 0;
+    const spacingPct = version >= 2 && dv.byteLength >= 28 ? dv.getUint32(24) : 0;
     const need = width * height * bpp;
     if (headerSize + need > dv.byteLength) return null;
     const src = new Uint8Array(arrayBuffer, headerSize, need);
@@ -31,7 +31,8 @@ export function parseGBR(arrayBuffer) {
     const out = ctx.createImageData(width, height);
     const o = out.data;
     if (bpp === 1) {
-      for (let i = 0, j = 0; i < width * height; i++, j += 4) {
+      const px = width * height;
+      for (let i = 0, j = 0; i < px; i++, j += 4) {
         o[j] = 255; o[j + 1] = 255; o[j + 2] = 255; o[j + 3] = 255 - src[i];
       }
     } else {

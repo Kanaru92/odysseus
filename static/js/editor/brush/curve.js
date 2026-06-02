@@ -9,7 +9,13 @@
 const RES = 256;
 
 export function makeCurve(points) {
-  const pts = (points && points.length >= 2 ? points.slice() : [[0, 0], [1, 1]])
+  // Keep only control points with finite x/y, clamped into [0,1]. A NaN/out-of-
+  // range coordinate would otherwise poison the sort and bake NaN into the LUT,
+  // permanently corrupting every sample().
+  const clean = (points && points.length ? points : [])
+    .filter((p) => p && Number.isFinite(p[0]) && Number.isFinite(p[1]))
+    .map((p) => [Math.max(0, Math.min(1, p[0])), Math.max(0, Math.min(1, p[1]))]);
+  const pts = (clean.length >= 2 ? clean : [[0, 0], [1, 1]])
     .sort((a, b) => a[0] - b[0]);
   const lut = new Float32Array(RES + 1);
   let j = 0;
@@ -23,6 +29,9 @@ export function makeCurve(points) {
   }
   return {
     sample(x) {
+      // A non-finite sensor value (e.g. a NaN raw pressure) must not propagate:
+      // Math.min/max pass NaN through, so guard before indexing the LUT.
+      if (!Number.isFinite(x)) return lut[0];
       const xi = Math.max(0, Math.min(1, x)) * RES;
       const i = Math.floor(xi);
       if (i >= RES) return lut[RES];

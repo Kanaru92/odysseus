@@ -43,7 +43,7 @@ export function lerpInfo(from, to, t) {
   const lerp = (a, b) => a + (b - a) * t;
   return {
     pressure: lerp(from.pressure != null ? from.pressure : 1, to.pressure != null ? to.pressure : 1),
-    speed: to.speed != null ? to.speed : 0,
+    speed: lerp(from.speed != null ? from.speed : 0, to.speed != null ? to.speed : 0),
     tilt: lerp(from.tilt != null ? from.tilt : 0, to.tilt != null ? to.tilt : 0),
     random: Math.random(),
   };

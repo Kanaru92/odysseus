@@ -18,11 +18,15 @@ export async function parseBrushBundle(arrayBuffer) {
   const files = await unzip(arrayBuffer);
   if (!files) return null;
   const findBy = (re) => { for (const k of files.keys()) if (re.test(k)) return files.get(k); return null; };
-  const shapeBytes = findBy(/(^|\/)shape\.png$/i) || findBy(/shape.*\.png$/i) || findBy(/\.png$/i);
-  if (!shapeBytes) return null;
   const grainBytes = findBy(/(^|\/)grain\.png$/i) || findBy(/grain.*\.png$/i);
-  const shape = await toBitmap(shapeBytes);
+  // Generic `.png` fallback must not pick up the grain texture as the tip.
+  const findShape = (re) => { for (const k of files.keys()) if (re.test(k) && files.get(k) !== grainBytes) return files.get(k); return null; };
+  const shapeBytes = findShape(/(^|\/)shape\.png$/i) || findShape(/shape.*\.png$/i) || findShape(/\.png$/i);
+  if (!shapeBytes) return null;
+  const [shape, grain] = await Promise.all([
+    toBitmap(shapeBytes),
+    grainBytes ? toBitmap(grainBytes) : Promise.resolve(null),
+  ]);
   if (!shape) return null;
-  const grain = grainBytes ? await toBitmap(grainBytes) : null;
   return { shape, grain, name: 'Imported Brush' };
 }

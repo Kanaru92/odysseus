@@ -11,8 +11,13 @@
  */
 const hexToRgb = (h) => {
   let s = String(h || '#000000').replace('#', '');
-  if (s.length === 3) s = s.split('').map((c) => c + c).join('');
-  const n = parseInt(s, 16) || 0;
+  // Expand 3/4-char shorthand (#rgb / #rgba) to full per-channel hex.
+  if (s.length === 3 || s.length === 4) s = s.split('').map((c) => c + c).join('');
+  // Only the leading RGB bytes matter; drop any alpha (#rrggbbaa) and reject
+  // lengths that can't supply 6 hex digits.
+  if (s.length < 6) return [0, 0, 0];
+  const n = parseInt(s.slice(0, 6), 16);
+  if (!Number.isFinite(n)) return [0, 0, 0];
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
 };
 const toHex2 = (v) => ('0' + Math.max(0, Math.min(255, Math.round(v))).toString(16)).slice(-2);

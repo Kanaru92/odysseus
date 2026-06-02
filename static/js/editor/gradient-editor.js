@@ -49,15 +49,15 @@ function sampleAt(stops, p) {
       return { color: col, alpha: (s[i].alpha ?? 1) * (1 - t) + (s[i + 1].alpha ?? 1) * t };
     }
   }
-  return { color: s[0].color, alpha: 1 };
+  return { color: s[0].color, alpha: s[0].alpha ?? 1 };
 }
 
 export function createGradientEditor() {
   let host = null;
   let selected = 0;
 
-  function cssGradient() {
-    const s = [...ensureGradStops()].sort((a, b) => a.pos - b.pos);
+  function cssGradient(srcStops) {
+    const s = [...(srcStops || ensureGradStops())].sort((a, b) => a.pos - b.pos);
     return 'linear-gradient(90deg,' + s.map((st) => `${rgbaOf(st)} ${Math.round(st.pos * 100)}%`).join(',') + ')';
   }
 
@@ -130,7 +130,7 @@ export function createGradientEditor() {
 
     // Repaint only the bar background during a drag (cheap; full render on drop).
     function paintBarOnly() {
-      bar.style.backgroundImage = cssGradient() + ',repeating-conic-gradient(#888 0% 25%, #bbb 0% 50%)';
+      bar.style.backgroundImage = cssGradient(stops) + ',repeating-conic-gradient(#888 0% 25%, #bbb 0% 50%)';
       stops.forEach((s2, j) => { const h = barWrap.querySelector(`[data-stop-idx="${j}"]`); if (h) h.style.left = (s2.pos * 100) + '%'; });
     }
 

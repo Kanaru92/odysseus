@@ -26,6 +26,7 @@ export async function unzip(arrayBuffer) {
     const cdCount = dv.getUint16(eocd + 10, true);
     let p = dv.getUint32(eocd + 16, true); // central directory offset
     const out = new Map();
+    const decoder = new TextDecoder();
     for (let n = 0; n < cdCount; n++) {
       if (p + 46 > len || dv.getUint32(p, true) !== 0x02014b50) break;
       const method = dv.getUint16(p + 10, true);
@@ -34,17 +35,21 @@ export async function unzip(arrayBuffer) {
       const extraLen = dv.getUint16(p + 30, true);
       const commentLen = dv.getUint16(p + 32, true);
       const localOff = dv.getUint32(p + 42, true);
-      const name = new TextDecoder().decode(u8.subarray(p + 46, p + 46 + nameLen));
+      const name = decoder.decode(u8.subarray(p + 46, p + 46 + nameLen));
       // Local header: data starts after its own (possibly different) name/extra.
-      if (dv.getUint32(localOff, true) === 0x04034b50) {
+      // Bounds-check the local header before reading it so a single malformed
+      // entry skips itself instead of throwing and discarding the whole archive.
+      if (localOff >= 0 && localOff + 30 <= len && dv.getUint32(localOff, true) === 0x04034b50) {
         const lhNameLen = dv.getUint16(localOff + 26, true);
         const lhExtraLen = dv.getUint16(localOff + 28, true);
         const dataOff = localOff + 30 + lhNameLen + lhExtraLen;
+        if (dataOff <= len && dataOff + compSize <= len) {
         const comp = u8.subarray(dataOff, dataOff + compSize);
         let data = null;
         if (method === 0) data = comp.slice();
         else if (method === 8) { try { data = await inflateRaw(comp); } catch { data = null; } }
         if (data) out.set(name, data);
+        }
       }
       p += 46 + nameLen + extraLen + commentLen;
     }

@@ -91,20 +91,30 @@ export function createApplyImageTool({
       const data = await res.json();
       if (data.error) throw new Error(data.error);
       if (!data.image) throw new Error('No image returned');
-      const img = new Image();
-      img.onload = () => {
-        if (!state.editorOpen) return; // user closed mid-decode (v2 review HIGH-4)
-        saveState();
-        const layer = createLayer(layerName, state.imgWidth, state.imgHeight);
-        layer.ctx.drawImage(img, 0, 0);
-        state.layers.push(layer);
-        state.activeLayerId = layer.id;
-        composite();
-        renderLayerPanel();
-        if (uiModule) uiModule.showToast(layerName + ' complete', 4500);
-      };
-      img.onerror = () => { if (uiModule) uiModule.showToast('Failed to load result', 6000); };
-      img.src = 'data:image/png;base64,' + data.image;
+      // Await the decode before the finally cleanup runs, so the button/spinner
+      // aren't re-enabled (and the "complete" toast doesn't fire) while the
+      // result is still decoding — which would let a second click start a
+      // duplicate request mid-decode.
+      const img = await new Promise((resolve, reject) => {
+        const im = new Image();
+        im.onload = () => resolve(im);
+        im.onerror = () => reject(new Error('Failed to load result'));
+        im.src = 'data:image/png;base64,' + data.image;
+      });
+      if (!state.editorOpen) return; // user closed mid-decode (v2 review HIGH-4)
+      saveState();
+      // Size the layer to the actual returned image rather than hardcoding the
+      // document size — a result whose dimensions differ (e.g. an upscaled
+      // return) would otherwise be cropped or only partially fill the layer.
+      const layerW = img.naturalWidth || img.width || state.imgWidth;
+      const layerH = img.naturalHeight || img.height || state.imgHeight;
+      const layer = createLayer(layerName, layerW, layerH);
+      layer.ctx.drawImage(img, 0, 0);
+      state.layers.push(layer);
+      state.activeLayerId = layer.id;
+      composite();
+      renderLayerPanel();
+      if (uiModule) uiModule.showToast(layerName + ' complete', 4500);
     } catch (e) {
       // Detect known failure modes and surface an action-toast.
       const msg = (e?.message || '').toLowerCase();
