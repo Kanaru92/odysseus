@@ -21,6 +21,9 @@ export const state = {
   transformActive: false,
   // Last committed (non-silent) transform's RELATIVE params, for Transform Again.
   lastTransform: null,
+  // Saved selections (name -> {canvas, layerId}) for save/load-selection-to-channel.
+  selectionChannels: {},
+  selectionChannelSeq: 0,
   transformLayer: null,
   transformOrigW: 0,
   transformOrigH: 0,

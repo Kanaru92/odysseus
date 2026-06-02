@@ -184,4 +184,36 @@ export function wireSelectionControls({
   // Live tolerance preview (just opacity-tracking like sharpen).
   const wandTolPrev = document.getElementById('ge-wand-tol-preview');
   if (wandTolPrev) wandTolPrev.style.opacity = (state.wandTolerance / 100).toFixed(2);
+
+  // ── Save / Load selection to a named channel ──
+  const _refreshSelChannels = () => {
+    const sel = document.getElementById('ge-sel-channel');
+    if (!sel) return;
+    const names = Object.keys(state.selectionChannels || {});
+    sel.innerHTML = names.length ? names.map((n) => `<option value="${n}">${n}</option>`).join('') : '<option value="">(no saved selections)</option>';
+  };
+  document.getElementById('ge-sel-save')?.addEventListener('click', () => {
+    if (!state.wandMask) { uiModule?.showToast?.('Make a selection first'); return; }
+    state.selectionChannels = state.selectionChannels || {};
+    const n = 'Selection ' + (state.selectionChannelSeq = (state.selectionChannelSeq || 0) + 1);
+    const c = document.createElement('canvas'); c.width = state.wandMask.width; c.height = state.wandMask.height;
+    c.getContext('2d').drawImage(state.wandMask, 0, 0);
+    state.selectionChannels[n] = { canvas: c, layerId: state.wandLayerId || state.activeLayerId };
+    _refreshSelChannels();
+    const sel = document.getElementById('ge-sel-channel'); if (sel) sel.value = n;
+    uiModule?.showToast?.('Saved ' + n);
+  });
+  document.getElementById('ge-sel-load')?.addEventListener('click', () => {
+    const sel = document.getElementById('ge-sel-channel');
+    const n = sel && sel.value;
+    const ch = n && state.selectionChannels && state.selectionChannels[n];
+    if (!ch) { uiModule?.showToast?.('No saved selection to load'); return; }
+    const c = document.createElement('canvas'); c.width = ch.canvas.width; c.height = ch.canvas.height;
+    c.getContext('2d').drawImage(ch.canvas, 0, 0);
+    state.wandMask = c; state.wandLayerId = ch.layerId || state.activeLayerId;
+    state.wandMask._ants = null; state.wandMaskVisible = true;
+    composite();
+    uiModule?.showToast?.('Loaded ' + n);
+  });
+  _refreshSelChannels();
 }

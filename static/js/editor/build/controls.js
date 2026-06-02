@@ -208,6 +208,11 @@ export function controlsHTML({ color, brushSize, wandTolerance }) {
           To Mask
         </button>
       </div>
+      <div class="ge-control-row ge-actions" style="margin-top:4px;gap:4px;align-items:center;">
+        <select id="ge-sel-channel" title="Saved selections" style="flex:1;min-width:0;font-size:11px;background:#1c1c1f;color:#eee;border:1px solid #444;border-radius:4px;padding:2px;"><option value="">(no saved selections)</option></select>
+        <button class="ge-btn ge-btn-sm" id="ge-sel-save" title="Save the current selection to a channel">Save Sel</button>
+        <button class="ge-btn ge-btn-sm" id="ge-sel-load" title="Load the chosen saved selection">Load Sel</button>
+      </div>
       <p style="font-size:9px;opacity:0.4;margin:4px 0 0;">Click a region to select similar pixels. Shift+click to add, Alt+click to subtract. Esc to clear.</p>
     </div>
     <div class="ge-inpaint-section" id="ge-inpaint-section" style="display:none;">
