@@ -201,9 +201,16 @@ if (!window.__galleryEditEscHardGuardInstalled) {
     if (window.__galleryEditLive || _galleryEditMounted()) {
       // This guard runs first (window capture) and otherwise swallows Escape
       // entirely, so any Escape-dismissible editor affordance has to be handled
-      // right here: cancel an in-progress polygonal lasso, or close the brush
-      // quick-pick popup.
-      if (_activePromptClose) { try { _activePromptClose(); } catch {} }
+      // right here: commit an open Type edit, cancel an in-progress polygonal
+      // lasso, or close the brush quick-pick popup. (The text editor's own
+      // bubble-phase keydown never sees Escape because this capture guard
+      // preempts it, so the commit has to live here.)
+      if (state.textEditingLayerId) {
+        const _tl = state.layers.find((l) => l.id === state.textEditingLayerId);
+        const _inp = document.getElementById('ge-text-input');
+        if (_tl && _inp) { try { _commitText(_tl, _inp); } catch {} }
+      }
+      else if (_activePromptClose) { try { _activePromptClose(); } catch {} }
       else if (state.polyLassoActive) { try { _polyLassoTool.cancel(); } catch {} }
       else if (state.magLassoActive) { try { _magLassoTool.cancel(); } catch {} }
       else if (_brushQuickPick && _brushQuickPick.isOpen()) { try { _brushQuickPick.close(); } catch {} }
@@ -2176,8 +2183,11 @@ function _beginDraw(e) {
   if (state.tool === 'maglasso') return _magLassoTool.click(e);
   // Ruler — measure overlay; no layer needed (non-destructive).
   if (state.tool === 'ruler') return _rulerTool.begin(e);
-  // Text / Type — click places an editable text layer.
-  if (state.tool === 'text') { _placeTextLayer(e); return; }
+  // Text / Type — click places an editable text layer. preventDefault so the
+  // browser's default mousedown focus behaviour (canvas isn't focusable → focus
+  // falls to <body>) doesn't immediately blur the text editor we focus below,
+  // which would empty-commit + discard the new layer before the user can type.
+  if (state.tool === 'text') { e.preventDefault(); _placeTextLayer(e); return; }
   // Quick Selection — drag-flood select. Begins the drag here.
   if (state.tool === 'quickselect') {
     if (!(activeLayer() || _activeParentLayer())) return;
