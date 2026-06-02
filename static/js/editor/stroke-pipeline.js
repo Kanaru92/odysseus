@@ -54,6 +54,126 @@ function getBrushEngine() {
 }
 
 export function createStrokePipeline({ activeLayer, getActiveMaskLayer, composite }) {
+  // Resolve which canvas/offset a brush-engine stroke targets for the CURRENT
+  // active layer + tool, mirroring the routing in strokeTo. Returns null when
+  // the brush-engine path doesn't apply (mask paint / inpaint / no layer), so
+  // callers (strokeTo's fast-path and the stroke-end drain) stay in agreement.
+  function resolveBrushTarget() {
+    const layer = activeLayer();
+    if (!layer) return null;
+    if (!(state.tool === 'brush' || state.tool === 'eraser')) return null;
+    const activeMask = getActiveMaskLayer();
+    const editingLayerMask = !!(state.layerMaskEdit && layer.layerMask);
+    const paintingMask = editingLayerMask || !!activeMask;
+    if (paintingMask) return null; // mask paint uses the legacy line stroke
+    const off = state.layerOffsets.get(layer.id) || { x: 0, y: 0 };
+    return { layer, ctx: layer.ctx, off };
+  }
+
+  // Build the per-stroke brush-engine runtime object (size/opacity/flow/color/
+  // dynamics flags) from editor state, at a given effective size. Pulled out of
+  // strokeTo so the stroke-end drain can re-emit dabs with the same look.
+  function buildBrushRuntime(layer, effSize, tiltMag) {
+    const isEraser = state.tool === 'eraser';
+    return {
+      size: effSize,
+      opacity: (isEraser ? state.eraserOpacity : state.brushOpacity) / 100,
+      flow: (isEraser ? state.eraserFlow : state.brushFlow) / 100,
+      color: isEraser ? '#000000' : state.color,
+      hardness: Math.max(0, Math.min(1, 1 - (isEraser ? state.eraserSoftness : state.brushSoftness) / 300)),
+      symmetry: state.brushSymmetry || 'none',
+      symN: state.brushSymmetryN || 6,
+      flowPressure: !isEraser && !!state.brushPressureOpacity,
+      angleFollow: !isEraser && !!state.brushAngleFollow,
+      tiltAngle: !isEraser && !!state.brushTiltAngle,
+      tiltAz: Math.atan2(state.tiltY || 0, state.tiltX || 0),
+      brushBlend: isEraser ? 'source-over' : (state.brushBlendMode || 'source-over'),
+      colorJitter: isEraser ? 0 : (state.brushColorJitter || 0),
+      sizeJitter: isEraser ? 0 : (state.brushSizeJitter || 0),
+      flowJitter: isEraser ? 0 : (state.brushFlowJitter || 0),
+      lockAlpha: !isEraser && !!(layer && layer.lockAlpha),
+      erase: isEraser,
+    };
+  }
+
+  // "Catch-up on Stroke End" — with the stabilizer on, the painted brush
+  // (state.lastX/Y, the smoothed position) trails the true cursor. On lift we
+  // drain that remaining tail: step the smoothing EMA from the current smoothed
+  // position to the captured raw release point (state.rawX/Y), emitting brush
+  // segments along the natural decelerating curve so the stroke actually
+  // reaches where the pen lifted instead of falling short.
+  //
+  // The engine's per-segment dab spacing (its `residual`) is preserved across
+  // these calls, so dabs stay correctly spaced and the final dab is NOT
+  // double-painted. Bounded by a hard iteration cap so a pathological gap can't
+  // spin forever; the last step snaps exactly to the raw point.
+  //
+  // No-op (and behaviour unchanged) unless catch-up is enabled, smoothing is
+  // active, the brush engine is in use, the tool is brush/eraser on a pixel
+  // layer, Pulled-String mode is off, and a real gap exists. Returns the number
+  // of drain segments emitted (0 = nothing drained).
+  function drainSmoothing() {
+    if (!state.brushSmoothCatchupEnd) return 0;       // disabled → leave the tail short
+    if (state.brushSmoothPull) return 0;              // Pulled-String trails by design
+    if (!state.useBrushEngine) return 0;
+    if (!(state.brushSmoothing > 0)) return 0;        // no smoothing → already at the cursor
+    if (state.rawX == null || state.rawY == null) return 0;
+    const tgt = resolveBrushTarget();
+    if (!tgt) return 0;
+    const { layer, ctx, off } = tgt;
+
+    const rawX = state.rawX, rawY = state.rawY;
+    // Gap between the smoothed/painted position and the true release point.
+    if (Math.abs(rawX - state.smoothX) <= 0.5 && Math.abs(rawY - state.smoothY) <= 0.5) return 0;
+
+    let eng;
+    try { eng = getBrushEngine(); } catch { return 0; }
+    // If no stroke is in progress in the engine, there's nothing to extend.
+    // (strokeTo's first call does eng.begin(); the drain only ADDS to it.)
+
+    // Same smoothing alpha strokeTo uses, so the drained tail decelerates the
+    // same way the live stroke did. Floor it so the EMA can't asymptote forever.
+    const sm = Math.max(0, Math.min(95, state.brushSmoothing || 0)) / 100;
+    let sa = 1 - sm * 0.92;
+    if (state.brushSmoothAdjustZoom && (state.zoom || 1) > 1) sa = 1 - (1 - sa) / Math.sqrt(state.zoom);
+    sa = Math.max(0.12, Math.min(1, sa)); // guarantee forward progress per step
+
+    const pr = samplePressure(state.lastPressure != null ? state.lastPressure : (state.pressure != null ? state.pressure : 1));
+    const tiltMag = Math.min(1, Math.hypot(state.tiltX || 0, state.tiltY || 0) / 90);
+    let effSize = state.brushSize;
+    if (state.brushTiltSize && tiltMag > 0) effSize *= (1 + tiltMag);
+    const rt = buildBrushRuntime(layer, effSize, tiltMag);
+
+    const SNAP = 0.5;          // close enough → snap to raw and stop
+    const MAX_ITERS = 256;     // hard cap so a huge gap can't loop forever
+    let emitted = 0;
+    for (let i = 0; i < MAX_ITERS; i++) {
+      const fromX = state.smoothX, fromY = state.smoothY;
+      const remX = rawX - fromX, remY = rawY - fromY;
+      const rem = Math.hypot(remX, remY);
+      if (rem <= SNAP) break;
+      // Step the EMA toward raw; on the final approach snap exactly so the
+      // stroke lands on the lift point (no perpetual fractional shortfall).
+      let nx = fromX + remX * sa;
+      let ny = fromY + remY * sa;
+      const stepped = Math.hypot(nx - fromX, ny - fromY);
+      if (rem - stepped <= SNAP) { nx = rawX; ny = rawY; }
+      state.smoothX = nx; state.smoothY = ny;
+      eng.segment(
+        ctx,
+        { x: state.lastX - off.x, y: state.lastY - off.y, pressure: pr, tilt: tiltMag },
+        { x: nx - off.x, y: ny - off.y, pressure: pr, tilt: tiltMag },
+        rt,
+      );
+      state.lastX = nx;
+      state.lastY = ny;
+      emitted++;
+      if (nx === rawX && ny === rawY) break;
+    }
+    if (emitted) composite();
+    return emitted;
+  }
+
   function cloneStrokeTo(x, y, layer) {
     if (!state.cloneSourceSnapshot) return;
     const off = state.layerOffsets.get(layer.id) || { x: 0, y: 0 };
@@ -341,5 +461,10 @@ export function createStrokePipeline({ activeLayer, getActiveMaskLayer, composit
     composite();
   }
 
-  return { strokeTo, cloneStrokeTo };
+  // Publish the stroke-end drain on shared state so the canvas event layer
+  // (which only receives the endDraw callback) can run it on lift WITHOUT a new
+  // dependency wired through the editor. Idempotent across repeated pipelines.
+  state.drainSmoothing = drainSmoothing;
+
+  return { strokeTo, cloneStrokeTo, drainSmoothing };
 }

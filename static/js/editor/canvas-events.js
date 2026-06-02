@@ -36,7 +36,20 @@
  */
 import { state } from './state.js';
 
-export function wireCanvasEvents({ canvasArea, beginDraw, continueDraw, endDraw, updateBrushCursor, syncZoomControls }) {
+export function wireCanvasEvents({ canvasArea, beginDraw, continueDraw, endDraw: rawEndDraw, updateBrushCursor, syncZoomControls }) {
+  // "Catch-up on Stroke End": before finalizing a stroke, drain the smoothing
+  // tail so a smoothed stroke reaches the point where the pointer lifted instead
+  // of stopping short of it. The stroke pipeline publishes `state.drainSmoothing`
+  // (a no-op when catch-up is off / smoothing is 0 / not a brush stroke), so the
+  // drain runs here on every lift path (mouse / touch) ahead of the real endDraw.
+  // It moves state.lastX/Y onto the raw release point, so any legacy catch-up in
+  // endDraw then has nothing left to do.
+  const endDraw = (e) => {
+    if (state.drawing && typeof state.drainSmoothing === 'function') {
+      try { state.drainSmoothing(); } catch {}
+    }
+    return rawEndDraw(e);
+  };
   // Mouse — mousedown stays on the canvas; mousemove/up are bound to
   // the WINDOW so a drag can continue (and end) past the canvas edge.
   // Critical for the Resize tool where users overshoot.
