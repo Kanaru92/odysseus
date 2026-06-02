@@ -271,7 +271,12 @@ function _registerDocClickAway(handler) {
 // sample anchor without a keyboard Alt modifier.
 
 // Undo/Redo
-const MAX_HISTORY = 20;
+// History snapshots are tile-deduplicated (see tileFor/_histTiles): unchanged
+// tiles are shared by reference across states, so memory scales with the unique
+// tiles touched, not states × full canvas. That makes deep history cheap — keep
+// a high cap so you can step back to the start of a normal session; only very
+// long sessions hit the ceiling.
+const MAX_HISTORY = 5000;
 
 /** Get the selected AI endpoint+model. Returns { endpoint, model }.
  * Dropdown values are encoded as "<base_url>::<model_id>" so users can pick

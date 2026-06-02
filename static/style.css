@@ -23839,7 +23839,7 @@ input.settings-select::placeholder { color: color-mix(in srgb, var(--fg) 35%, tr
   flex-shrink: 0;
 }
 .ge-history-close:hover { color: var(--fg); }
-.ge-history-list { overflow-y: auto; padding: 4px 0; }
+.ge-history-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 4px 0; }
 .ge-history-row {
   display: flex; align-items: center; gap: 8px;
   width: 100%;
@@ -25095,6 +25095,10 @@ button .spinner-whirlpool {
   padding: 0;
 }
 .ge-layer-item {
+  /* Anchor the absolutely-positioned per-row action strip to THIS row. Without
+     it the strip anchored to .ge-right-panel (the nearest positioned ancestor)
+     and floated at the panel's mid-height — over the brush/Rotate&Flip controls. */
+  position: relative;
   display: flex;
   align-items: center;
   gap: 4px;
