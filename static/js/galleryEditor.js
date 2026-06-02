@@ -726,6 +726,105 @@ function _toggleMaskView() {
   state.maskOverlay = (state.maskOverlay === layer.id) ? null : layer.id;
   composite();
 }
+// Apply (bake) the layer mask into the pixels and drop the mask. A disabled
+// mask bakes nothing (pixels are already unmasked) — it's just discarded.
+function _bakeLayerMask() {
+  const layer = activeLayer();
+  if (!layer || !layer.layerMask) return;
+  _saveState('Apply layer mask');
+  if (layer.maskEnabled !== false) {
+    const baked = _applyLayerMask(layer.canvas, layer.layerMask);
+    layer.ctx.clearRect(0, 0, layer.canvas.width, layer.canvas.height);
+    layer.ctx.drawImage(baked, 0, 0);
+  }
+  layer.layerMask = null;
+  delete layer.maskEnabled;
+  state.layerMaskEdit = false;
+  if (state.maskOverlay === layer.id) state.maskOverlay = null;
+  _syncLayerMaskBtn();
+  composite();
+  _renderLayerPanel();
+}
+// Invert the mask's tones (reveal<->hide) — PS Ctrl+I on a mask.
+function _invertLayerMask() {
+  const layer = activeLayer();
+  if (!layer || !layer.layerMask) return;
+  _saveState('Invert layer mask');
+  const m = layer.layerMask, mc = m.getContext('2d');
+  let img; try { img = mc.getImageData(0, 0, m.width, m.height); } catch { return; }
+  const d = img.data;
+  for (let i = 0; i < d.length; i += 4) { d[i] = 255 - d[i]; d[i + 1] = 255 - d[i + 1]; d[i + 2] = 255 - d[i + 2]; }
+  mc.putImageData(img, 0, 0);
+  composite();
+  _renderLayerPanel();
+}
+// Build (or replace) the active layer's mask from the current selection —
+// white inside the selection (reveal), black outside (hide). Uses the raster
+// selection mask (wand / marquee+modifier / quick-select / colour-range).
+function _maskFromSelection() {
+  const layer = activeLayer();
+  if (!layer) return;
+  if (!state.wandMask) { uiModule?.showToast?.('Make a selection first (wand / quick-select / colour-range)'); return; }
+  _saveState(layer.layerMask ? 'Mask from selection' : 'Add mask from selection');
+  const m = document.createElement('canvas');
+  m.width = layer.canvas.width; m.height = layer.canvas.height;
+  const mc = m.getContext('2d');
+  mc.fillStyle = '#000'; mc.fillRect(0, 0, m.width, m.height); // hide everything
+  const off = state.layerOffsets.get(layer.id) || { x: 0, y: 0 };
+  const sel = document.createElement('canvas');
+  sel.width = m.width; sel.height = m.height;
+  const sc = sel.getContext('2d');
+  sc.drawImage(state.wandMask, -off.x, -off.y);              // selection coverage in alpha
+  sc.globalCompositeOperation = 'source-in';
+  sc.fillStyle = '#fff'; sc.fillRect(0, 0, sel.width, sel.height); // white where selected
+  mc.drawImage(sel, 0, 0);
+  layer.layerMask = m;
+  delete layer.maskEnabled;
+  _syncLayerMaskBtn();
+  composite();
+  _renderLayerPanel();
+}
+// Small right-click mask menu (Edit / Disable / View / Invert / Apply / From
+// Selection / Delete) — the PS "right-click the mask" affordance. Anchored at
+// the cursor; closes on outside click.
+function _openMaskMenu(x, y) {
+  document.getElementById('ge-mask-menu')?.remove();
+  const layer = activeLayer();
+  if (!layer) return;
+  const has = !!layer.layerMask;
+  const disabled = layer.maskEnabled === false;
+  const menu = document.createElement('div');
+  menu.id = 'ge-mask-menu';
+  menu.style.cssText = `position:fixed;left:${x}px;top:${y}px;z-index:300;background:#2a2a2e;border:1px solid rgba(255,255,255,0.16);border-radius:6px;padding:4px;box-shadow:0 10px 28px rgba(0,0,0,0.5);font-size:12px;color:#eee;min-width:172px;`;
+  const items = has ? [
+    [state.layerMaskEdit ? 'Edit Pixels' : 'Edit Mask', () => { state.layerMaskEdit = !state.layerMaskEdit; _syncLayerMaskBtn(); composite(); _renderLayerPanel(); }],
+    [disabled ? 'Enable Mask' : 'Disable Mask', () => { layer.maskEnabled = disabled; composite(); _renderLayerPanel(); }],
+    [state.maskOverlay === layer.id ? 'Hide Mask Overlay' : 'View Mask  \\', () => _toggleMaskView()],
+    ['Invert Mask', () => _invertLayerMask()],
+    ['Apply Mask', () => _bakeLayerMask()],
+    ['Mask From Selection', () => _maskFromSelection()],
+    ['Delete Mask', () => _deleteLayerMask()],
+  ] : [
+    ['Add Layer Mask', () => _toggleLayerMask()],
+    ['Mask From Selection', () => _maskFromSelection()],
+  ];
+  for (const [label, fn] of items) {
+    const b = document.createElement('div');
+    b.textContent = label;
+    b.style.cssText = 'padding:5px 10px;border-radius:4px;cursor:pointer;white-space:nowrap;';
+    b.addEventListener('mouseenter', () => { b.style.background = 'rgba(255,255,255,0.10)'; });
+    b.addEventListener('mouseleave', () => { b.style.background = 'none'; });
+    b.addEventListener('click', () => { menu.remove(); fn(); });
+    menu.appendChild(b);
+  }
+  document.body.appendChild(menu);
+  // Keep on-screen if opened near the right/bottom edge.
+  const r = menu.getBoundingClientRect();
+  if (r.right > window.innerWidth) menu.style.left = Math.max(4, window.innerWidth - r.width - 4) + 'px';
+  if (r.bottom > window.innerHeight) menu.style.top = Math.max(4, window.innerHeight - r.height - 4) + 'px';
+  const close = (ev) => { if (!menu.contains(ev.target)) { menu.remove(); document.removeEventListener('pointerdown', close, true); } };
+  setTimeout(() => document.addEventListener('pointerdown', close, true), 0);
+}
 // Reflect mask-edit state on the header button (active = currently painting the mask).
 function _syncLayerMaskBtn() {
   const btn = document.getElementById('ge-layer-mask');
@@ -4887,7 +4986,7 @@ function _buildEditor(container) {
   // Layer mask button: click = add / toggle editing; right-click = delete.
   const _maskBtn = document.getElementById('ge-layer-mask');
   _maskBtn?.addEventListener('click', () => _toggleLayerMask());
-  _maskBtn?.addEventListener('contextmenu', (e) => { e.preventDefault(); _deleteLayerMask(); });
+  _maskBtn?.addEventListener('contextmenu', (e) => { e.preventDefault(); _openMaskMenu(e.clientX, e.clientY); });
 
   // Layer effects (Blending Options) button → opens the fx popup.
   document.getElementById('ge-layer-fx')?.addEventListener('click', () => _openFxMenu());

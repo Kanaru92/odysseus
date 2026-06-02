@@ -247,6 +247,14 @@ export function createLayerPanelRenderer(deps) {
       composite();
       render();
     });
+    // Right-click → the full mask menu (Edit/Disable/View/Invert/Apply/From
+    // Selection/Delete), re-dispatched to the header button that owns it.
+    box.addEventListener('contextmenu', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      state.activeLayerId = layer.id;
+      document.getElementById('ge-layer-mask')?.dispatchEvent(
+        new MouseEvent('contextmenu', { bubbles: true, clientX: e.clientX, clientY: e.clientY }));
+    });
     return box;
   }
 
