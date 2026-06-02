@@ -175,6 +175,12 @@ export function controlsHTML({ color, brushSize, wandTolerance }) {
         <label>Edge stroke <span id="ge-wand-grow-label">0px</span></label>
         <input type="range" id="ge-wand-grow" min="-40" max="40" value="0" title="Expand (+) or contract (−) the selection before baking." />
       </div>
+      <div class="ge-control-row ge-actions" id="ge-wand-refine-ops" style="margin-top:2px;flex-wrap:wrap;gap:var(--ge-s2,4px);" title="Refine the active selection (Select & Mask).">
+        <button type="button" class="ge-btn ge-btn-sm" id="ge-wand-smooth" title="Smooth — round off jagged/staircased selection edges">Smooth</button>
+        <button type="button" class="ge-btn ge-btn-sm" id="ge-wand-contrast" title="Contrast — harden the selection edge">Contrast</button>
+        <button type="button" class="ge-btn ge-btn-sm" id="ge-wand-shift-in" title="Shift the selection edge inward (contract 2px)">Shift −</button>
+        <button type="button" class="ge-btn ge-btn-sm" id="ge-wand-shift-out" title="Shift the selection edge outward (expand 2px)">Shift +</button>
+      </div>
       <div class="ge-control-row ge-actions" style="margin-top:4px;flex-wrap:wrap;">
         <button class="ge-btn ge-btn-sm ge-mask-vis-btn visible" id="ge-wand-vis" title="Hide selection overlay" aria-label="Toggle selection overlay">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>

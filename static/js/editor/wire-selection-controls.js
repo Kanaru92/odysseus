@@ -39,6 +39,7 @@
  * }} deps
  */
 import { state } from './state.js';
+import { refineMaskCanvas } from './selection/refine-ops.js';
 
 const EYE_OPEN = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
 const EYE_OFF  = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><line x1="8" y1="16" x2="16" y2="8"/><line x1="8" y1="8" x2="16" y2="16"/></svg>';
@@ -52,6 +53,22 @@ export function wireSelectionControls({
   buildSelectionHintMask, applyImageTool,
   uiModule,
 }) {
+  // ── Select & Mask refinements (apply a refine op to the active wand selection) ──
+  function applyWandRefine(spec, label) {
+    if (!state.wandMask) { uiModule?.showToast?.('Make a selection first (wand / quick-select / colour-range)'); return; }
+    const refined = refineMaskCanvas(state.wandMask, spec);
+    const wctx = state.wandMask.getContext('2d');
+    wctx.clearRect(0, 0, state.wandMask.width, state.wandMask.height);
+    wctx.drawImage(refined, 0, 0);
+    state.wandMask._ants = null; // invalidate the marching-ants boundary cache
+    composite();
+    uiModule?.showToast?.(label);
+  }
+  document.getElementById('ge-wand-smooth')?.addEventListener('click', () => applyWandRefine({ smoothPx: 2 }, 'Smoothed selection'));
+  document.getElementById('ge-wand-contrast')?.addEventListener('click', () => applyWandRefine({ contrast: 25 }, 'Hardened selection edge'));
+  document.getElementById('ge-wand-shift-in')?.addEventListener('click', () => applyWandRefine({ shiftPx: -2 }, 'Shifted edge inward'));
+  document.getElementById('ge-wand-shift-out')?.addEventListener('click', () => applyWandRefine({ shiftPx: 2 }, 'Shifted edge outward'));
+
   // ── Lasso section ──
   const lassoFPrev = document.getElementById('ge-lasso-feather-preview');
   function syncLassoFeather(v) {
