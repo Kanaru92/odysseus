@@ -22447,7 +22447,12 @@ input.settings-select::placeholder { color: color-mix(in srgb, var(--fg) 35%, tr
 /* Toolbar (left) */
 .ge-toolbar {
   display: flex;
-  flex-direction: column;
+  /* Column-wrap: when the tool list is taller than the editor body it spills
+     into a 2nd (3rd, …) column instead of being clipped, so every tool stays
+     reachable. The bar widens by ~40px per extra column. */
+  flex-flow: column wrap;
+  align-content: flex-start;
+  max-height: 100%;
   gap: 2px;
   /* Asymmetric horizontal padding shifts the whole column 4 px left —
      buttons, hover backgrounds, active highlight pills, and section
@@ -22455,7 +22460,8 @@ input.settings-select::placeholder { color: color-mix(in srgb, var(--fg) 35%, tr
   padding: 7px 6px 7px 2px;
   background: var(--panel);
   border-right: 1px solid var(--border);
-  width: 44px;
+  width: auto;
+  min-width: 44px;
   flex-shrink: 0;
 }
 /* Icon-only, PS-style: tool name lives in the hover tooltip (button title),
@@ -22465,6 +22471,7 @@ input.settings-select::placeholder { color: color-mix(in srgb, var(--fg) 35%, tr
   line-height: 0;
   padding: 0;
   height: 0;
+  width: 36px;
   border-top: 1px solid var(--border);
   margin: 5px 4px;
   opacity: 0.5;
@@ -22481,6 +22488,8 @@ input.settings-select::placeholder { color: color-mix(in srgb, var(--fg) 35%, tr
   gap: 2px;
   padding: 0 2px;
   height: 42px;
+  /* Fixed width so wrapped columns line up (container is width:auto now). */
+  width: 36px;
   flex-shrink: 0;
   border: none;
   background: none;
@@ -22780,16 +22789,21 @@ input.settings-select::placeholder { color: color-mix(in srgb, var(--fg) 35%, tr
   flex-direction: column;
   border-left: 1px solid var(--border);
   background: var(--panel);
-  /* The whole panel scrolls so every tool control is reachable; the
-     layers-actions row uses position:sticky to stay pinned at the
-     bottom of the viewport while scrolling. */
-  overflow-y: auto;
-  overflow-x: hidden;
+  /* Two-region split (was a single tall scroll column that buried the
+     Layers panel ~750px below the fold). The panel itself does NOT scroll;
+     the contextual tool-controls (top) scroll internally and the Layers
+     dock (bottom) stays permanently on-screen — like a pro editor's
+     persistent Layers panel. */
+  overflow: hidden;
 }
 
-/* Controls */
+/* Controls — top region: flex-fills the space above the Layers dock and
+   scrolls internally (min-height:0 lets it shrink below content height). */
 .ge-controls {
-  flex: 0 0 auto;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
   padding: 10px 10px 6px;
   border-bottom: 1px solid var(--border);
   display: flex;
@@ -24739,11 +24753,15 @@ button .spinner-whirlpool {
 
 /* Layers panel */
 .ge-layers {
-  /* Natural height now that the whole right panel scrolls — flex:1
-     would collapse the list inside a scrolling parent. */
+  /* Persistent bottom dock — always on-screen. Bounded so it can't grow
+     past ~46% of the panel; its list scrolls internally. The header and
+     action row stay fixed within the dock. */
   flex: 0 0 auto;
   display: flex;
   flex-direction: column;
+  max-height: 46%;
+  min-height: 220px;
+  overflow: hidden;
 }
 /* Vertical drag handle that sits on the LEFT edge of the right panel.
    Drag horizontally to widen / narrow the entire side panel. Slim
@@ -25068,9 +25086,11 @@ button .spinner-whirlpool {
   margin-right: 0 !important;
 }
 .ge-layers-list {
-  /* Cap the list so a huge layer stack scrolls within its own box
-     rather than pushing the whole panel arbitrarily tall. */
-  max-height: 320px;
+  /* Fills the Layers dock between its (fixed) header and action row and
+     scrolls within that box; min-height:0 lets the flex child shrink so
+     the scroll actually engages. */
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
   padding: 0;
 }
