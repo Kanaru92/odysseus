@@ -5,6 +5,79 @@
  * el.querySelector after appending.
  */
 
+import { BLEND_MODES } from '../blend-modes.js';
+
+/**
+ * Layer COLOR LABEL palette — a row tag used to visually group related
+ * layers (NOT pixel colour). `id` is the persisted token (null = no label);
+ * `css` is the swatch colour. The set mirrors the conventional 7-colour +
+ * None tagging offered by pro layers panels.
+ */
+export const LAYER_COLOR_LABELS = [
+  { id: null,     name: 'None',   css: 'transparent' },
+  { id: 'red',    name: 'Red',    css: '#d04a4a' },
+  { id: 'orange', name: 'Orange', css: '#d98a2b' },
+  { id: 'yellow', name: 'Yellow', css: '#d9c24a' },
+  { id: 'green',  name: 'Green',  css: '#5aa85a' },
+  { id: 'blue',   name: 'Blue',   css: '#4a72d0' },
+  { id: 'violet', name: 'Violet', css: '#8a5ad9' },
+  { id: 'gray',   name: 'Gray',   css: '#8a8a8a' },
+];
+
+/** CSS colour for a colour-label id, or 'transparent' for None/unknown. */
+export function cssForLayerLabel(id) {
+  const e = LAYER_COLOR_LABELS.find((l) => l.id === id);
+  return e ? e.css : 'transparent';
+}
+
+// Blend modes WITHOUT a neutral colour — the "Fill with neutral color"
+// checkbox is disabled for these (Normal/Dissolve/Hard Mix + the component
+// modes). Keys are blend-mode ids (source-over === "Normal").
+const NO_NEUTRAL_BLENDS = new Set([
+  'source-over', 'dissolve', 'hard-mix', 'hue', 'saturation', 'color', 'luminosity',
+]);
+
+// Mid-gray neutral group (the contrast modes whose identity is 50% gray).
+const GRAY_NEUTRAL = new Set([
+  'overlay', 'soft-light', 'hard-light', 'vivid-light', 'linear-light', 'pin-light',
+]);
+
+// Black-identity group (the Lighten / screen-type modes) — fill black.
+const BLACK_NEUTRAL = new Set([
+  'lighten', 'screen', 'color-dodge', 'linear-dodge', 'lighter-color',
+  // Inversion modes whose neutral is black (treated conservatively).
+  'difference', 'exclusion', 'subtract',
+]);
+
+// White-identity group (the Darken / multiply-type modes) — fill white.
+const WHITE_NEUTRAL = new Set([
+  'darken', 'multiply', 'color-burn', 'linear-burn', 'darker-color',
+  'divide', // divide neutral = white
+]);
+
+/**
+ * The neutral-fill colour for a blend mode, or null if the mode has no
+ * neutral (→ the dialog disables + unchecks the fill checkbox).
+ * @param {string} blendId  a BLEND_MODES id (source-over === Normal)
+ * @returns {('#808080'|'#000000'|'#ffffff'|null)}
+ */
+export function neutralFillFor(blendId) {
+  if (NO_NEUTRAL_BLENDS.has(blendId)) return null;
+  if (GRAY_NEUTRAL.has(blendId)) return '#808080';
+  if (BLACK_NEUTRAL.has(blendId)) return '#000000';
+  if (WHITE_NEUTRAL.has(blendId)) return '#ffffff';
+  return null;
+}
+
+/** Human label for the neutral fill colour (for the dynamic checkbox text). */
+export function neutralFillName(blendId) {
+  const c = neutralFillFor(blendId);
+  if (c === '#808080') return '50% gray';
+  if (c === '#000000') return 'black';
+  if (c === '#ffffff') return 'white';
+  return null;
+}
+
 /** Keyboard-shortcuts popover. */
 export function shortcutsPopupHTML() {
   return `
@@ -198,6 +271,95 @@ export function canvasSizePromptHTML() {
           <div class="modal-footer">
             <button class="confirm-btn confirm-btn-secondary" id="ge-canvas-prompt-cancel">Cancel</button>
             <button class="confirm-btn confirm-btn-primary" id="ge-canvas-prompt-ok">Create</button>
+          </div>
+        </div>`;
+}
+
+
+/**
+ * New-Layer dialog — body markup (caller controls show / hide and wires the
+ * Cancel / OK buttons + the Mode→neutral-fill enable/disable logic). Sibling
+ * of canvasSizePromptHTML; reuses the same themed modal shell. Brand-neutral
+ * strings only.
+ */
+export function newLayerPromptHTML() {
+  const colorOpts = LAYER_COLOR_LABELS
+    .map((l) => `<option value="${l.id == null ? '' : l.id}">${l.name}</option>`).join('');
+  const modeOpts = BLEND_MODES
+    .map((b) => `<option value="${b.id}">${b.name}</option>`).join('');
+  // Small colour swatches preceding the color-label select so the user sees
+  // the tag colour without expanding the dropdown.
+  const swatchDots = LAYER_COLOR_LABELS.map((l) =>
+    `<span class="ge-nl-swatch" data-color="${l.id == null ? '' : l.id}" title="${l.name}"
+       style="background:${l.css};${l.id == null ? 'border:1px solid var(--border);' : ''}"></span>`).join('');
+  const scopedCss = `
+    <style>
+      .ge-newlayer-prompt .ge-nl-field { margin-bottom: 11px; }
+      .ge-newlayer-prompt .ge-nl-field > span.ge-nl-lbl {
+        display:block; font-size:11px; opacity:0.65; margin-bottom:4px;
+      }
+      .ge-newlayer-prompt input[type="text"], .ge-newlayer-prompt select {
+        width:100%; box-sizing:border-box; padding:7px 9px;
+        background:var(--bg); color:var(--fg); border:1px solid var(--border);
+        border-radius:6px; font:inherit; font-size:13px;
+      }
+      .ge-newlayer-prompt input[type="text"]:focus,
+      .ge-newlayer-prompt select:focus { outline:none; border-color:var(--red); }
+      .ge-newlayer-prompt .ge-nl-row { display:flex; gap:10px; }
+      .ge-newlayer-prompt .ge-nl-row > .ge-nl-field { flex:1; margin-bottom:11px; }
+      .ge-newlayer-prompt .ge-nl-swatches { display:flex; gap:5px; align-items:center; margin-bottom:6px; }
+      .ge-newlayer-prompt .ge-nl-swatch {
+        width:15px; height:15px; border-radius:3px; cursor:pointer; box-sizing:border-box;
+        opacity:0.85; transition:transform .08s, box-shadow .08s;
+      }
+      .ge-newlayer-prompt .ge-nl-swatch:hover { opacity:1; transform:scale(1.12); }
+      .ge-newlayer-prompt .ge-nl-swatch.active { box-shadow:0 0 0 2px var(--fg); opacity:1; }
+      .ge-newlayer-prompt .ge-nl-opacity-row { display:flex; align-items:center; gap:9px; }
+      .ge-newlayer-prompt .ge-nl-opacity-row input[type="range"] { flex:1; }
+      .ge-newlayer-prompt .ge-nl-opacity-row .ge-nl-opval { width:42px; text-align:right; font-size:12px; opacity:0.8; }
+      .ge-newlayer-prompt .ge-nl-check { display:flex; align-items:center; gap:8px; font-size:12px; margin-bottom:9px; cursor:pointer; }
+      .ge-newlayer-prompt .ge-nl-check input { margin:0; flex:0 0 auto; }
+      .ge-newlayer-prompt .ge-nl-check.disabled { opacity:0.4; cursor:default; }
+    </style>`;
+  return `
+        <div class="modal-content ge-newlayer-prompt">
+          ${scopedCss}
+          <div class="modal-header"><h4 id="ge-newlayer-title">New Layer</h4></div>
+          <div class="modal-body">
+            <label class="ge-nl-field">
+              <span class="ge-nl-lbl">Name</span>
+              <input type="text" id="ge-newlayer-name" maxlength="80" placeholder="Layer" value="Layer">
+            </label>
+            <div class="ge-nl-field">
+              <span class="ge-nl-lbl">Color</span>
+              <div class="ge-nl-swatches">${swatchDots}</div>
+              <select id="ge-newlayer-color">${colorOpts}</select>
+            </div>
+            <label class="ge-nl-check" id="ge-newlayer-clip-row">
+              <input type="checkbox" id="ge-newlayer-clip">
+              <span>Use previous layer as clipping mask</span>
+            </label>
+            <div class="ge-nl-row">
+              <label class="ge-nl-field">
+                <span class="ge-nl-lbl">Mode</span>
+                <select id="ge-newlayer-mode">${modeOpts}</select>
+              </label>
+              <label class="ge-nl-field">
+                <span class="ge-nl-lbl">Opacity</span>
+                <span class="ge-nl-opacity-row">
+                  <input type="range" id="ge-newlayer-opacity" min="0" max="100" value="100">
+                  <span class="ge-nl-opval" id="ge-newlayer-opacity-val">100%</span>
+                </span>
+              </label>
+            </div>
+            <label class="ge-nl-check" id="ge-newlayer-neutral-row">
+              <input type="checkbox" id="ge-newlayer-neutral">
+              <span id="ge-newlayer-neutral-lbl">Fill with neutral color</span>
+            </label>
+          </div>
+          <div class="modal-footer">
+            <button class="confirm-btn confirm-btn-secondary" id="ge-newlayer-cancel">Cancel</button>
+            <button class="confirm-btn confirm-btn-primary" id="ge-newlayer-ok">OK</button>
           </div>
         </div>`;
 }

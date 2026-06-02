@@ -25395,6 +25395,57 @@ button .spinner-whirlpool {
   color: var(--fg);
   pointer-events: none;
 }
+
+/* ── Layer colour labels (row tag) ───────────────────────────────────── */
+/* Small swatch next to the name; the left-edge stripe is an inset box-shadow
+   set inline on the row (see layer-panel.js). */
+.ge-row-colorlabel {
+  flex: 0 0 auto;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  margin: 0 2px 0 1px;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.35);
+}
+/* Right-click colour-label picker. */
+.ge-colorlabel-menu {
+  position: fixed;
+  z-index: 100000;
+  display: flex;
+  gap: 6px;
+  padding: 7px 8px;
+  background: var(--panel, #2a2a2a);
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.18));
+  border-radius: 8px;
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.45);
+}
+.ge-colorlabel-dot {
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 0, 0, 0.4);
+  padding: 0;
+  cursor: pointer;
+  transition: transform 0.08s, box-shadow 0.08s;
+}
+.ge-colorlabel-dot.none {
+  background: transparent;
+  border: 1px dashed var(--border, rgba(255, 255, 255, 0.4));
+  position: relative;
+}
+.ge-colorlabel-dot.none::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 1px;
+  bottom: 1px;
+  width: 1px;
+  background: var(--red, #d04a4a);
+  transform: rotate(45deg);
+  transform-origin: center;
+}
+.ge-colorlabel-dot:hover { transform: scale(1.15); }
+.ge-colorlabel-dot.active { box-shadow: 0 0 0 2px var(--fg, #fff); }
 .ge-layer-btn {
   border: none;
   background: none;

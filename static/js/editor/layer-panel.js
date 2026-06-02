@@ -43,6 +43,7 @@ import {
 } from './layer-helpers.js';
 import { applyAdjustment } from './fx/pixel-pass.js';
 import { BLEND_MODES } from './blend-modes.js';
+import { LAYER_COLOR_LABELS, cssForLayerLabel } from './build/popups.js';
 
 const EYE_OPEN = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
 const EYE_OFF  = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><line x1="8" y1="16" x2="16" y2="8"/><line x1="8" y1="8" x2="16" y2="16"/></svg>';
@@ -204,6 +205,57 @@ export function createLayerPanelRenderer(deps) {
       }
     } catch {}
     return box;
+  }
+
+  // ── Layer colour labels (row tag) ─────────────────────────────────────
+  // A colour-label visually groups related rows (NOT pixel colour). Set it
+  // from a small right-click context menu on the row. Persists in the draft +
+  // history snapshot (serialized in galleryEditor.js).
+  function setLayerColorLabel(layer, id) {
+    saveState(id ? `Color label "${layer.name}"` : `Clear label "${layer.name}"`);
+    layer.colorLabel = id || null;
+    render();
+  }
+
+  // Tiny floating swatch picker anchored at (x, y). Closes on outside-click /
+  // Escape. One menu instance at a time.
+  function openColorLabelMenu(layer, x, y) {
+    document.querySelectorAll('.ge-colorlabel-menu').forEach((m) => m.remove());
+    const menu = document.createElement('div');
+    menu.className = 'ge-colorlabel-menu';
+    menu.style.left = x + 'px';
+    menu.style.top = y + 'px';
+    for (const c of LAYER_COLOR_LABELS) {
+      const dot = document.createElement('button');
+      dot.type = 'button';
+      dot.className = 'ge-colorlabel-dot' +
+        ((layer.colorLabel || null) === c.id ? ' active' : '') +
+        (c.id == null ? ' none' : '');
+      dot.title = c.name;
+      dot.style.background = c.css;
+      dot.addEventListener('click', (e) => {
+        e.stopPropagation();
+        close();
+        setLayerColorLabel(layer, c.id);
+      });
+      menu.appendChild(dot);
+    }
+    document.body.appendChild(menu);
+    // Keep the menu on-screen.
+    const r = menu.getBoundingClientRect();
+    if (r.right > window.innerWidth) menu.style.left = (window.innerWidth - r.width - 6) + 'px';
+    if (r.bottom > window.innerHeight) menu.style.top = (window.innerHeight - r.height - 6) + 'px';
+    function close() {
+      menu.remove();
+      document.removeEventListener('mousedown', onDoc, true);
+      document.removeEventListener('keydown', onKey, true);
+    }
+    function onDoc(e) { if (!menu.contains(e.target)) close(); }
+    function onKey(e) { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); } }
+    setTimeout(() => {
+      document.addEventListener('mousedown', onDoc, true);
+      document.addEventListener('keydown', onKey, true);
+    }, 0);
   }
 
   // ── Panel-header blend + opacity (PS layout) ──────────────────────────
@@ -576,6 +628,17 @@ export function createLayerPanelRenderer(deps) {
         (layer.id === state.activeLayerId && !parentIsPaintTarget ? ' active-parent' : '') +
         (layer.clipped ? ' ge-clipped' : '');
       item.dataset.layerId = layer.id;
+      // Colour-label tag — a left-edge stripe so the row reads at a glance
+      // without eating panel width. Right-click the row to set/clear it.
+      if (layer.colorLabel) {
+        item.classList.add('ge-has-colorlabel');
+        item.style.boxShadow = `inset 3px 0 0 ${cssForLayerLabel(layer.colorLabel)}`;
+      }
+      item.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        openColorLabelMenu(layer, e.clientX, e.clientY);
+      });
       // Indent + accent members so the folder hierarchy reads at a glance.
       if (layer.groupId && state.layers.some(l => l.isGroup && l.id === layer.groupId)) {
         item.classList.add('ge-grouped-member');
@@ -661,6 +724,16 @@ export function createLayerPanelRenderer(deps) {
 
       item.appendChild(visBtn);
       item.appendChild(layerThumb(layer));
+      // Small queryable colour-label swatch next to the name (mirrors the
+      // left-edge stripe). Only present when the row carries a label.
+      if (layer.colorLabel) {
+        const sw = document.createElement('span');
+        sw.className = 'ge-row-colorlabel';
+        sw.dataset.colorLabel = layer.colorLabel;
+        sw.title = 'Colour label: ' + layer.colorLabel;
+        sw.style.background = cssForLayerLabel(layer.colorLabel);
+        item.appendChild(sw);
+      }
       item.appendChild(nameEl);
 
       item.addEventListener('click', () => {
@@ -947,6 +1020,8 @@ export function createLayerPanelRenderer(deps) {
     window.__geLayerPanel.reorderLayersFromVisual = reorderLayersFromVisual;
     window.__geLayerPanel.dropIntentFor = dropIntentFor;
     window.__geLayerPanel.render = () => render();
+    window.__geLayerPanel.setLayerColorLabel = (layer, id) => setLayerColorLabel(layer, id);
+    window.__geLayerPanel.openColorLabelMenu = (layer, x, y) => openColorLabelMenu(layer, x || 40, y || 40);
   }
 
   return { render };

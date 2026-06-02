@@ -90,6 +90,9 @@ import {
   shortcutsPopupHTML as _shortcutsPopupHTML,
   historyPanelHTML as _historyPanelHTMLImpl,
   canvasSizePromptHTML as _canvasSizePromptHTML,
+  newLayerPromptHTML as _newLayerPromptHTML,
+  neutralFillFor as _neutralFillFor,
+  neutralFillName as _neutralFillName,
 } from './editor/build/popups.js';
 import { state } from './editor/state.js';
 import { createMoveTool } from './editor/tools/move.js';
@@ -357,6 +360,7 @@ function createLayer(name, width, height) {
     clipped: false,           // clip to the layer below (PS Ctrl+Alt+G)
     lockAlpha: false,         // preserve transparency — paint existing pixels only (PS "/")
     locked: false,
+    colorLabel: null,         // row COLOR LABEL tag (null = None); see LAYER_COLOR_LABELS
     // Mask sub-layers — same shape as adjLayers, parallel concept.
     // Each entry: {id, name, canvas, visible}. The "active" mask is the
     // one that paint / lasso / inpaint operations target; rendered as a
@@ -1140,6 +1144,10 @@ function _snapshotState() {
       const tiles = tileFor(l.id, l.ctx, l.canvas.width, l.canvas.height);
       return {
         id: l.id, name: l.name, visible: l.visible, opacity: l.opacity, locked: l.locked,
+        blendMode: l.blendMode || 'source-over',
+        clipped: !!l.clipped,
+        lockAlpha: !!l.lockAlpha,
+        colorLabel: l.colorLabel || null,
         canvasW: l.canvas.width,
         canvasH: l.canvas.height,
         tiles,
@@ -1235,6 +1243,7 @@ function _buildDraftPayload() {
         blendMode: l.blendMode || 'source-over',
         clipped: !!l.clipped,
         lockAlpha: !!l.lockAlpha,
+        colorLabel: l.colorLabel || null,
         locked: l.locked,
         isBase: !!l.isBase,
         groupId: l.groupId || null,
@@ -1412,6 +1421,7 @@ function _restoreDraft(draft) {
       layer.blendMode = s.blendMode || 'source-over';
       layer.clipped = !!s.clipped;
       layer.lockAlpha = !!s.lockAlpha;
+      layer.colorLabel = s.colorLabel || null;
       layer.locked = !!s.locked;
       layer.groupId = s.groupId || null;
       if (s.isBase) layer.isBase = true;
@@ -1535,6 +1545,11 @@ function _restoreState(snap) {
     layer.visible = s.visible;
     layer.opacity = s.opacity;
     layer.locked = s.locked;
+    // Blend / clip / lock-alpha / colour-label round-trip through undo too.
+    if (s.blendMode !== undefined) layer.blendMode = s.blendMode || 'source-over';
+    if (s.clipped !== undefined) layer.clipped = !!s.clipped;
+    if (s.lockAlpha !== undefined) layer.lockAlpha = !!s.lockAlpha;
+    layer.colorLabel = s.colorLabel || null;
     if (s.canvasW && s.canvasH) {
       layer.canvas.width = s.canvasW;
       layer.canvas.height = s.canvasH;
@@ -4842,6 +4857,29 @@ function _buildEditor(container) {
   // are now three inline icon buttons in the layers header next to
   // + Add. Their individual click handlers below already bind by id.)
 
+  // New-Layer dialog (parity): plain click on the New-Layer button is the
+  // silent fast path (wired in ai-tools-misc). Alt/Option-clicking it opens
+  // the full New Layer dialog first. Capture-phase so we intercept before the
+  // silent-add bubble handler runs.
+  const _addLayerBtn = document.getElementById('ge-add-layer');
+  if (_addLayerBtn) {
+    _addLayerBtn.title = 'New layer (Ctrl+Alt+J) — Alt-click for options';
+    _addLayerBtn.addEventListener('click', (e) => {
+      if (!e.altKey) return; // plain click → silent add
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+      _openNewLayerDialog();
+    }, true);
+  }
+  // Headless / scripting hook for the dialog + creation path.
+  if (typeof window !== 'undefined') {
+    window.__geNewLayer = {
+      openDialog: () => _openNewLayerDialog(),
+      create: (o) => _addLayerFromDialog(o),
+    };
+  }
+
   // Lasso + Magic Wand panel controls — full implementation in
   // editor/wire-selection-controls.js.
   wireSelectionControls({
@@ -5472,6 +5510,158 @@ function _promptCanvasSize(opts) {
     cancelBtn.addEventListener('click', onCancel);
     overlay.addEventListener('click', onBackdrop);
     document.addEventListener('keydown', onKey);
+  });
+}
+
+// New-Layer dialog (PS: Layer ▸ New ▸ Layer… / Alt-click the New-Layer
+// button). Resolves to { name, colorLabel, blendMode, opacity, clip,
+// neutralFill } or null on cancel. Sibling of _promptCanvasSize; reuses the
+// same themed modal shell, so it lives in its own overlay element.
+function _promptNewLayer(opts) {
+  opts = opts || {};
+  const defaultName = opts.initialName || ('Layer ' + state.layers.length);
+  return new Promise((resolve) => {
+    let overlay = document.getElementById('ge-newlayer-overlay');
+    if (!overlay) {
+      overlay = document.createElement('div');
+      overlay.id = 'ge-newlayer-overlay';
+      overlay.className = 'modal';
+      overlay.innerHTML = _newLayerPromptHTML();
+      document.body.appendChild(overlay);
+    }
+    overlay.style.display = '';
+    overlay.classList.remove('hidden');
+    const nameInput = document.getElementById('ge-newlayer-name');
+    const colorSel = document.getElementById('ge-newlayer-color');
+    const modeSel = document.getElementById('ge-newlayer-mode');
+    const opInput = document.getElementById('ge-newlayer-opacity');
+    const opVal = document.getElementById('ge-newlayer-opacity-val');
+    const clipCb = document.getElementById('ge-newlayer-clip');
+    const neutralCb = document.getElementById('ge-newlayer-neutral');
+    const neutralRow = document.getElementById('ge-newlayer-neutral-row');
+    const neutralLbl = document.getElementById('ge-newlayer-neutral-lbl');
+    const okBtn = document.getElementById('ge-newlayer-ok');
+    const cancelBtn = document.getElementById('ge-newlayer-cancel');
+    const swatches = Array.from(overlay.querySelectorAll('.ge-nl-swatch'));
+
+    // Reset every open.
+    if (nameInput) nameInput.value = defaultName;
+    if (modeSel) modeSel.value = 'source-over';
+    if (colorSel) colorSel.value = '';
+    if (opInput) opInput.value = '100';
+    if (opVal) opVal.textContent = '100%';
+    if (clipCb) clipCb.checked = false;
+
+    // Highlight the swatch dot matching the current color select.
+    function syncSwatches() {
+      const v = colorSel ? colorSel.value : '';
+      swatches.forEach((s) => s.classList.toggle('active', (s.dataset.color || '') === v));
+    }
+    const onSwatch = (e) => {
+      if (!colorSel) return;
+      colorSel.value = e.currentTarget.dataset.color || '';
+      syncSwatches();
+    };
+    swatches.forEach((s) => s.addEventListener('click', onSwatch));
+    const onColorChange = () => syncSwatches();
+    if (colorSel) colorSel.addEventListener('change', onColorChange);
+    syncSwatches();
+
+    const onOpInput = () => { if (opVal) opVal.textContent = opInput.value + '%'; };
+    if (opInput) opInput.addEventListener('input', onOpInput);
+
+    // Neutral-fill availability follows the chosen blend mode.
+    function syncNeutral() {
+      const fill = _neutralFillFor(modeSel ? modeSel.value : 'source-over');
+      const enabled = !!fill;
+      if (neutralCb) {
+        neutralCb.disabled = !enabled;
+        if (!enabled) neutralCb.checked = false;
+      }
+      if (neutralRow) neutralRow.classList.toggle('disabled', !enabled);
+      if (neutralLbl) {
+        const nm = _neutralFillName(modeSel ? modeSel.value : 'source-over');
+        neutralLbl.textContent = enabled
+          ? `Fill with neutral color (${nm})`
+          : 'Fill with neutral color';
+      }
+    }
+    const onModeChange = () => syncNeutral();
+    if (modeSel) modeSel.addEventListener('change', onModeChange);
+    syncNeutral();
+
+    setTimeout(() => { if (nameInput) { nameInput.focus(); nameInput.select(); } }, 0);
+
+    function cleanup(result) {
+      overlay.style.display = 'none';
+      okBtn.removeEventListener('click', onOk);
+      cancelBtn.removeEventListener('click', onCancel);
+      overlay.removeEventListener('click', onBackdrop);
+      document.removeEventListener('keydown', onKey);
+      swatches.forEach((s) => s.removeEventListener('click', onSwatch));
+      if (colorSel) colorSel.removeEventListener('change', onColorChange);
+      if (opInput) opInput.removeEventListener('input', onOpInput);
+      if (modeSel) modeSel.removeEventListener('change', onModeChange);
+      resolve(result);
+    }
+    function onOk() {
+      const mode = modeSel ? modeSel.value : 'source-over';
+      const fill = _neutralFillFor(mode);
+      cleanup({
+        name: (nameInput && nameInput.value.trim()) || defaultName,
+        colorLabel: (colorSel && colorSel.value) || null,
+        blendMode: mode,
+        opacity: Math.max(0, Math.min(100, parseInt(opInput ? opInput.value : '100', 10) || 100)) / 100,
+        clip: !!(clipCb && clipCb.checked),
+        neutralFill: (neutralCb && neutralCb.checked && fill) ? fill : null,
+      });
+    }
+    function onCancel() { cleanup(null); }
+    function onBackdrop(e) { if (e.target === overlay) cleanup(null); }
+    function onKey(e) {
+      if (overlay.style.display === 'none') return;
+      if (e.key === 'Enter') { e.preventDefault(); onOk(); }
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); cleanup(null); }
+    }
+    okBtn.addEventListener('click', onOk);
+    cancelBtn.addEventListener('click', onCancel);
+    overlay.addEventListener('click', onBackdrop);
+    document.addEventListener('keydown', onKey);
+  });
+}
+
+// Create a layer from the dialog's settings: name / colour-label / blend /
+// opacity, optionally clipped to the layer below, optionally pre-filled with
+// its blend mode's neutral colour. Mirrors the silent-add path but with the
+// extra fields wired in.
+function _addLayerFromDialog(o) {
+  o = o || {};
+  _saveState('New layer');
+  const layer = createLayer(o.name || ('Layer ' + state.layers.length), state.imgWidth, state.imgHeight);
+  if (o.colorLabel) layer.colorLabel = o.colorLabel;
+  if (o.blendMode) layer.blendMode = o.blendMode;
+  if (o.opacity != null) layer.opacity = o.opacity;
+  state.layers.push(layer);
+  state.activeLayerId = layer.id;
+  // Clip to the layer below (only meaningful when there is one).
+  if (o.clip && state.layers.length > 1) layer.clipped = true;
+  // Pre-fill the layer's pixels with the blend-mode neutral colour.
+  if (o.neutralFill) {
+    layer.ctx.fillStyle = o.neutralFill;
+    layer.ctx.fillRect(0, 0, layer.canvas.width, layer.canvas.height);
+  }
+  _renderLayerPanel();
+  composite();
+  return layer;
+}
+
+// Open the New-Layer dialog and create the layer with the chosen settings.
+// Returns the created layer (or null if cancelled). Exposed for the Alt-click
+// path on the New-Layer button + the menu entry + headless tests.
+function _openNewLayerDialog() {
+  return _promptNewLayer({ initialName: 'Layer ' + state.layers.length }).then((res) => {
+    if (!res) return null;
+    return _addLayerFromDialog(res);
   });
 }
 
