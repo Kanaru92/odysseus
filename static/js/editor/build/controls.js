@@ -595,6 +595,10 @@ export function controlsHTML({ color, brushSize, wandTolerance }) {
         <label>Leading <span id="ge-text-leading-label">1.25</span></label>
         <input type="range" id="ge-text-leading" min="0.8" max="3" step="0.05" value="1.25" title="Line height (leading)." />
       </div>
+      <div class="ge-control-row ge-eraser-row">
+        <label>Tracking <span id="ge-text-tracking-label">0</span></label>
+        <input type="range" id="ge-text-tracking" min="-5" max="40" step="1" value="0" title="Letter spacing (tracking), in pixels." />
+      </div>
       <div class="ge-control-row ge-tool-model-row">
         <label>Font</label>
         <select id="ge-text-font" class="ge-tool-select" style="flex:1;min-width:0;">

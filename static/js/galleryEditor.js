@@ -3694,6 +3694,8 @@ function _syncTypeControls(t) {
   set('ge-text-size', t.size); lbl('ge-text-size-label', t.size);
   set('ge-text-font', state.textFont);
   set('ge-text-leading', state.textLeading); lbl('ge-text-leading-label', Number(state.textLeading).toFixed(2));
+  state.textTracking = t.tracking || 0;
+  set('ge-text-tracking', state.textTracking); lbl('ge-text-tracking-label', String(state.textTracking));
   document.getElementById('ge-text-bold')?.classList.toggle('active', state.textBold);
   document.getElementById('ge-text-italic')?.classList.toggle('active', state.textItalic);
   ['ge-text-align-left', 'ge-text-align-center', 'ge-text-align-right'].forEach((a) =>
@@ -5431,6 +5433,12 @@ function _buildEditor(container) {
     state.textLeading = parseFloat(_textLeadingEl.value) || 1.25;
     const lbl = document.getElementById('ge-text-leading-label'); if (lbl) lbl.textContent = state.textLeading.toFixed(2);
     _updateActiveText({ leading: state.textLeading });
+  });
+  const _textTrackingEl = document.getElementById('ge-text-tracking');
+  _textTrackingEl?.addEventListener('input', () => {
+    state.textTracking = parseFloat(_textTrackingEl.value) || 0;
+    const lbl = document.getElementById('ge-text-tracking-label'); if (lbl) lbl.textContent = String(state.textTracking);
+    _updateActiveText({ tracking: state.textTracking });
   });
   const _bindTextToggle = (id, key, stateKey) => {
     const el = document.getElementById(id);
