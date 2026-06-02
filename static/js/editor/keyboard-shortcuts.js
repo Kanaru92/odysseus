@@ -51,6 +51,7 @@
  * }} deps
  */
 import { state } from './state.js';
+import { copyMerged, pasteInPlace } from './clipboard-ops.js';
 
 export function wireKeyboardShortcuts(deps) {
   const {
@@ -140,6 +141,24 @@ export function wireKeyboardShortcuts(deps) {
       return;
     }
     if (e.ctrlKey || e.metaKey) {
+      const inField = e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA';
+      // Shift+Ctrl+C — Copy Merged: flatten all visible layers (cropped to any
+      // active selection) into the merged clipboard. Must run BEFORE the
+      // selection-aware Ctrl+C paths below, which don't guard against Shift.
+      if (e.shiftKey && !e.altKey && (e.key === 'c' || e.key === 'C' || e.code === 'KeyC') && !inField) {
+        e.preventDefault();
+        e.stopPropagation();
+        copyMerged({ uiModule });
+        return;
+      }
+      // Shift+Ctrl+V — Paste in Place: drop the merged clipboard onto a new
+      // "Pasted" layer at the exact position it was copied from.
+      if (e.shiftKey && !e.altKey && (e.key === 'v' || e.key === 'V' || e.code === 'KeyV') && !inField) {
+        e.preventDefault();
+        e.stopPropagation();
+        pasteInPlace({ composite, saveState, renderLayerPanel, uiModule });
+        return;
+      }
       if (e.key === 'z') { e.preventDefault(); if (e.shiftKey) redo(); else undo(); }
       // Ctrl+D / Ctrl+Shift+D = Deselect (PS uses Ctrl+D): clears the wand
       // selection (and lasso if active) without affecting layers.
