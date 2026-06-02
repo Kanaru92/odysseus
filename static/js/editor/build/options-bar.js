@@ -14,10 +14,14 @@
 export function buildOptionsBar() {
   const bar = document.createElement('div');
   bar.className = 'ge-options-bar';
+  // FIXED height (not min-height): the bar must not grow/shrink with the active
+  // tool's controls, or the canvas + all panels jump up/down on every tool
+  // switch. Pinned to comfortably fit the tallest tool's controls (sliders +
+  // a native select); shorter tools just centre in the same height.
   bar.style.cssText =
-    'display:flex;align-items:center;gap:14px;padding:5px 12px;font-size:11px;' +
+    'display:flex;align-items:center;gap:14px;padding:0 12px;font-size:11px;box-sizing:border-box;' +
     'border-bottom:1px solid rgba(255,255,255,0.07);background:rgba(255,255,255,0.02);' +
-    'min-height:30px;flex:0 0 auto;overflow-x:auto;white-space:nowrap;';
+    'height:44px;min-height:44px;flex:0 0 auto;overflow-x:auto;overflow-y:hidden;white-space:nowrap;';
   bar.innerHTML = `
     <span class="ge-ob-tool-name" style="font-weight:600;opacity:0.92;white-space:nowrap;">Move</span>
     <span class="ge-ob-sep" style="width:1px;height:16px;background:rgba(255,255,255,0.12);flex:0 0 auto;"></span>
