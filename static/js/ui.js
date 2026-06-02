@@ -233,6 +233,7 @@ export function showToast(msg, durationOrOpts) {
   if (!toastEl) {
     toastEl = document.getElementById('toast');
   }
+  if (!toastEl) return; // no #toast in the DOM (early init / teardown) — no-op instead of throwing
   _wireToastSwipe(toastEl);
   toastEl.textContent = '';
   toastEl.classList.remove('error');
