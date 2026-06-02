@@ -1174,6 +1174,33 @@ function _effectiveLayerCanvas(layer) {
 function _markLayerDirty(layer) { if (layer) layer._pixVer = (layer._pixVer || 0) + 1; }
 function _markAllLayersDirty() { for (const l of state.layers) l._pixVer = (l._pixVer || 0) + 1; }
 
+// Expand-on-paint: grow the document toward the right/bottom so a stroke reaching
+// the edge keeps painting instead of clipping. Content stays at the origin (no
+// shift) so all coordinates are unchanged; only the canvases get larger. Clamped
+// to 8192 (canvas/GPU-texture safety). Undo reverts it via the stroke's begin-snapshot
+// (which captured the smaller imgWidth/Height). Returns true if it grew.
+function _expandDocTo(newW, newH) {
+  newW = Math.min(8192, Math.max(state.imgWidth, Math.round(newW)));
+  newH = Math.min(8192, Math.max(state.imgHeight, Math.round(newH)));
+  if (newW === state.imgWidth && newH === state.imgHeight) return false;
+  const grow = (cv) => { const n = document.createElement('canvas'); n.width = newW; n.height = newH; n.getContext('2d').drawImage(cv, 0, 0); return n; };
+  for (const layer of state.layers) {
+    if (layer.isGroup) continue;
+    try {
+      const nc = grow(layer.canvas); layer.canvas = nc; layer.ctx = nc.getContext('2d');
+      if (layer.layerMask) layer.layerMask = grow(layer.layerMask);
+      if (layer.masks) for (const m of layer.masks) { m.canvas = grow(m.canvas); m.ctx = m.canvas.getContext('2d'); }
+    } catch (e) { console.error('[gallery] expandDocTo layer grow failed:', e); }
+    // Per-layer caches are sized to the old document — drop them.
+    layer._fxCache = null; layer._fxKey = ''; layer._adjFinal = null; layer._adjFinalKey = '';
+    layer._adjCache = null; layer._adjCacheKey = ''; layer._pixVer = (layer._pixVer || 0) + 1;
+  }
+  if (state.maskCanvas) { try { state.maskCanvas = grow(state.maskCanvas); state.maskCtx = state.maskCanvas.getContext('2d'); } catch {} }
+  state.mainCanvas.width = newW; state.mainCanvas.height = newH;
+  state.imgWidth = newW; state.imgHeight = newH;
+  return true;
+}
+
 // WebGL2 layer compositor (lazy). Used only when state.renderBackend==='webgl2'
 // and the doc is GPU-eligible; otherwise the CPU path below runs unchanged.
 const _glCompositor = createWebGLCompositor();
@@ -2511,7 +2538,18 @@ const _strokePipeline = createStrokePipeline({
 });
 const _strokeToRaw   = _strokePipeline.strokeTo;
 // Mark the active layer dirty on each dab so an fx-layer's cache stays fresh while painting.
-const _strokeTo      = (x, y) => { _markLayerDirty(activeLayer()); return _strokeToRaw(x, y); };
+const _strokeTo      = (x, y) => {
+  // Expand-on-paint: if the dab reaches the right/bottom edge, grow the doc to fit
+  // (right/bottom only — no origin shift, so coords stay valid; the pipeline
+  // re-fetches the layer ctx each dab, so the swapped-in larger canvas is used).
+  if (state.expandOnPaint !== false && (x > state.imgWidth - 1 || y > state.imgHeight - 1) && (state.imgWidth < 8192 || state.imgHeight < 8192)) {
+    const nw = x > state.imgWidth - 1 ? Math.ceil((x + 24) / 256) * 256 : state.imgWidth;
+    const nh = y > state.imgHeight - 1 ? Math.ceil((y + 24) / 256) * 256 : state.imgHeight;
+    _expandDocTo(nw, nh);
+  }
+  _markLayerDirty(activeLayer());
+  return _strokeToRaw(x, y);
+};
 const _cloneStrokeTo = _strokePipeline.cloneStrokeTo;
 
 // ── Brush cursor overlay ──
