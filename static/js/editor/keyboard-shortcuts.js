@@ -210,19 +210,19 @@ export function wireKeyboardShortcuts(deps) {
       if (e.key === ';' && !e.shiftKey) { e.preventDefault(); e.stopPropagation(); state.guidesVisible = !state.guidesVisible; composite(); }
       // Ctrl+Alt+I / Ctrl+Shift+I — invert current selection (PS uses
       // Ctrl+Shift+I). Uses e.code so Alt-modified key values don't break it.
-      if ((e.altKey || e.shiftKey) && e.code === 'KeyI') {
+      if (!inField && (e.altKey || e.shiftKey) && e.code === 'KeyI') {
         if (invertSelection()) {
           e.preventDefault();
           e.stopPropagation();
         }
       }
       // Ctrl+I (no Shift/Alt) — invert the active layer (PS image invert).
-      if (!e.altKey && !e.shiftKey && e.code === 'KeyI' && runCommand) {
+      if (!inField && !e.altKey && !e.shiftKey && e.code === 'KeyI' && runCommand) {
         e.preventDefault(); e.stopPropagation(); runCommand('invert');
       }
       // Ctrl+Shift+U — Desaturate the active layer (PS).
-      if (e.shiftKey && e.code === 'KeyU' && runCommand) {
-        e.preventDefault(); e.stopPropagation(); runCommand('adjust', { type: 'desaturate' });
+      if (!inField && e.shiftKey && e.code === 'KeyU' && runCommand) {
+        e.preventDefault(); e.stopPropagation(); runCommand('desaturate');
       }
       // Ctrl+Alt+J — new empty layer.
       if (e.altKey && e.code === 'KeyJ') {

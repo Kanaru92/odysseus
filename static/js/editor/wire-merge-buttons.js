@@ -69,28 +69,30 @@ export function mergeLayerDownAtIndex(idx) {
   return lower;
 }
 
-export function wireMergeButtons({ saveState, createLayer, renderLayerPanel, composite, uiModule, effectiveCanvas }) {
+export function wireMergeButtons({ saveState, createLayer, renderLayerPanel, composite, uiModule, effectiveCanvas, renderLayersTo }) {
   if (effectiveCanvas) _effectiveCanvas = effectiveCanvas;
-  // Flatten Copy.
-  document.getElementById('ge-flatten')?.addEventListener('click', () => {
-    if (state.layers.length < 2) return;
-    saveState('Flatten copy');
-    const merged = createLayer('Flattened', state.imgWidth, state.imgHeight);
-    const ctx = merged.ctx;
+  // Flatten the whole VISIBLE stack into `ctx`/`canvas` via the shared composite
+  // renderer, so merges honour groups (incl. isolated group blend modes), layer
+  // blend modes, masks, fx and adjustments exactly like the on-screen composite.
+  const flattenStack = (ctx, canvas) => {
+    if (renderLayersTo) { renderLayersTo(ctx, canvas); return; }
+    // Fallback (renderLayersTo dep missing): source-over with group opacity.
     const groups = _groupMap();
     for (const l of state.layers) {
       if (l.isGroup || !l.visible) continue;
       let gm = 1;
-      if (l.groupId && groups[l.groupId]) {
-        const g = groups[l.groupId];
-        if (!g.visible) continue;            // member of a hidden folder
-        gm = g.opacity == null ? 1 : g.opacity;
-      }
+      if (l.groupId && groups[l.groupId]) { const g = groups[l.groupId]; if (!g.visible) continue; gm = g.opacity == null ? 1 : g.opacity; }
       const off = state.layerOffsets.get(l.id) || { x: 0, y: 0 };
-      ctx.globalAlpha = l.opacity * gm;
-      ctx.drawImage(_effectiveCanvas(l), off.x, off.y);
-      ctx.globalAlpha = 1;
+      ctx.globalAlpha = l.opacity * gm; ctx.drawImage(_effectiveCanvas(l), off.x, off.y); ctx.globalAlpha = 1;
     }
+  };
+
+  // Flatten Copy — new "Flattened" layer = the composited visible stack.
+  document.getElementById('ge-flatten')?.addEventListener('click', () => {
+    if (state.layers.length < 2) return;
+    saveState('Flatten copy');
+    const merged = createLayer('Flattened', state.imgWidth, state.imgHeight);
+    flattenStack(merged.ctx, merged.canvas);
     state.layers.push(merged);
     state.activeLayerId = merged.id;
     renderLayerPanel();
@@ -98,44 +100,29 @@ export function wireMergeButtons({ saveState, createLayer, renderLayerPanel, com
     uiModule.showToast('Flattened copy created');
   });
 
-  // Merge All — drop hidden layers; base = lowest visible.
+  // Merge All — flatten every visible layer into the lowest visible one.
   document.getElementById('ge-merge-all')?.addEventListener('click', () => {
     const groups = _groupMap();
     const groupHidden = (l) => l.groupId && groups[l.groupId] && !groups[l.groupId].visible;
-    const gmOf = (l) => (l.groupId && groups[l.groupId] && groups[l.groupId].opacity != null)
-      ? groups[l.groupId].opacity : 1;
     const visibleLayers = state.layers.filter(l => !l.isGroup && l.visible && !groupHidden(l));
     if (visibleLayers.length < 2) {
       if (uiModule) uiModule.showToast('Need at least two visible layers to merge');
       return;
     }
     saveState('Merge all');
+    // Composite the whole visible stack into a buffer, then make the base layer = it.
+    const tmp = document.createElement('canvas');
+    tmp.width = state.imgWidth; tmp.height = state.imgHeight;
+    flattenStack(tmp.getContext('2d'), tmp);
     const base = visibleLayers[0];
-    const baseCtx = base.ctx;
-    // Bake the base layer's OWN mask / fx / adjustments into its pixels first,
-    // then clear them so they don't re-clip the whole merged result.
-    if (base.layerMask || base.fx || (base.adjLayers && base.adjLayers.length)) {
-      baseCtx.save();
-      baseCtx.globalAlpha = 1;
-      baseCtx.globalCompositeOperation = 'copy';
-      baseCtx.drawImage(_effectiveCanvas(base), 0, 0);
-      baseCtx.restore();
-      base.layerMask = null; base.fx = null; base.adjLayers = [];
-      base._adjFinal = null; base._adjCache = null;
-    }
-    for (let i = 1; i < visibleLayers.length; i++) {
-      const l = visibleLayers[i];
-      const off = state.layerOffsets.get(l.id) || { x: 0, y: 0 };
-      baseCtx.globalAlpha = l.opacity * gmOf(l);
-      baseCtx.drawImage(_effectiveCanvas(l), off.x, off.y);
-      baseCtx.globalAlpha = 1;
-    }
-    // Free offset entries for the discarded layers; keep base.
-    for (const l of state.layers) {
-      if (l === base) continue;
-      state.layerOffsets.delete(l.id);
-    }
-    base.groupId = null; // folders are gone after a full merge
+    base.canvas.width = state.imgWidth; base.canvas.height = state.imgHeight;
+    base.ctx.clearRect(0, 0, base.canvas.width, base.canvas.height);
+    base.ctx.drawImage(tmp, 0, 0);
+    base.layerMask = null; base.fx = null; base.adjLayers = [];
+    base._adjFinal = null; base._adjCache = null; delete base.maskEnabled;
+    base.blendMode = 'source-over'; base.opacity = 1; base.groupId = null;
+    for (const l of state.layers) { if (l !== base) state.layerOffsets.delete(l.id); }
+    state.layerOffsets.set(base.id, { x: 0, y: 0 });
     state.layers = [base];
     state.activeLayerId = base.id;
     renderLayerPanel();

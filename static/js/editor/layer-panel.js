@@ -452,6 +452,7 @@ export function createLayerPanelRenderer(deps) {
         copy.smartXf = layer.smartXf ? { ...layer.smartXf } : null;
         copy.linked = layer.linked ? { ...layer.linked } : null;
       }
+      if (layer.groupId) copy.groupId = layer.groupId; // keep group members contiguous (and in the group, PS-style)
       const idx = state.layers.findIndex((l) => l.id === layer.id);
       if (idx >= 0) state.layers.splice(idx + 1, 0, copy);
       else state.layers.push(copy);

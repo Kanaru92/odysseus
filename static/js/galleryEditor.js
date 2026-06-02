@@ -1014,11 +1014,21 @@ function _glRenderTo(ctx, canvas) {
     const mode = layer.blendMode || 'source-over';
     if (!_GPU_EXACT_MODES.has(mode)) return false;
     const off = state.layerOffsets.get(layer.id) || { x: 0, y: 0 };
-    list.push({ canvas: _effectiveLayerCanvas(layer), x: off.x, y: off.y, opacity: layer.opacity * grpMul, mode });
+    // Fractional offsets: CPU drawImage bilinear-resamples (soft edges) but the
+    // GPU samples NEAREST — bail to CPU so the two never diverge on a moved layer.
+    if (off.x !== Math.round(off.x) || off.y !== Math.round(off.y)) return false;
+    const eff = _effectiveLayerCanvas(layer);
+    // A layer canvas larger than MAX_TEXTURE_SIZE can't upload; the compositor
+    // would silently skip it, so fall back to CPU for the whole frame.
+    if (maxT && (eff.width > maxT || eff.height > maxT)) return false;
+    list.push({ canvas: eff, x: off.x, y: off.y, opacity: layer.opacity * grpMul, mode });
   }
   const gc = _glCompositor.composite(W, H, list);
   if (!gc) return false;
-  ctx.clearRect(0, 0, W, H);
+  // Do NOT clearRect: composite() has already painted the checkerboard onto ctx,
+  // and the GL canvas is straight-alpha, so drawImage composites source-over and
+  // transparent doc regions correctly show the checkerboard through. (flatten /
+  // stamp-visible pass a fresh transparent canvas, where this is a no-op.)
   ctx.drawImage(gc, 0, 0);
   return true;
 }
@@ -1484,6 +1494,7 @@ function _snapshotState() {
           tiles: tileFor(l.id + ':layerMask', l.layerMask.getContext('2d'), l.layerMask.width, l.layerMask.height),
         } : null,
         maskEnabled: l.maskEnabled === false ? false : undefined, // disabled-mask state
+        text: l.text ? JSON.parse(JSON.stringify(l.text)) : null, // editable text model
         activeMaskId: l.activeMaskId || null,
         isBase: !!l.isBase,
         groupId: l.groupId || null,
@@ -1925,6 +1936,7 @@ function _restoreState(snap) {
     // Round-trip the disabled-mask flag (set unconditionally so a stale live
     // value can't leak across undo on the reused layer object).
     if (s.maskEnabled === false) layer.maskEnabled = false; else delete layer.maskEnabled;
+    if (s.text) layer.text = JSON.parse(JSON.stringify(s.text)); else delete layer.text;
     layer.activeMaskId = s.activeMaskId || (layer.masks[0]?.id ?? null);
     layer._adjFinal = null;
     layer._adjFinalKey = null;
@@ -3442,6 +3454,23 @@ function _updateActiveText(patch) {
   if (inp) _positionTextEditor(inp, l);
   composite();
 }
+// Sync the Type option controls (state + UI) to an existing text layer's values,
+// so re-editing shows/toggles its real bold/italic/align/leading/size/font.
+function _syncTypeControls(t) {
+  if (!t) return;
+  state.textSize = t.size; state.textFont = t.font || 'sans-serif';
+  state.textLeading = t.leading != null ? t.leading : 1.25;
+  state.textBold = !!t.bold; state.textItalic = !!t.italic; state.textAlign = t.align || 'left';
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+  const lbl = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  set('ge-text-size', t.size); lbl('ge-text-size-label', t.size);
+  set('ge-text-font', state.textFont);
+  set('ge-text-leading', state.textLeading); lbl('ge-text-leading-label', Number(state.textLeading).toFixed(2));
+  document.getElementById('ge-text-bold')?.classList.toggle('active', state.textBold);
+  document.getElementById('ge-text-italic')?.classList.toggle('active', state.textItalic);
+  ['ge-text-align-left', 'ge-text-align-center', 'ge-text-align-right'].forEach((a) =>
+    document.getElementById(a)?.classList.toggle('active', a === 'ge-text-align-' + state.textAlign));
+}
 function _openTextEditor(layer) {
   const area = state.container.querySelector('.ge-canvas-area');
   if (!area) return;
@@ -3878,6 +3907,7 @@ function _wandCopyToNewLayer() {
   newLayer.ctx.drawImage(tmp, 0, 0);
   const srcOff = state.layerOffsets.get(src.id) || { x: 0, y: 0 };
   state.layerOffsets.set(newLayer.id, { ...srcOff });
+  if (src.groupId) newLayer.groupId = src.groupId; // keep group members contiguous
   const idx = state.layers.findIndex(l => l.id === src.id);
   state.layers.splice(idx + 1, 0, newLayer);
   state.activeLayerId = newLayer.id;
@@ -4609,7 +4639,7 @@ function _buildEditor(container) {
     if (state.tool === 'maglasso' && state.magLassoActive) { e.preventDefault(); _magLassoTool.close(); }
     // Double-click a text layer to re-edit it (Type is no longer write-once).
     const al = activeLayer();
-    if (al && al.text && !state.textEditingLayerId) { e.preventDefault(); _openTextEditor(al); }
+    if (al && al.text && !state.textEditingLayerId) { e.preventDefault(); _saveState('Edit text'); _syncTypeControls(al.text); _openTextEditor(al); }
   });
 
   editorBody.appendChild(canvasArea);
@@ -4762,8 +4792,9 @@ function _buildEditor(container) {
   initCommands({ saveState: _saveState, composite });
   registerCommand('fill', { label: 'Fill', run: (a) => { const l = activeLayer(); if (!l) return; l.ctx.save(); l.ctx.fillStyle = (a && a.color) || state.color; l.ctx.fillRect(0, 0, l.canvas.width, l.canvas.height); l.ctx.restore(); } });
   registerCommand('add-layer', { label: 'New Layer', run: (a) => { const l = createLayer((a && a.name) || 'Layer', state.imgWidth, state.imgHeight); state.layers.push(l); state.activeLayerId = l.id; _renderLayerPanel(); return l.id; } });
-  registerCommand('adjust', { label: 'Adjustment', run: (a) => { const l = activeLayer(); if (!l || !a || !a.type) return; const baked = _applyAdjToCanvas(l.canvas, { type: a.type, params: { ..._defaultAdjParams(a.type), ...(a.params || {}) } }); l.ctx.clearRect(0, 0, l.canvas.width, l.canvas.height); l.ctx.drawImage(baked, 0, 0); } });
+  registerCommand('adjust', { label: 'Adjustment', run: (a) => { const l = activeLayer(); if (!l || l.locked || !a || !a.type) { if (l && l.locked && uiModule) uiModule.showToast('Layer locked'); return; } const baked = _applyAdjToCanvas(l.canvas, { type: a.type, params: { ..._defaultAdjParams(a.type), ...(a.params || {}) } }); l.ctx.clearRect(0, 0, l.canvas.width, l.canvas.height); l.ctx.drawImage(baked, 0, 0); } });
   registerCommand('invert', { label: 'Invert', run: () => runCommand('adjust', { type: 'invert' }, { history: false, composite: false, record: false }) });
+  registerCommand('desaturate', { label: 'Desaturate', run: () => runCommand('adjust', { type: 'desaturate' }, { history: false, composite: false, record: false }) });
   registerCommand('flip-h', { label: 'Flip Horizontal', undoable: false, run: () => _flipAllLayers('h') });
   registerCommand('flip-v', { label: 'Flip Vertical', undoable: false, run: () => _flipAllLayers('v') });
   registerCommand('rotate-cw', { label: 'Rotate 90° CW', undoable: false, run: () => _rotateAllLayers(90) });
@@ -5336,6 +5367,7 @@ function _buildEditor(container) {
     composite,
     uiModule,
     effectiveCanvas: _effectiveLayerCanvas,
+    renderLayersTo: (c2, cv) => _renderLayersTo(c2, cv),
   });
 
   // Capture-phase Escape interceptor — runs BEFORE any bubble-phase
