@@ -8,6 +8,8 @@
  * the top bar and side panel in sync without duplicating any state logic.
  */
 import { toolKey } from './keymap.js';
+import { state } from './state.js';
+import { SMUDGE_PRESETS, applySmudgePreset } from './smudge-presets.js';
 
 const TOOL_NAMES = {
   move: 'Move', marquee: 'Marquee', lasso: 'Lasso', polylasso: 'Polygonal Lasso', maglasso: 'Magnetic Lasso', wand: 'Magic Wand', quickselect: 'Quick Selection',
@@ -74,6 +76,7 @@ const PROXIES = {
     { label: 'Tolerance', id: 'ge-bucket-tolerance' },
   ],
   smudge: [
+    { label: 'Preset', kind: 'smudge-presets' },
     { label: 'Size', sel: '.ge-size-slider', kind: 'size' },
     { label: 'Strength', id: 'ge-smudge-strength', suffix: '%' },
     { label: 'Finger', id: 'ge-smudge-finger', control: 'checkbox' },
@@ -165,6 +168,38 @@ export function createOptionsBar() {
     host.innerHTML = '';
     const specs = PROXIES[toolId] || [];
     for (const spec of specs) {
+      // Smudge preset picker — a self-contained <select> with no canonical
+      // right-panel input. Selecting a preset applies its config to the smudge
+      // state fields (and mirrors Strength/Finger into their inputs).
+      if (spec.kind === 'smudge-presets') {
+        const field = document.createElement('label');
+        field.className = 'ge-ob-field';
+        field.style.cssText = 'display:inline-flex;align-items:center;gap:6px;white-space:nowrap;';
+        const lbl = document.createElement('span');
+        lbl.className = 'ge-ob-label';
+        lbl.style.cssText = 'opacity:0.6;';
+        lbl.textContent = spec.label;
+        const sel = document.createElement('select');
+        sel.className = 'ge-smudge-preset';
+        sel.style.cssText = 'max-width:170px;';
+        const ph = document.createElement('option');
+        ph.value = ''; ph.textContent = 'Presets…'; ph.disabled = true; ph.selected = true;
+        sel.appendChild(ph);
+        SMUDGE_PRESETS.forEach((p, i) => {
+          const o = document.createElement('option');
+          o.value = String(i); o.textContent = p.name;
+          sel.appendChild(o);
+        });
+        sel.addEventListener('change', () => {
+          const i = parseInt(sel.value, 10);
+          const p = SMUDGE_PRESETS[i];
+          if (p) applySmudgePreset(state, p.config);
+        });
+        field.appendChild(lbl); field.appendChild(sel);
+        host.appendChild(field);
+        continue;
+      }
+
       const canon = canonicalOf(spec);
       if (!canon) continue;
       const key = matchKey(spec);

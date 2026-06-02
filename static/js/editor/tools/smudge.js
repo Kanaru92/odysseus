@@ -108,7 +108,12 @@ export function createSmudgeTool({ activeLayer, saveState, composite }) {
   // smears consistently and independently. `syms` holds the matching transforms.
   let ctx = null, carriedSet = null, syms = null, cr = 0, bw = 0, radius = 0, layerRef = null;
 
+  // Resolve the base strength. A preset (or any caller) can pin it via
+  // `state.smudgeStrength` (0..1); otherwise we read the live slider. Default
+  // behaviour is unchanged when `smudgeStrength` is unset.
   function strengthVal() {
+    const ov = state.smudgeStrength;
+    if (typeof ov === 'number' && Number.isFinite(ov)) return Math.max(0, Math.min(1, ov));
     const el = document.getElementById('ge-smudge-strength');
     const v = parseInt(el && el.value, 10);
     return Math.max(0, Math.min(1, (Number.isFinite(v) ? v : 60) / 100));
@@ -120,10 +125,33 @@ export function createSmudgeTool({ activeLayer, saveState, composite }) {
     const pr = (raw && raw > 0.01) ? raw : 1;
     return Math.max(0, Math.min(0.98, base * (0.55 + 0.45 * pr)));
   }
-  // Brush softness (0 hard … 300 soft) → falloff exponent (hard = tight core).
+  // Falloff exponent (hard = tight core). A preset can pin tip hardness via
+  // `state.smudgeHardness` (0 soft … 100 hard); otherwise it derives from the
+  // shared brush softness (0 hard … 300 soft) so default behaviour is unchanged.
   function falloffPow() {
+    const hov = state.smudgeHardness;
+    if (typeof hov === 'number' && Number.isFinite(hov)) {
+      const hard = Math.min(1, Math.max(0, hov / 100));
+      return 0.6 + hard * 1.6; // soft≈0.6 (wide) … hard≈2.2 (tight)
+    }
     const soft = Math.min(1, Math.max(0, (state.brushSoftness || 0) / 300));
     return 0.6 + (1 - soft) * 1.6; // soft≈0.6 (wide) … hard≈2.2 (tight)
+  }
+  // Dab spacing as a fraction of radius (default 0.15 = current dense trail).
+  // Larger values space dabs apart for a textured / dappled / pebbled feel.
+  function spacingFrac() {
+    const v = state.smudgeSpacing;
+    return (typeof v === 'number' && Number.isFinite(v) && v > 0) ? Math.min(2, v) : 0.15;
+  }
+  // Scatter (0..1): random radial offset of each dab as a fraction of radius.
+  function scatterAmt() {
+    const v = state.smudgeScatter;
+    return (typeof v === 'number' && Number.isFinite(v)) ? Math.max(0, Math.min(1, v)) : 0;
+  }
+  // Jitter (0..1): per-dab random strength variation (down to (1-jitter)×s).
+  function jitterAmt() {
+    const v = state.smudgeJitter;
+    return (typeof v === 'number' && Number.isFinite(v)) ? Math.max(0, Math.min(1, v)) : 0;
   }
 
   return {
@@ -149,6 +177,25 @@ export function createSmudgeTool({ activeLayer, saveState, composite }) {
         const h = m ? m[1] : '000000';
         fr = parseInt(h.slice(0, 2), 16); fg = parseInt(h.slice(2, 4), 16); fb = parseInt(h.slice(4, 6), 16);
       }
+      // Sample-all-layers: seed the carried buffer from the FLATTENED composite
+      // (every visible layer) instead of just the active layer, so the smear
+      // picks up colour it can see on screen. Default off → unchanged behaviour.
+      // Smears are still DEPOSITED only onto the active layer.
+      let sampleCtx = ctx;
+      if (state.smudgeSampleAll) {
+        try {
+          const comp = state.mainCanvas;
+          if (comp && comp.width === W && comp.height === H) {
+            // mainCanvas matches the doc size → its (x,y) maps to layer-local
+            // after subtracting the layer offset, same as the per-layer read.
+            const flat = document.createElement('canvas');
+            flat.width = W; flat.height = H;
+            const fctx = flat.getContext('2d', { willReadFrequently: true });
+            fctx.drawImage(comp, 0, 0);
+            sampleCtx = fctx;
+          }
+        } catch (_) { sampleCtx = ctx; } // any failure → fall back to active layer
+      }
       // Seed one carried buffer per symmetry copy from the pixels under THAT
       // copy's start point (or the foreground colour in Finger-Painting mode).
       const seedCarried = (sx, sy) => {
@@ -165,7 +212,7 @@ export function createSmudgeTool({ activeLayer, saveState, composite }) {
         const rx1 = Math.min(W, Math.ceil(sx + cr) + 1);
         const ry1 = Math.min(H, Math.ceil(sy + cr) + 1);
         const nw = Math.max(1, rx1 - rx0), nh = Math.max(1, ry1 - ry0);
-        const nb = ctx.getImageData(rx0, ry0, nw, nh).data;
+        const nb = sampleCtx.getImageData(rx0, ry0, nw, nh).data;
         for (let ly = 0; ly < bw; ly++) {
           for (let lx = 0; lx < bw; lx++) {
             let px = Math.round(sx - cr + lx), py = Math.round(sy - cr + ly);
@@ -212,15 +259,25 @@ export function createSmudgeTool({ activeLayer, saveState, composite }) {
       const region = ctx.getImageData(minX, minY, rw, rh);
       const s = effStrength(strengthVal());
       const pow = falloffPow();
-      const stepLen = Math.max(0.75, radius * 0.15); // dense steps → smooth trail
+      const scatter = scatterAmt();   // random per-dab positional jitter
+      const jitter = jitterAmt();     // random per-dab strength variation
+      const stepLen = Math.max(0.75, radius * spacingFrac()); // step ↔ spacing
       for (let m = 0; m < segs.length; m++) {
         const a = segs[m].a, b = segs[m].b, carried = carriedSet[m];
         const segLen = Math.hypot(b.x - a.x, b.y - a.y);
         const steps = Math.max(1, Math.ceil(segLen / stepLen));
         for (let i = 1; i <= steps; i++) {
           const t = i / steps;
+          let dx = a.x + (b.x - a.x) * t, dy = a.y + (b.y - a.y) * t;
+          if (scatter > 0) { // offset the dab centre in a random direction
+            const ang = Math.random() * Math.PI * 2, rad = Math.random() * scatter * radius;
+            dx += Math.cos(ang) * rad; dy += Math.sin(ang) * rad;
+          }
+          // Jitter drops the per-dab strength toward (1-jitter)×s for a broken,
+          // scratchy deposit; jitter=0 leaves the dab strength at s (unchanged).
+          const ds = jitter > 0 ? s * (1 - jitter * Math.random()) : s;
           smudgeDab(region.data, rw, rh, minX, minY, carried, bw, cr,
-            a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, radius, s, pow);
+            dx, dy, radius, ds, pow);
         }
       }
       ctx.putImageData(region, minX, minY);
