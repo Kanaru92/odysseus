@@ -11,6 +11,12 @@ const clamp = (v) => (v < 0 ? 0 : v > 255 ? 255 : v);
 
 import { unsharpMask } from '../fx/unsharp.js';
 import { medianFilter } from '../fx/median.js';
+import { radialBlur } from '../fx/radial-blur.js';
+import { ripple } from '../fx/ripple.js';
+import { twirl } from '../fx/twirl.js';
+import { spherize } from '../fx/spherize.js';
+import { wave } from '../fx/wave.js';
+import { mosaic } from '../fx/mosaic.js';
 
 export const FILTERS = [
   { id: 'grayscale', name: 'Grayscale', amount: false },
@@ -34,6 +40,12 @@ export const FILTERS = [
   { id: 'high-pass', name: 'High Pass', amount: true },
   { id: 'emboss', name: 'Emboss', amount: false },
   { id: 'find-edges', name: 'Find Edges', amount: false },
+  { id: 'radial-blur', name: 'Radial Blur', amount: true },
+  { id: 'ripple', name: 'Ripple', amount: true },
+  { id: 'twirl', name: 'Twirl', amount: true, bidir: true },
+  { id: 'spherize', name: 'Spherize / Pinch', amount: true, bidir: true },
+  { id: 'wave', name: 'Wave', amount: true },
+  { id: 'mosaic', name: 'Mosaic', amount: true },
 ];
 
 function hexToRgb(h) {
@@ -273,6 +285,14 @@ export function applyFilter(img, type, amount = 50, opts) {
     case 'high-pass': highPass(d, w, h, amount); break;
     case 'emboss': emboss(d, w, h); break;
     case 'find-edges': findEdges(d, w, h); break;
+    // Displacement / blur filters below return a fresh buffer (read-from-source
+    // remaps), so they write back into the live ImageData via d.set(...).
+    case 'radial-blur': d.set(radialBlur(d, w, h, { amount, mode: 'zoom', cx: 0.5, cy: 0.5 })); break;
+    case 'ripple': d.set(ripple(d, w, h, { amount, wavelength: 20 })); break;
+    case 'twirl': d.set(twirl(d, w, h, { angle: (amount - 50) * 3.6 })); break;
+    case 'spherize': d.set(spherize(d, w, h, { amount: bidir })); break;
+    case 'wave': d.set(wave(d, w, h, { amplitude: Math.max(0, Math.round(amount / 5)), wavelength: 40, orientation: 'horizontal' })); break;
+    case 'mosaic': d.set(mosaic(d, w, h, { size: Math.max(1, Math.round((amount / 100) * 50)) })); break;
   }
   return img;
 }
