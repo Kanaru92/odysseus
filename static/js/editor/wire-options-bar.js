@@ -49,6 +49,7 @@ const PROXIES = {
     { label: 'Hardness', id: 'ge-clone-softness', suffix: '%' },
   ],
   wand: [
+    { label: 'Mode', kind: 'buttons', sel: '.ge-wand-mode-btn', attr: 'data-wand-mode' },
     { label: 'Tolerance', id: 'ge-wand-tolerance' },
     { label: 'Feather', id: 'ge-wand-feather' },
   ],
