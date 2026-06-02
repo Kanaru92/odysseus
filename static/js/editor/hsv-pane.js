@@ -45,12 +45,34 @@ export function wireHsvPane() {
   const fg = document.querySelector('.ge-fg-color') || document.querySelector('.ge-color-picker');
   if (!host || !fg || host.dataset.mounted) return;
   host.dataset.mounted = '1';
+  // Compact numeric field block (R/G/B 0–255, H 0–360, S/B 0–100, hex) shown
+  // beside the square — inline-styled so it needs no external CSS. The hex
+  // field mirrors the canonical one in the FG swatch popover; here it stays
+  // visible on the Color tab for at-a-glance editing.
+  const fld = (lbl, cls, max) =>
+    `<label style="display:flex;align-items:center;gap:3px;font-size:10px;opacity:.8;">`
+    + `<span style="width:11px;text-align:center;opacity:.7;">${lbl}</span>`
+    + `<input type="text" inputmode="numeric" class="${cls}" data-max="${max}" spellcheck="false" autocomplete="off"`
+    + ` style="width:38px;min-width:0;box-sizing:border-box;padding:1px 3px;font-size:10px;text-align:right;`
+    + `background:rgba(0,0,0,.25);border:1px solid rgba(255,255,255,.15);border-radius:3px;color:inherit;"></label>`;
   host.innerHTML = `
     <div class="ge-hsv-sqwrap"><canvas class="ge-hsv-sq" width="${SQ}" height="${SQ}"></canvas><span class="ge-hsv-sv-handle"></span></div>
-    <div class="ge-hsv-huewrap"><canvas class="ge-hsv-hue" width="${SQ}" height="${HUE_H}"></canvas><span class="ge-hsv-hue-handle"></span></div>`;
+    <div class="ge-hsv-huewrap"><canvas class="ge-hsv-hue" width="${SQ}" height="${HUE_H}"></canvas><span class="ge-hsv-hue-handle"></span></div>
+    <div class="ge-hsv-fields" style="display:flex;flex-direction:column;gap:3px;margin-top:6px;">
+      <div style="display:flex;gap:5px;">${fld('R', 'ge-hsv-r', 255)}${fld('G', 'ge-hsv-g', 255)}${fld('B', 'ge-hsv-b', 255)}</div>
+      <div style="display:flex;gap:5px;">${fld('H', 'ge-hsv-h', 360)}${fld('S', 'ge-hsv-s', 100)}${fld('B', 'ge-hsv-bv', 100)}</div>
+      <label style="display:flex;align-items:center;gap:3px;font-size:10px;opacity:.8;">
+        <span style="width:11px;text-align:center;opacity:.7;">#</span>
+        <input type="text" class="ge-hsv-hex" maxlength="7" spellcheck="false" autocomplete="off"
+          style="width:72px;box-sizing:border-box;padding:1px 4px;font-size:10px;background:rgba(0,0,0,.25);border:1px solid rgba(255,255,255,.15);border-radius:3px;color:inherit;">
+      </label>
+    </div>`;
   const sq = host.querySelector('.ge-hsv-sq'), sctx = sq.getContext('2d');
   const hue = host.querySelector('.ge-hsv-hue'), hctx = hue.getContext('2d');
   const svH = host.querySelector('.ge-hsv-sv-handle'), hueH = host.querySelector('.ge-hsv-hue-handle');
+  const fR = host.querySelector('.ge-hsv-r'), fG = host.querySelector('.ge-hsv-g'), fB = host.querySelector('.ge-hsv-b');
+  const fH = host.querySelector('.ge-hsv-h'), fS = host.querySelector('.ge-hsv-s'), fV = host.querySelector('.ge-hsv-bv');
+  const fHex = host.querySelector('.ge-hsv-hex');
   let h = 0, s = 0, v = 0, suppress = false;
 
   // Static hue rainbow.
@@ -72,6 +94,15 @@ export function wireHsvPane() {
     svH.style.top = ((1 - v) * SQ) + 'px';
     hueH.style.left = ((h / 360) * SQ) + 'px';
   }
+  // Push current h/s/v out to the numeric + hex fields (skips whichever input
+  // is focused so live typing isn't clobbered mid-entry).
+  function syncFields() {
+    const [r, g, b] = hsvToRgb(h, s, v);
+    const set = (el, val) => { if (el && document.activeElement !== el) el.value = String(val); };
+    set(fR, r); set(fG, g); set(fB, b);
+    set(fH, Math.round(h)); set(fS, Math.round(s * 100)); set(fV, Math.round(v * 100));
+    set(fHex, hsvToHex(h, s, v));
+  }
   function emit() {
     const hex = hsvToHex(h, s, v);
     suppress = true;
@@ -81,7 +112,7 @@ export function wireHsvPane() {
   }
   function setHsv(nh, ns, nv, push) {
     h = nh; s = ns; v = nv;
-    drawSquare(); placeHandles();
+    drawSquare(); placeHandles(); syncFields();
     if (push) emit();
   }
 
@@ -95,6 +126,36 @@ export function wireHsvPane() {
   };
   bind(sq, dragSquare);
   bind(hue, dragHue);
+
+  // ── Numeric field editing ──────────────────────────────────────────────
+  // A partial/blank/invalid entry is ignored (no throw, no state change) so
+  // mid-typing never snaps the color; a complete value commits to the fg.
+  const intIn = (el) => { const t = el.value.trim(); if (!/^\d{1,3}$/.test(t)) return null; const n = +t; const max = +el.dataset.max; return n < 0 || n > max ? null : n; };
+  function applyRgb() {
+    const r = intIn(fR), g = intIn(fG), b = intIn(fB);
+    if (r == null || g == null || b == null) return;
+    setHsv(...rgbToHsv(r, g, b), true);
+  }
+  function applyHsv() {
+    const nh = intIn(fH), ns = intIn(fS), nv = intIn(fV);
+    if (nh == null || ns == null || nv == null) return;
+    setHsv(nh, ns / 100, nv / 100, true);
+  }
+  function applyHex() {
+    let t = fHex.value.trim(); if (!t.startsWith('#')) t = '#' + t;
+    if (!/^#[0-9a-f]{6}$/i.test(t)) return;
+    setHsv(...hexToHsv(t), true);
+  }
+  [fR, fG, fB].forEach((el) => el.addEventListener('input', applyRgb));
+  [fH, fS, fV].forEach((el) => el.addEventListener('input', applyHsv));
+  fHex.addEventListener('input', applyHex);
+  // On blur / Enter, re-sync the field text to the canonical value so a
+  // cleared or clamped-out entry snaps back to a valid display.
+  const reflowAll = () => syncFields();
+  [fR, fG, fB, fH, fS, fV, fHex].forEach((el) => {
+    el.addEventListener('blur', reflowAll);
+    el.addEventListener('keydown', (e) => { if (e.key === 'Enter') reflowAll(); });
+  });
 
   function syncFromFg() { if (suppress) return; const [nh, ns, nv] = hexToHsv(fg.value || '#000000'); setHsv(nh, ns, nv, false); }
   fg.addEventListener('input', syncFromFg);
