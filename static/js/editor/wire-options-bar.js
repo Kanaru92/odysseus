@@ -97,7 +97,7 @@ const PROXIES = {
     { label: 'Strength', id: 'ge-dodgeburn-strength', suffix: '%' },
   ],
   gradient: [
-    { label: 'Type', kind: 'buttons', sel: '.ge-grad-type', attr: 'data-grad-type' },
+    { label: 'Type', kind: 'grad-type' },
     { label: 'Fill', kind: 'buttons', sel: '.ge-grad-mode', attr: 'data-grad-mode' },
     { label: 'Opacity', id: 'ge-grad-opacity', suffix: '%' },
   ],
@@ -123,6 +123,14 @@ const sizeLabelText = () => {
   const el = document.querySelector('.ge-size-label');
   return el ? el.textContent : '';
 };
+
+// Gradient types. Linear/Radial keep the original canvas-API behaviour; Angle
+// (sweep), Reflected (mirrored linear) and Diamond (square-distance isolines)
+// are rasterised by editor/tools/gradient.js. Default 'linear' = prior behaviour.
+const GRADIENT_TYPES = [
+  ['linear', 'Linear'], ['radial', 'Radial'], ['angle', 'Angle'],
+  ['reflected', 'Reflected'], ['diamond', 'Diamond'],
+];
 
 export function createOptionsBar() {
   const mirrored = new WeakSet();
@@ -168,6 +176,34 @@ export function createOptionsBar() {
     host.innerHTML = '';
     const specs = PROXIES[toolId] || [];
     for (const spec of specs) {
+      // Gradient type picker — a self-contained <select> that owns
+      // `state.gradientType` directly (the side panel only exposes linear/radial,
+      // so the extra types live only on the options bar). Default 'linear'.
+      if (spec.kind === 'grad-type') {
+        const field = document.createElement('label');
+        field.className = 'ge-ob-field';
+        field.style.cssText = 'display:inline-flex;align-items:center;gap:6px;white-space:nowrap;';
+        const lbl = document.createElement('span');
+        lbl.className = 'ge-ob-label';
+        lbl.style.cssText = 'opacity:0.6;';
+        lbl.textContent = spec.label;
+        const sel = document.createElement('select');
+        sel.className = 'ge-grad-type-select';
+        sel.style.cssText = 'max-width:120px;';
+        for (const [val, name] of GRADIENT_TYPES) {
+          const o = document.createElement('option');
+          o.value = val; o.textContent = name;
+          sel.appendChild(o);
+        }
+        sel.value = state.gradientType || 'linear';
+        // Keep state in sync (and seed it the first time the bar is built).
+        state.gradientType = sel.value;
+        sel.addEventListener('change', () => { state.gradientType = sel.value; });
+        field.appendChild(lbl); field.appendChild(sel);
+        host.appendChild(field);
+        continue;
+      }
+
       // Smudge preset picker — a self-contained <select> with no canonical
       // right-panel input. Selecting a preset applies its config to the smudge
       // state fields (and mirrors Strength/Finger into their inputs).
