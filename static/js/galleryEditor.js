@@ -10,6 +10,7 @@ import modalManager from './modalManager.js';
 import { canvasCoords as _canvasCoords } from './editor/canvas-coords.js';
 import { drawCheckerboard as _drawCheckerboard, setChecker, checkerConfig, CHECKER_SIZES, CHECKER_PRESETS } from './editor/checkerboard.js';
 import { dilateMask as _dilateMask, applyInpaintFeather as _applyInpaintFeather } from './editor/mask-utils.js';
+import { createAutosaveRecovery } from './editor/autosave-recovery.js';
 import {
   lassoOffsetPoints as _lassoOffsetPointsImpl,
   getLassoPath as _getLassoPathImpl,
@@ -1625,10 +1626,23 @@ function _saveState(label) {
 // debounced timer. `state.imageId` (gallery id) is still tracked separately
 // for "save back to the original photo" behaviour.
 const PERSIST_DEBOUNCE_MS = 800;
+// Client crash-recovery: mirror each draft save to IndexedDB + flush on tab-hide,
+// so a crash / force-close / offline-save-failure between server commits never
+// loses work. The mirror is keyed per editor session; recovery reads it on open.
+const _autosave = createAutosaveRecovery();
+// Per-image key so recovery-on-open never restores a different image's work.
+const _autosaveKey = () => (state.imageId ? 'img:' + state.imageId : 'blank-canvas');
+let _flushGuardsInstalled = false;
 const THUMB_MAX = 160;
 
 function _schedulePersist() {
   if (!state.editorOpen || !state.layers.length) return;
+  if (!_flushGuardsInstalled) {
+    _flushGuardsInstalled = true;
+    // Flush the pending debounced save on tab hide / pagehide so the last edits
+    // are captured locally even if the tab is closed/suspended mid-debounce.
+    try { _autosave.addFlushGuards(window, () => { try { _persistDraft(); } catch {} }); } catch {}
+  }
   if (state.persistTimer) clearTimeout(state.persistTimer);
   state.persistTimer = setTimeout(() => { state.persistTimer = null; _persistDraft(); }, PERSIST_DEBOUNCE_MS);
 }
@@ -1706,6 +1720,12 @@ async function _persistDraft() {
   if (state.persistInFlight) { state.persistDirty = true; return; }
   const payload = _buildDraftPayload();
   const thumbnail = _buildThumbnail();
+  // Mirror locally BEFORE the server round-trip (synced=false); flipped to synced
+  // once the server commit lands. If the server save fails/never returns, the
+  // unsynced mirror survives for recovery on the next open.
+  const _mirrorKey = _autosaveKey();
+  const _mirrorTs = Date.now();
+  try { _autosave.writeMirror(_mirrorKey, payload, { ts: _mirrorTs, name: state.draftName }); } catch {}
   const body = {
     name: state.draftName || 'Untitled',
     source_image_id: state.imageId || null,
@@ -1742,6 +1762,7 @@ async function _persistDraft() {
     }
   };
   state.persistInFlight = doRequest()
+    .then((r) => { try { _autosave.markSynced(_mirrorKey, _mirrorTs); } catch {} return r; })
     .catch((e) => { console.warn('[ge] draft save failed', e); })
     .then(() => {
       state.persistInFlight = null;
@@ -6463,7 +6484,7 @@ export function openEditor(imageUrl, imageId, presetSize, displayName, draftId) 
     state.draftName = _draft.name || displayName || 'Untitled';
     const innerLabel = state.editorLoadingEl?.querySelector('.ge-loading-text');
     if (innerLabel) innerLabel.textContent = 'Resuming draft…';
-    return _restoreDraft(_draft).then(() => {
+    return _restoreDraft(_draft).then(async () => {
       if (!state.editorOpen) return null;
       // If the draft was broken/empty (0 layers reconstructed), fall
       // through to loading the source image as a normal edit. Without
@@ -6473,6 +6494,15 @@ export function openEditor(imageUrl, imageId, presetSize, displayName, draftId) 
         console.warn('[openEditor] draft restored but produced 0 layers — falling back to source image');
         return null;
       }
+      // Crash recovery: if a local UNSYNCED mirror is strictly newer than this
+      // server draft, the last edits never reached the server — restore them.
+      try {
+        const _rec = await _autosave.checkRecovery(_autosaveKey(), _draft);
+        if (_rec && _rec.payload && _rec.payload.layers) {
+          await _restoreDraft({ payload: _rec.payload });
+          if (uiModule && uiModule.showToast) uiModule.showToast('Recovered unsaved changes');
+        }
+      } catch {}
       composite();
       _renderLayerPanel();
       _fitZoom();
