@@ -17,6 +17,7 @@ import { twirl } from '../fx/twirl.js';
 import { spherize } from '../fx/spherize.js';
 import { wave } from '../fx/wave.js';
 import { mosaic } from '../fx/mosaic.js';
+import { lensBlur } from '../fx/lens-blur.js';
 
 export const FILTERS = [
   { id: 'grayscale', name: 'Grayscale', amount: false },
@@ -46,6 +47,7 @@ export const FILTERS = [
   { id: 'spherize', name: 'Spherize / Pinch', amount: true, bidir: true },
   { id: 'wave', name: 'Wave', amount: true },
   { id: 'mosaic', name: 'Mosaic', amount: true },
+  { id: 'lens-blur', name: 'Lens Blur', amount: true },
 ];
 
 function hexToRgb(h) {
@@ -293,6 +295,7 @@ export function applyFilter(img, type, amount = 50, opts) {
     case 'spherize': d.set(spherize(d, w, h, { amount: bidir })); break;
     case 'wave': d.set(wave(d, w, h, { amplitude: Math.max(0, Math.round(amount / 5)), wavelength: 40, orientation: 'horizontal' })); break;
     case 'mosaic': d.set(mosaic(d, w, h, { size: Math.max(1, Math.round((amount / 100) * 50)) })); break;
+    case 'lens-blur': d.set(lensBlur(d, w, h, { radius: Math.max(1, Math.round((amount / 100) * 20)) })); break;
   }
   return img;
 }
