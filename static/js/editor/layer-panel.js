@@ -359,16 +359,22 @@ export function createLayerPanelRenderer(deps) {
         opPop.hidden = true;
         opChip.setAttribute('aria-expanded', 'false');
         document.removeEventListener('pointerdown', onOpDoc, true);
+        // Unregister from the editor's Escape closer stack (the capture-phase
+        // hard guard drains it; our own bubble handler below never sees Escape).
+        const a = state.editorEscClosers; if (a) { const i = a.indexOf(closeOpPop); if (i >= 0) a.splice(i, 1); }
       };
       function onOpDoc(e) { if (!opPop.contains(e.target) && !opChip.contains(e.target)) closeOpPop(); }
       opChip.addEventListener('click', () => {
         if (opPop.hidden) {
           opPop.hidden = false;
           opChip.setAttribute('aria-expanded', 'true');
+          (state.editorEscClosers || (state.editorEscClosers = [])).push(closeOpPop);
           op.focus();
           setTimeout(() => document.addEventListener('pointerdown', onOpDoc, true), 0);
         } else { closeOpPop(); }
       });
+      // Bubble fallback (used only if the capture guard isn't installed); the
+      // guard handles Escape via the closer stack in the normal mounted case.
       opPop.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.stopPropagation(); closeOpPop(); opChip.focus(); } });
     }
 

@@ -200,12 +200,17 @@ if (!window.__galleryEditEscHardGuardInstalled) {
     if (e.key !== 'Escape') return;
     if (window.__galleryEditLive || _galleryEditMounted()) {
       // This guard runs first (window capture) and otherwise swallows Escape
-      // entirely, so any Escape-dismissible editor affordance has to be handled
-      // right here: commit an open Type edit, cancel an in-progress polygonal
-      // lasso, or close the brush quick-pick popup. (The text editor's own
+      // entirely (so it never leaks to the host app), so EVERY Escape-dismissible
+      // editor affordance has to be handled right here — a child element's own
       // bubble-phase keydown never sees Escape because this capture guard
-      // preempts it, so the commit has to live here.)
-      if (state.textEditingLayerId) {
+      // preempts it. Order = modal-stack priority (most specific / most-recently
+      // opened first): registered popovers, Type edit, prompt, in-progress
+      // lasso, active distort/perspective-crop/free-transform session, brush
+      // quick-pick. Popovers in other modules opt in by pushing a closer onto
+      // state.editorEscClosers while open (and splicing it on close).
+      const _escClosers = state.editorEscClosers;
+      if (_escClosers && _escClosers.length) { try { _escClosers[_escClosers.length - 1](); } catch {} }
+      else if (state.textEditingLayerId) {
         const _tl = state.layers.find((l) => l.id === state.textEditingLayerId);
         const _inp = document.getElementById('ge-text-input');
         if (_tl && _inp) { try { _commitText(_tl, _inp); } catch {} }
@@ -213,6 +218,11 @@ if (!window.__galleryEditEscHardGuardInstalled) {
       else if (_activePromptClose) { try { _activePromptClose(); } catch {} }
       else if (state.polyLassoActive) { try { _polyLassoTool.cancel(); } catch {} }
       else if (state.magLassoActive) { try { _magLassoTool.cancel(); } catch {} }
+      else if (state.distortActive) { try { _distortTool.cancel(); } catch {} }
+      else if (state.pcropActive) { try { _pcropTool.cancel(); } catch {} }
+      // Free Transform / Transform tool: cancel a REAL session, but never the
+      // Move tool's always-on SILENT box (that would revert position on a stray Esc).
+      else if (state.transformActive && !state.transformSilent) { try { _cancelTransform(); } catch {} }
       else if (_brushQuickPick && _brushQuickPick.isOpen()) { try { _brushQuickPick.close(); } catch {} }
       e.preventDefault();
       e.stopPropagation();
