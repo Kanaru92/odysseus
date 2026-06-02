@@ -6,6 +6,10 @@ import uiModule from './ui.js';
 import dragSortModule from './dragSort.js';
 import spinnerModule from './spinner.js';
 import { attachColorPicker, isColorPickerOpen, closeColorPicker } from './colorPicker.js';
+import { gradientOverlay } from './editor/fx/layer-style-gradient-overlay.js';
+import { satin } from './editor/fx/layer-style-satin.js';
+import { bevelEmboss } from './editor/fx/layer-style-bevel.js';
+import { strokeStyle } from './editor/fx/layer-style-stroke.js';
 import modalManager from './modalManager.js';
 import { canvasCoords as _canvasCoords } from './editor/canvas-coords.js';
 import { drawCheckerboard as _drawCheckerboard, setChecker, checkerConfig, CHECKER_SIZES, CHECKER_PRESETS } from './editor/checkerboard.js';
@@ -943,14 +947,18 @@ function _openFxMenu() {
   if (!layer.fx) layer.fx = {};
   const fx = layer.fx;
   const defaults = {
-    stroke: { enabled: false, size: 3, color: '#000000' },
+    stroke: { enabled: false, size: 3, color: '#000000', position: 'outside' },
     dropShadow: { enabled: false, dx: 5, dy: 5, blur: 6, color: '#000000', opacity: 0.6 },
     glow: { enabled: false, blur: 8, color: '#ffd24d', opacity: 0.75 },
     innerShadow: { enabled: false, blur: 6, dx: 4, dy: 4, color: '#000000', opacity: 0.6 },
     innerGlow: { enabled: false, blur: 8, color: '#ffd24d', opacity: 0.7 },
     colorOverlay: { enabled: false, color: '#ff3030', opacity: 0.5 },
+    gradientOverlay: { enabled: false, gradType: 'linear', angle: 90, stops: [{ pos: 0, color: '#000000' }, { pos: 1, color: '#ffffff' }], opacity: 1 },
+    satin: { enabled: false, color: '#7a4a2a', blur: 8, distance: 11, angle: 19, opacity: 0.5, invert: false },
+    bevel: { enabled: false, size: 5, depth: 1, angle: 120, altitude: 30, highlight: '#ffffff', shadow: '#000000', opacity: 0.75 },
   };
-  for (const k in defaults) if (!fx[k]) fx[k] = { ...defaults[k] };
+  // Deep-clone so nested defaults (e.g. gradientOverlay.stops[]) aren't shared across layers.
+  for (const k in defaults) if (!fx[k]) fx[k] = JSON.parse(JSON.stringify(defaults[k]));
   const pop = document.createElement('div');
   pop.id = 'ge-fx-popup';
   pop.style.cssText = 'position:fixed;z-index:200;right:18px;top:84px;background:#2a2a2e;border:1px solid rgba(255,255,255,0.16);border-radius:8px;padding:10px 12px;box-shadow:0 12px 32px rgba(0,0,0,0.55);font-size:12px;color:#eee;min-width:236px;';
@@ -962,12 +970,15 @@ function _openFxMenu() {
       <strong>Blending Options</strong>
       <button id="ge-fx-close" style="background:none;border:none;color:#aaa;cursor:pointer;font-size:14px;line-height:1;">✕</button>
     </div>
-    ${row('stroke', 'Stroke', `<input type="number" data-fxp="stroke.size" value="${fx.stroke.size}" min="1" max="50" style="width:44px;"><input type="color" data-fxp="stroke.color" value="${fx.stroke.color}">`)}
+    ${row('stroke', 'Stroke', `<select data-fxp="stroke.position" style="font-size:11px;background:#1c1c1f;color:#eee;border:1px solid #444;border-radius:4px;"><option value="outside"${fx.stroke.position === 'outside' ? ' selected' : ''}>Out</option><option value="inside"${fx.stroke.position === 'inside' ? ' selected' : ''}>In</option><option value="center"${fx.stroke.position === 'center' ? ' selected' : ''}>Ctr</option></select><input type="number" data-fxp="stroke.size" value="${fx.stroke.size}" min="1" max="50" style="width:40px;"><input type="color" data-fxp="stroke.color" value="${fx.stroke.color}">`)}
     ${row('dropShadow', 'Drop Shadow', `<input type="color" data-fxp="dropShadow.color" value="${fx.dropShadow.color}">`)}
     ${row('glow', 'Outer Glow', `<input type="color" data-fxp="glow.color" value="${fx.glow.color}">`)}
     ${row('innerShadow', 'Inner Shadow', `<input type="color" data-fxp="innerShadow.color" value="${fx.innerShadow.color}">`)}
     ${row('innerGlow', 'Inner Glow', `<input type="color" data-fxp="innerGlow.color" value="${fx.innerGlow.color}">`)}
+    ${row('satin', 'Satin', `<input type="color" data-fxp="satin.color" value="${fx.satin.color}">`)}
+    ${row('gradientOverlay', 'Gradient Overlay', `<input type="color" data-fxp="gradientOverlay.stops.0.color" value="${fx.gradientOverlay.stops[0].color}"><input type="color" data-fxp="gradientOverlay.stops.1.color" value="${fx.gradientOverlay.stops[1].color}">`)}
     ${row('colorOverlay', 'Color Overlay', `<input type="color" data-fxp="colorOverlay.color" value="${fx.colorOverlay.color}">`)}
+    ${row('bevel', 'Bevel & Emboss', `<input type="color" data-fxp="bevel.highlight" value="${fx.bevel.highlight}"><input type="color" data-fxp="bevel.shadow" value="${fx.bevel.shadow}">`)}
     <p style="font-size:10px;opacity:0.5;margin:6px 0 0;">Non-destructive effects on the active layer. Defaults are sensible; tweak colours/size here.</p>`;
   document.body.appendChild(pop);
   pop.querySelector('#ge-fx-close').addEventListener('click', () => pop.remove());
@@ -976,8 +987,10 @@ function _openFxMenu() {
     fx[cb.dataset.fx].enabled = cb.checked; composite();
   }));
   pop.querySelectorAll('[data-fxp]').forEach((inp) => inp.addEventListener('input', () => {
-    const [k, prop] = inp.dataset.fxp.split('.');
-    fx[k][prop] = inp.type === 'number' ? (parseFloat(inp.value) || 0) : inp.value;
+    const path = inp.dataset.fxp.split('.'); // supports nested paths e.g. gradientOverlay.stops.0.color
+    let obj = fx;
+    for (let i = 0; i < path.length - 1; i++) obj = obj[path[i]];
+    obj[path[path.length - 1]] = inp.type === 'number' ? (parseFloat(inp.value) || 0) : inp.value;
     composite();
   }));
 }
@@ -1042,8 +1055,10 @@ function _applyLayerFx(source, fx) {
   if (!fx) return source;
   const ds = fx.dropShadow, gl = fx.glow, st = fx.stroke, co = fx.colorOverlay;
   const ish = fx.innerShadow, igl = fx.innerGlow;
+  const go = fx.gradientOverlay, sa = fx.satin, be = fx.bevel;
   if (!(ds && ds.enabled) && !(gl && gl.enabled) && !(st && st.enabled) && !(co && co.enabled)
-      && !(ish && ish.enabled) && !(igl && igl.enabled)) return source;
+      && !(ish && ish.enabled) && !(igl && igl.enabled)
+      && !(go && go.enabled) && !(sa && sa.enabled) && !(be && be.enabled)) return source;
   const w = source.width, h = source.height;
   const out = document.createElement('canvas');
   out.width = w; out.height = h;
@@ -1064,8 +1079,13 @@ function _applyLayerFx(source, fx) {
     ctx.drawImage(sil, 0, 0); ctx.drawImage(sil, 0, 0); // double for intensity
     ctx.restore();
   }
-  if (st && st.enabled) {
-    ctx.drawImage(_fxOuterStroke(source, Math.max(1, st.size || 3), st.color || '#000000'), 0, 0);
+  // Stroke (position 'outside', the default) draws UNDER the layer so the ring
+  // sits beyond the edge. Inside/center strokes draw on top, after the layer.
+  if (st && st.enabled && (st.position || 'outside') === 'outside') {
+    ctx.save();
+    ctx.globalAlpha = st.opacity == null ? 1 : st.opacity;
+    ctx.drawImage(strokeStyle(source, { size: st.size, color: st.color, position: 'outside', opacity: 1 }), 0, 0);
+    ctx.restore();
   }
   ctx.drawImage(source, 0, 0);
   // Inner Shadow / Inner Glow — on TOP of the layer, clipped to its alpha so they
@@ -1082,12 +1102,40 @@ function _applyLayerFx(source, fx) {
     ctx.drawImage(_fxInner(source, { color: igl.color || '#ffd24d', blur: igl.blur == null ? 8 : igl.blur, dx: 0, dy: 0 }), 0, 0);
     ctx.restore();
   }
+  // Satin (interior sheen) + Gradient Overlay — on top of the layer, clipped to its
+  // alpha, below Color Overlay (PS stacking).
+  if (sa && sa.enabled) {
+    ctx.save();
+    ctx.globalAlpha = sa.opacity == null ? 0.5 : sa.opacity;
+    ctx.drawImage(satin(source, { color: sa.color, blur: sa.blur, distance: sa.distance, angle: sa.angle, invert: sa.invert, opacity: 1 }), 0, 0);
+    ctx.restore();
+  }
+  if (go && go.enabled) {
+    ctx.save();
+    ctx.globalAlpha = go.opacity == null ? 1 : go.opacity;
+    ctx.drawImage(gradientOverlay(source, { gradType: go.gradType, angle: go.angle, stops: go.stops, opacity: 1 }), 0, 0);
+    ctx.restore();
+  }
   if (co && co.enabled) {
     ctx.save();
     ctx.globalAlpha = co.opacity == null ? 1 : co.opacity;
     ctx.globalCompositeOperation = 'source-atop'; // clip overlay to the layer's pixels
     ctx.fillStyle = co.color || '#ff0000';
     ctx.fillRect(0, 0, w, h);
+    ctx.restore();
+  }
+  // Bevel & Emboss sits on TOP of all overlays; inside/center strokes also draw on
+  // top (clipped over the layer edge).
+  if (be && be.enabled) {
+    ctx.save();
+    ctx.globalAlpha = be.opacity == null ? 0.75 : be.opacity;
+    ctx.drawImage(bevelEmboss(source, { size: be.size, depth: be.depth, angle: be.angle, altitude: be.altitude, highlight: be.highlight, shadow: be.shadow, opacity: 1 }), 0, 0);
+    ctx.restore();
+  }
+  if (st && st.enabled && (st.position || 'outside') !== 'outside') {
+    ctx.save();
+    ctx.globalAlpha = st.opacity == null ? 1 : st.opacity;
+    ctx.drawImage(strokeStyle(source, { size: st.size, color: st.color, position: st.position, opacity: 1 }), 0, 0);
     ctx.restore();
   }
   return out;
