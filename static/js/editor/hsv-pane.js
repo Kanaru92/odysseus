@@ -5,7 +5,7 @@
  * the perceptual OK Color Picker tab.
  */
 
-const SQ = 150, HUE_H = 14;
+const SQ = 200, HUE_W = 16; // SV-square draw buffer; vertical hue bar buffer width
 
 function hsvToRgb(h, s, v) {
   h = ((h % 360) + 360) % 360;
@@ -45,27 +45,23 @@ export function wireHsvPane() {
   const fg = document.querySelector('.ge-fg-color') || document.querySelector('.ge-color-picker');
   if (!host || !fg || host.dataset.mounted) return;
   host.dataset.mounted = '1';
-  // Compact numeric field block (R/G/B 0–255, H 0–360, S/B 0–100, hex) shown
-  // beside the square — inline-styled so it needs no external CSS. The hex
-  // field mirrors the canonical one in the FG swatch popover; here it stays
-  // visible on the Color tab for at-a-glance editing.
+  // Compact numeric block (R/G/B 0–255, H 0–360, S/V 0–100, hex). Styling lives in
+  // CSS (.ge-hsv-* / .ge-field) per the design guide — no inline styles. The SV
+  // square + a VERTICAL hue bar sit side-by-side (PS layout); fields below align to
+  // a fixed letter column. HSV's third channel is labelled V (not a second "B").
   const fld = (lbl, cls, max) =>
-    `<label style="display:flex;align-items:center;gap:3px;font-size:10px;opacity:.8;">`
-    + `<span style="width:11px;text-align:center;opacity:.7;">${lbl}</span>`
-    + `<input type="text" inputmode="numeric" class="${cls}" data-max="${max}" spellcheck="false" autocomplete="off"`
-    + ` style="width:38px;min-width:0;box-sizing:border-box;padding:1px 3px;font-size:10px;text-align:right;`
-    + `background:rgba(0,0,0,.25);border:1px solid rgba(255,255,255,.15);border-radius:3px;color:inherit;"></label>`;
+    `<label class="ge-hsv-f"><span>${lbl}</span>`
+    + `<input type="text" inputmode="numeric" class="ge-field ${cls}" data-max="${max}" spellcheck="false" autocomplete="off"></label>`;
   host.innerHTML = `
-    <div class="ge-hsv-sqwrap"><canvas class="ge-hsv-sq" width="${SQ}" height="${SQ}"></canvas><span class="ge-hsv-sv-handle"></span></div>
-    <div class="ge-hsv-huewrap"><canvas class="ge-hsv-hue" width="${SQ}" height="${HUE_H}"></canvas><span class="ge-hsv-hue-handle"></span></div>
-    <div class="ge-hsv-fields" style="display:flex;flex-direction:column;gap:3px;margin-top:6px;">
-      <div style="display:flex;gap:5px;">${fld('R', 'ge-hsv-r', 255)}${fld('G', 'ge-hsv-g', 255)}${fld('B', 'ge-hsv-b', 255)}</div>
-      <div style="display:flex;gap:5px;">${fld('H', 'ge-hsv-h', 360)}${fld('S', 'ge-hsv-s', 100)}${fld('B', 'ge-hsv-bv', 100)}</div>
-      <label style="display:flex;align-items:center;gap:3px;font-size:10px;opacity:.8;">
-        <span style="width:11px;text-align:center;opacity:.7;">#</span>
-        <input type="text" class="ge-hsv-hex" maxlength="7" spellcheck="false" autocomplete="off"
-          style="width:72px;box-sizing:border-box;padding:1px 4px;font-size:10px;background:rgba(0,0,0,.25);border:1px solid rgba(255,255,255,.15);border-radius:3px;color:inherit;">
-      </label>
+    <div class="ge-hsv-top">
+      <div class="ge-hsv-sqwrap"><canvas class="ge-hsv-sq" width="${SQ}" height="${SQ}"></canvas><span class="ge-hsv-sv-handle"></span></div>
+      <div class="ge-hsv-huewrap"><canvas class="ge-hsv-hue" width="${HUE_W}" height="${SQ}"></canvas><span class="ge-hsv-hue-handle"></span></div>
+    </div>
+    <div class="ge-hsv-fields">
+      <div class="ge-hsv-frow">${fld('R', 'ge-hsv-r', 255)}${fld('G', 'ge-hsv-g', 255)}${fld('B', 'ge-hsv-b', 255)}</div>
+      <div class="ge-hsv-frow">${fld('H', 'ge-hsv-h', 360)}${fld('S', 'ge-hsv-s', 100)}${fld('V', 'ge-hsv-bv', 100)}</div>
+      <label class="ge-hsv-f ge-hsv-hexrow"><span>#</span>
+        <input type="text" class="ge-field ge-hsv-hex" maxlength="7" spellcheck="false" autocomplete="off"></label>
     </div>`;
   const sq = host.querySelector('.ge-hsv-sq'), sctx = sq.getContext('2d');
   const hue = host.querySelector('.ge-hsv-hue'), hctx = hue.getContext('2d');
@@ -75,8 +71,8 @@ export function wireHsvPane() {
   const fHex = host.querySelector('.ge-hsv-hex');
   let h = 0, s = 0, v = 0, suppress = false;
 
-  // Static hue rainbow.
-  (() => { for (let x = 0; x < SQ; x++) { hctx.fillStyle = `hsl(${(x / SQ) * 360},100%,50%)`; hctx.fillRect(x, 0, 1, HUE_H); } })();
+  // Static hue rainbow — vertical (red at top → red at bottom).
+  (() => { for (let y = 0; y < SQ; y++) { hctx.fillStyle = `hsl(${(y / SQ) * 360},100%,50%)`; hctx.fillRect(0, y, HUE_W, 1); } })();
 
   function drawSquare() {
     const [r0, g0, b0] = hsvToRgb(h, 1, 1);
@@ -89,10 +85,12 @@ export function wireHsvPane() {
     g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, '#000');
     sctx.fillStyle = g; sctx.fillRect(0, 0, SQ, SQ);
   }
+  // Percentage-based so handles track the responsively-sized square/bar (the
+  // draw buffers are fixed-res but the elements scale to the panel width).
   function placeHandles() {
-    svH.style.left = (s * SQ) + 'px';
-    svH.style.top = ((1 - v) * SQ) + 'px';
-    hueH.style.left = ((h / 360) * SQ) + 'px';
+    svH.style.left = (s * 100) + '%';
+    svH.style.top = ((1 - v) * 100) + '%';
+    hueH.style.top = ((h / 360) * 100) + '%';
   }
   // Push current h/s/v out to the numeric + hex fields (skips whichever input
   // is focused so live typing isn't clobbered mid-entry).
@@ -119,7 +117,7 @@ export function wireHsvPane() {
   const rel = (el, e) => { const r = el.getBoundingClientRect(); return [(e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height]; };
   const clamp = (x) => Math.max(0, Math.min(1, x));
   function dragSquare(e) { const [x, y] = rel(sq, e); setHsv(h, clamp(x), clamp(1 - y), true); }
-  function dragHue(e) { const [x] = rel(hue, e); setHsv(clamp(x) * 360, s, v, true); }
+  function dragHue(e) { const [, y] = rel(hue, e); setHsv(clamp(y) * 360, s, v, true); }
 
   const bind = (el, fn) => {
     el.addEventListener('pointerdown', (e) => { e.preventDefault(); el.setPointerCapture(e.pointerId); fn(e); const mv = (ev) => fn(ev); const up = () => { el.removeEventListener('pointermove', mv); el.removeEventListener('pointerup', up); }; el.addEventListener('pointermove', mv); el.addEventListener('pointerup', up); });

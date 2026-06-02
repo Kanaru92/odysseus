@@ -22789,6 +22789,13 @@ input.settings-select::placeholder { color: color-mix(in srgb, var(--fg) 35%, tr
   flex-direction: column;
   border-left: 1px solid var(--border);
   background: var(--panel);
+  /* Editor design tokens (see documentation/painting-suite/DESIGN-GUIDE.md §1.2).
+     Spacing 4px-base, three type steps, four opacity stops, radii, form geometry. */
+  --ge-s1: 2px; --ge-s2: 4px; --ge-s3: 6px; --ge-s4: 8px; --ge-s5: 10px; --ge-s6: 14px;
+  --ge-fs-hint: 10px; --ge-fs-base: 11px; --ge-fs-title: 12px;
+  --ge-op-faint: 0.4; --ge-op-muted: 0.55; --ge-op-mid: 0.7; --ge-op-strong: 0.85;
+  --ge-r-sm: 3px; --ge-r-md: 4px; --ge-r-lg: 6px;
+  --ge-row-h: 22px; --ge-label-col: 78px; --ge-cfield-label: 16px; --ge-gutter: 10px;
   /* Two-region split (was a single tall scroll column that buried the
      Layers panel ~750px below the fold). The panel itself does NOT scroll;
      the contextual tool-controls (top) scroll internally and the Layers
@@ -24982,13 +24989,24 @@ button .spinner-whirlpool {
 }
 .ge-pcurve-btns { display: flex; gap: 4px; margin-top: 4px; }
 .ge-pcurve-btns .ge-btn { flex: 1; font-size: 10px; padding: 2px 4px; }
-/* Classic HSV "Color" pane */
-.ge-hsv-sqwrap { position: relative; width: 150px; height: 150px; margin: 0 auto 8px; }
-.ge-hsv-sq { display: block; border-radius: 6px; cursor: crosshair; touch-action: none; }
+/* HSV "Color" pane — SV square + VERTICAL hue bar (see DESIGN-GUIDE.md §3.3). */
+.ge-hsv-top { display: flex; gap: var(--ge-s2, 4px); align-items: stretch; margin-bottom: var(--ge-s3, 6px); }
+.ge-hsv-sqwrap { position: relative; flex: 1 1 auto; min-width: 0; aspect-ratio: 1 / 1; }
+.ge-hsv-sq { display: block; width: 100%; height: 100%; border-radius: var(--ge-r-lg, 6px); cursor: crosshair; touch-action: none; }
 .ge-hsv-sv-handle { position: absolute; width: 12px; height: 12px; margin: -6px 0 0 -6px; border: 2px solid #fff; border-radius: 50%; box-shadow: 0 0 0 1px rgba(0,0,0,0.6); pointer-events: none; }
-.ge-hsv-huewrap { position: relative; width: 150px; height: 14px; margin: 0 auto; }
-.ge-hsv-hue { display: block; border-radius: 4px; cursor: crosshair; touch-action: none; }
-.ge-hsv-hue-handle { position: absolute; top: -2px; width: 4px; height: 18px; margin-left: -2px; border: 2px solid #fff; border-radius: 2px; box-shadow: 0 0 0 1px rgba(0,0,0,0.6); pointer-events: none; }
+.ge-hsv-huewrap { position: relative; flex: 0 0 18px; }
+.ge-hsv-hue { display: block; width: 100%; height: 100%; border-radius: var(--ge-r-md, 4px); cursor: crosshair; touch-action: none; }
+.ge-hsv-hue-handle { position: absolute; left: -2px; right: -2px; height: 4px; margin-top: -2px; border: 2px solid #fff; border-radius: 2px; box-shadow: 0 0 0 1px rgba(0,0,0,0.6); pointer-events: none; }
+.ge-hsv-fields { display: flex; flex-direction: column; gap: var(--ge-s2, 4px); }
+.ge-hsv-frow { display: flex; gap: var(--ge-s2, 4px); }
+.ge-hsv-frow > .ge-hsv-f { flex: 1 1 0; }
+.ge-hsv-f { display: flex; align-items: center; gap: var(--ge-s2, 4px); min-width: 0; font-size: var(--ge-fs-hint, 10px); opacity: var(--ge-op-strong, 0.85); }
+.ge-hsv-f > span { flex: 0 0 var(--ge-cfield-label, 16px); text-align: center; opacity: var(--ge-op-mid, 0.7); }
+.ge-hsv-f > .ge-field { flex: 1 1 0; min-width: 0; }
+.ge-hsv-hexrow > .ge-field { text-align: left; }
+/* Shared compact field for pickers/popups (DESIGN-GUIDE.md §2). */
+.ge-field { width: 100%; min-width: 0; box-sizing: border-box; padding: var(--ge-s1, 2px) var(--ge-s3, 6px); font-size: var(--ge-fs-hint, 10px); font-family: monospace; text-align: right; color: inherit; background: color-mix(in srgb, var(--fg) 6%, transparent); border: 1px solid var(--border); border-radius: var(--ge-r-sm, 3px); }
+.ge-field:focus { outline: none; border-color: var(--red); }
 /* Actions panel */
 #ge-actions-panel {
   position: fixed; right: 18px; bottom: 18px; z-index: 220;
