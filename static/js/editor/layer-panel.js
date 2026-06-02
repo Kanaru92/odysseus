@@ -186,6 +186,21 @@ export function createLayerPanelRenderer(deps) {
   // over a checkerboard so transparency reads. Layer canvases are document-
   // sized, so a straight fit-draw is faithful. Regenerated per render (cheap at
   // this size); the row stays a fixed height.
+  // Paint (or repaint) a row-thumbnail canvas from the layer's current pixels.
+  // Factored out so the live refresh during a stroke can redraw in place.
+  function _paintThumb(box, layer) {
+    const W = box.width, H = box.height;
+    const c = box.getContext('2d');
+    const s = 5; // checkerboard
+    c.clearRect(0, 0, W, H);
+    for (let y = 0; y < H; y += s) for (let x = 0; x < W; x += s) { c.fillStyle = (((x / s) + (y / s)) & 1) ? '#9a9a9a' : '#cfcfcf'; c.fillRect(x, y, s, s); }
+    try {
+      if (layer.canvas && layer.canvas.width && layer.canvas.height) {
+        c.imageSmoothingEnabled = true; c.imageSmoothingQuality = 'high';
+        c.drawImage(layer.canvas, 0, 0, layer.canvas.width, layer.canvas.height, 0, 0, W, H);
+      }
+    } catch {}
+  }
   function layerThumb(layer) {
     const W = 34;
     const aspect = (state.imgWidth && state.imgHeight) ? state.imgHeight / state.imgWidth : 1;
@@ -194,17 +209,20 @@ export function createLayerPanelRenderer(deps) {
     const box = document.createElement('canvas');
     box.width = W; box.height = H;
     box.className = 'ge-row-thumb';
+    box.dataset.thumbLayer = String(layer.id); // so refreshThumb can find this row's canvas
     box.style.cssText = `width:${W}px;height:${H}px;border:1px solid rgba(255,255,255,0.22);border-radius:2px;flex-shrink:0;margin:0 2px;`;
-    const c = box.getContext('2d');
-    const s = 5; // checkerboard
-    for (let y = 0; y < H; y += s) for (let x = 0; x < W; x += s) { c.fillStyle = (((x / s) + (y / s)) & 1) ? '#9a9a9a' : '#cfcfcf'; c.fillRect(x, y, s, s); }
-    try {
-      if (layer.canvas && layer.canvas.width && layer.canvas.height) {
-        c.imageSmoothingEnabled = true; c.imageSmoothingQuality = 'high';
-        c.drawImage(layer.canvas, 0, 0, layer.canvas.width, layer.canvas.height, 0, 0, W, H);
-      }
-    } catch {}
+    _paintThumb(box, layer);
     return box;
+  }
+  // Redraw a single layer's row thumbnail in place (no full panel re-render) so
+  // the thumbnail tracks paint strokes live. Cheap: one 34px drawImage.
+  function refreshThumb(layerId) {
+    if (layerId == null) return;
+    const layer = state.layers.find((l) => l.id === layerId);
+    if (!layer || layer.isGroup) return;
+    for (const box of document.querySelectorAll('.ge-row-thumb')) {
+      if (box.dataset.thumbLayer === String(layerId)) { _paintThumb(box, layer); break; }
+    }
   }
 
   // Mask thumbnail (PS-style): a small grayscale preview of the layer's raster
@@ -1171,5 +1189,5 @@ export function createLayerPanelRenderer(deps) {
     window.__geLayerPanel.openColorLabelMenu = (layer, x, y) => openColorLabelMenu(layer, x || 40, y || 40);
   }
 
-  return { render };
+  return { render, refreshThumb };
 }

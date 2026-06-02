@@ -5262,6 +5262,15 @@ function _buildEditor(container) {
     if (_navRaf) return;
     _navRaf = requestAnimationFrame(() => { _navRaf = 0; try { _navigator && _navigator.refresh(); } catch {} });
   });
+  // Live layer-thumbnail refresh — redraw the active layer's row thumb as it's
+  // painted (rAF-coalesced to one redraw/frame so a fast stroke doesn't thrash;
+  // a single 34px drawImage). Without this the in-row thumbnail only updated on
+  // layer add/delete/reorder/merge, showing stale pixels mid-stroke.
+  let _thumbRaf = 0;
+  _addManagedListener(window, 'ge:composited', () => {
+    if (_thumbRaf) return;
+    _thumbRaf = requestAnimationFrame(() => { _thumbRaf = 0; try { _layerPanelRenderer.refreshThumb(state.activeLayerId); } catch {} });
+  });
   // Pressure-response curve editor (drives pressure-response.js).
   mountPressureCurve();
   // Brush Settings live preview + test-paint strip.
