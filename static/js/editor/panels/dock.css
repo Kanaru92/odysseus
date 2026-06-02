@@ -1,0 +1,193 @@
+/*
+ * Panel dock — Phase 1 chrome (collapse + tab groups).
+ * Companion to dock.js. See documentation/painting-suite/PANEL-DOCKING-DESIGN.md §3.
+ *
+ * Tokens: all spacing/opacity/radius/geometry come from the editor-scoped
+ * --ge-* scale defined on .ge-right-panel (DESIGN-GUIDE §1.2). Colours go
+ * through Odysseus role tokens (--panel/--fg/--border/--red) + color-mix —
+ * never literal hex/rgba. Fallbacks mirror the canonical token values so the
+ * dock still reads correctly if rendered outside the .ge-right-panel scope.
+ *
+ * No brand names. Tab visual language is lifted from the legacy .ge-color-tab
+ * spec (underline-on-active, idle at --ge-op-mid) so tabs feel native.
+ *
+ * NOTE: ship this by @import-ing it from static/style.css (or appending its
+ * rules there). It is kept as a standalone file per the module-per-file rule;
+ * see integrationNotes for the one-line wire-up.
+ */
+
+/* The right column of stacked panel groups. */
+.ge-dock {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ge-s2, 4px);
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  background: var(--panel, #111);
+}
+
+.ge-panelgroup {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* Collapsed = header only; the body is hidden, the group shrinks to header height. */
+.ge-panelgroup[data-collapsed] > .ge-panel-body {
+  display: none;
+}
+
+/* Header (single panel) and tab strip (multi-panel) share the row geometry. */
+.ge-panel-header,
+.ge-panel-tabs {
+  display: flex;
+  align-items: center;
+  gap: var(--ge-s2, 4px);
+  min-height: var(--ge-row-h, 22px);
+  padding: 0 var(--ge-gutter, 10px);
+  border-bottom: 1px solid var(--border, #355a66);
+  /* Whole header reads as a drag handle in later phases; cursor hints it now. */
+  cursor: default;
+  user-select: none;
+}
+
+.ge-panel-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: var(--ge-fs-title, 12px);
+  color: var(--fg, #9cdef2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Chevron + (future) overflow menu buttons: icon-light, idle at --ge-op-mid. */
+.ge-panel-chevron,
+.ge-panel-menu {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--ge-row-h, 22px);
+  height: var(--ge-row-h, 22px);
+  padding: 0;
+  font-size: var(--ge-fs-base, 11px);
+  line-height: 1;
+  color: var(--fg, #9cdef2);
+  opacity: var(--ge-op-mid, 0.7);
+  background: transparent;
+  border: none;
+  border-radius: var(--ge-r-sm, 3px);
+  cursor: pointer;
+  transition: opacity 0.12s;
+}
+
+.ge-panel-chevron:hover,
+.ge-panel-menu:hover {
+  opacity: var(--ge-op-strong, 0.85);
+}
+
+/* Tab strip — generalised from the legacy .ge-color-tab visual language. */
+.ge-panel-tabs {
+  gap: var(--ge-s1, 2px);
+}
+
+.ge-panel-tabs-spacer {
+  flex: 1 1 auto;
+}
+
+.ge-panel-tab {
+  flex: 0 1 auto;
+  min-width: 0;
+  font-size: var(--ge-fs-base, 11px);
+  padding: var(--ge-s2, 4px) var(--ge-s3, 6px);
+  color: var(--fg, #9cdef2);
+  opacity: var(--ge-op-mid, 0.7);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: opacity 0.12s;
+}
+
+.ge-panel-tab:hover {
+  opacity: var(--ge-op-strong, 0.85);
+}
+
+.ge-panel-tab.active {
+  opacity: 1;
+  border-bottom-color: var(--red, #e06c75);
+}
+
+/* Body host: holds the (moved) live panel-body slots. Inactive tab slots are
+   display:none'd inline by the controller; the host itself just scrolls. */
+.ge-panel-body {
+  min-height: 0;
+  overflow: visible;
+}
+
+.ge-panel-body-slot {
+  min-width: 0;
+}
+
+/* Accessibility: focus-visible rings use the --red accent (DESIGN-GUIDE §9). */
+.ge-panel-chevron:focus-visible,
+.ge-panel-menu:focus-visible,
+.ge-panel-tab:focus-visible,
+.ge-panel-header:focus-visible {
+  outline: 2px solid var(--red, #e06c75);
+  outline-offset: -2px;
+  border-radius: var(--ge-r-sm, 3px);
+}
+
+/* ----- DEFERRED SEAM (Phases 3-4): drop indicators + float layer. -----
+   Declared here so the later phases need no new stylesheet edit; unused in
+   Phase 1 (no element carries these classes yet). */
+.ge-dock.drop-active {
+  outline: 1px dashed color-mix(in srgb, var(--red, #e06c75) 60%, transparent);
+}
+
+.ge-drop-line {
+  height: 2px;
+  background: var(--red, #e06c75);
+}
+
+.ge-panel-tabs.drop-into {
+  box-shadow: inset 0 -2px 0 var(--red, #e06c75);
+}
+
+.ge-float-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 40;
+}
+
+.ge-panelgroup.floating {
+  position: absolute;
+  pointer-events: auto;
+  min-width: 160px;
+  min-height: var(--ge-row-h, 22px);
+  background: var(--panel, #111);
+  border: 1px solid var(--border, #355a66);
+  border-radius: var(--ge-r-lg, 6px);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--panel, #111) 45%, transparent);
+  resize: both;
+  overflow: hidden;
+}
+
+.ge-panelgroup.floating > .ge-panel-header {
+  cursor: move;
+}
+
+/* Mobile (≤700px): collapse + tabs translate to touch fine; float/drag are
+   desktop-only (gated in JS — no .ge-float-layer is mounted). The dock keeps
+   the same chrome, just no drag/resize affordances. */
+@media (max-width: 700px) {
+  .ge-panelgroup.floating { position: static; resize: none; box-shadow: none; }
+  .ge-float-layer { display: none; }
+}
