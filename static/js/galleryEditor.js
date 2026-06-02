@@ -1223,20 +1223,35 @@ function _runGlSelfTest() {
     const bx = bg.getContext('2d'); bx.fillStyle = '#3060c0'; bx.fillRect(0, 0, W, H);
     const top = document.createElement('canvas'); top.width = W; top.height = H;
     const tx = top.getContext('2d'); tx.fillStyle = 'rgba(220,40,40,0.7)'; tx.fillRect(0, 0, W, H);
-    const gc = _glCompositor.composite(W, H, [
-      { canvas: bg, x: 0, y: 0, opacity: 1, mode: 'source-over' },
-      { canvas: top, x: 0, y: 0, opacity: 1, mode: 'multiply' },
-    ]);
-    if (!gc) return false;
-    const ga = document.createElement('canvas'); ga.width = W; ga.height = H;
-    ga.getContext('2d').drawImage(gc, 0, 0);
-    const gd = ga.getContext('2d').getImageData(0, 0, W, H).data;
-    const ca = document.createElement('canvas'); ca.width = W; ca.height = H;
-    const cc = ca.getContext('2d');
-    cc.drawImage(bg, 0, 0); cc.globalCompositeOperation = 'multiply'; cc.drawImage(top, 0, 0);
-    const cd = cc.getImageData(0, 0, W, H).data;
-    let maxD = 0; for (let i = 0; i < cd.length; i++) { const d = Math.abs(cd[i] - gd[i]); if (d > maxD) maxD = d; }
-    return maxD <= 4;
+    // Exercise more than one path so a driver bug in a mode OTHER than multiply,
+    // or in the non-unity-opacity blend, can't slip through and silently
+    // mis-render. Only UNAMBIGUOUS modes (multiply=a·b, screen=1−(1−a)(1−b)) +
+    // an opacity≠1 source-over are checked — formula-variant modes (soft-light,
+    // overlay…) are deliberately excluded so a legitimate formula choice can't
+    // false-fail the gate and needlessly disable the GPU on good hardware.
+    const cases = [
+      { mode: 'multiply', opacity: 1 },
+      { mode: 'screen', opacity: 1 },
+      { mode: 'source-over', opacity: 0.5 },
+    ];
+    for (const c of cases) {
+      const gc = _glCompositor.composite(W, H, [
+        { canvas: bg, x: 0, y: 0, opacity: 1, mode: 'source-over' },
+        { canvas: top, x: 0, y: 0, opacity: c.opacity, mode: c.mode },
+      ]);
+      if (!gc) return false;
+      const ga = document.createElement('canvas'); ga.width = W; ga.height = H;
+      ga.getContext('2d').drawImage(gc, 0, 0);
+      const gd = ga.getContext('2d').getImageData(0, 0, W, H).data;
+      const ca = document.createElement('canvas'); ca.width = W; ca.height = H;
+      const cc = ca.getContext('2d');
+      cc.drawImage(bg, 0, 0);
+      cc.globalCompositeOperation = c.mode; cc.globalAlpha = c.opacity; cc.drawImage(top, 0, 0);
+      const cd = cc.getImageData(0, 0, W, H).data;
+      let maxD = 0; for (let i = 0; i < cd.length; i++) { const d = Math.abs(cd[i] - gd[i]); if (d > maxD) maxD = d; }
+      if (maxD > 4) return false;
+    }
+    return true;
   } catch (_) { return false; }
 }
 
@@ -6960,6 +6975,9 @@ export function closeEditor() {
   }
   // Stop the playback rAF loop so it doesn't keep ticking after the editor closes.
   if (_anim) { try { _anim.pause(); } catch {} }
+  // Abort any in-flight AI request so closing the editor doesn't leave the server
+  // generating (and streaming back) a result that will never be shown.
+  if (state.aiInflight) { for (const ac of state.aiInflight) { try { ac.abort(); } catch {} } state.aiInflight.clear(); }
   _setEditTabLabel(null);
   _unmountEditorLoading();
   state.editorOpen = false;

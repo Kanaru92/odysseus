@@ -75,6 +75,7 @@ export function wireInpaintButtons({
     // mask's centroid in viewport coords.
     let canvasWp = null;
     let canvasWpEl = null;
+    let _aiAc = null; // AbortController for the in-flight request (cancelled on editor close)
     try {
       const area = state.container && state.container.querySelector('.ge-canvas-area');
       const mainRect = state.mainCanvas.getBoundingClientRect();
@@ -140,8 +141,10 @@ export function wireInpaintButtons({
       const dilatedMask = dilateMask(mergedMask, padPx);
       const imageB64 = flatCanvas.toDataURL('image/png').split(',')[1];
       const maskB64 = dilatedMask.toDataURL('image/png').split(',')[1];
+      _aiAc = new AbortController();
+      (state.aiInflight || (state.aiInflight = new Set())).add(_aiAc);
       const res = await fetch('/api/image/inpaint', {
-        method: 'POST', credentials: 'same-origin',
+        method: 'POST', credentials: 'same-origin', signal: _aiAc.signal,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify((() => {
           const sel = getSelectedAIEndpoint('inpaint');
@@ -253,8 +256,10 @@ export function wireInpaintButtons({
       resultImg.src = 'data:image/png;base64,' + data.image;
       });
     } catch (e) {
+      if (e && e.name === 'AbortError') return; // editor closed mid-request — silent cancel
       if (uiModule) uiModule.showToast('Inpaint failed: ' + e.message, 6000);
     } finally {
+      try { if (_aiAc && state.aiInflight) state.aiInflight.delete(_aiAc); } catch {}
       btn.disabled = false;
       if (btnLabel) btnLabel.textContent = idleLabel;
       if (runWp) { try { runWp.destroy(); } catch (_) {} }

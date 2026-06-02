@@ -74,12 +74,16 @@ export function createApplyImageTool({
       if (sel.endpoint) extraPayload._endpoint = sel.endpoint;
       if (sel.model && !extraPayload._model) extraPayload._model = sel.model;
     }
+    // Track the request so closeEditor can abort it — otherwise the server keeps
+    // generating a result that will never be shown when the user closes mid-run.
+    const ac = new AbortController();
+    (state.aiInflight || (state.aiInflight = new Set())).add(ac);
     try {
       const flatCanvas = flatten();
       const imageB64 = flatCanvas.toDataURL('image/png').split(',')[1];
       const body = { image: imageB64, ...extraPayload };
       const res = await fetch(endpoint, {
-        method: 'POST', credentials: 'same-origin',
+        method: 'POST', credentials: 'same-origin', signal: ac.signal,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
@@ -116,6 +120,7 @@ export function createApplyImageTool({
       renderLayerPanel();
       if (uiModule) uiModule.showToast(layerName + ' complete', 4500);
     } catch (e) {
+      if (e && e.name === 'AbortError') return; // editor closed mid-request — silent cancel
       // Detect known failure modes and surface an action-toast.
       const msg = (e?.message || '').toLowerCase();
       const needsImg2Img = (
@@ -147,6 +152,7 @@ export function createApplyImageTool({
         }
       }
     } finally {
+      try { if (state.aiInflight) state.aiInflight.delete(ac); } catch {}
       btn.disabled = false;
       btn.classList.remove('ge-btn-processing');
       try { btnSpinner?.destroy(); } catch {}

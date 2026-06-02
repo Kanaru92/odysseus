@@ -159,10 +159,10 @@ export function wireKeyboardShortcuts(deps) {
         pasteInPlace({ composite, saveState, renderLayerPanel, uiModule });
         return;
       }
-      if (e.code === 'KeyZ' || e.key === 'z' || e.key === 'Z') { e.preventDefault(); if (e.shiftKey) redo(); else undo(); }
+      if ((e.code === 'KeyZ' || e.key === 'z' || e.key === 'Z') && !inField) { e.preventDefault(); if (e.shiftKey) redo(); else undo(); }
       // Ctrl+D / Ctrl+Shift+D = Deselect (PS uses Ctrl+D): clears the wand
       // selection (and lasso if active) without affecting layers.
-      if (!e.altKey && (e.key === 'D' || e.key === 'd')) {
+      if (!e.altKey && !inField && (e.key === 'D' || e.key === 'd')) {
         if (state.wandMask || state.lassoPoints.length) {
           e.preventDefault();
           if (state.wandMask) {
@@ -179,28 +179,28 @@ export function wireKeyboardShortcuts(deps) {
         }
       }
       // Save shortcuts — match the hints shown in the Save dropdown.
-      if ((e.key === 's' || e.key === 'S') && !e.altKey) {
+      if ((e.key === 's' || e.key === 'S') && !e.altKey && !inField) {
         e.preventDefault();
         document.getElementById(e.shiftKey ? 'ge-export-gallery' : 'ge-save')?.click();
       }
       // Ctrl+E — merge the active layer down into the one below (PS standard).
-      if ((e.key === 'e' || e.key === 'E') && !e.shiftKey && !e.altKey) {
+      if ((e.key === 'e' || e.key === 'E') && !e.shiftKey && !e.altKey && !inField) {
         e.preventDefault();
         document.getElementById('ge-merge-down')?.click();
       }
       // Ctrl+Shift+T — Transform Again (PS standard). Falls back to the custom
       // resize prompt if transform-again isn't wired (defensive).
-      if (e.shiftKey && e.key === 'T') { e.preventDefault(); if (repeatLastTransform) repeatLastTransform(); else resizeCustomPrompt(); }
-      if (e.altKey && e.key === 't') { e.preventDefault(); startTransform(); }
+      if (e.shiftKey && e.key === 'T' && !inField) { e.preventDefault(); if (repeatLastTransform) repeatLastTransform(); else resizeCustomPrompt(); }
+      if (e.altKey && e.key === 't' && !inField) { e.preventDefault(); startTransform(); }
       // Ctrl+Shift+X — Liquify (forward-warp deform). e.code dodges the
       // Shift-modified key value; matches the standard deform-tool binding.
-      if (e.shiftKey && !e.altKey && e.code === 'KeyX') {
+      if (e.shiftKey && !e.altKey && e.code === 'KeyX' && !inField) {
         e.preventDefault();
         e.stopPropagation();
         toolbar.querySelector('[data-tool="liquify"]')?.click();
       }
       // Ctrl+Y — toggle the CMYK soft-proof (view-only print preview).
-      if (!e.shiftKey && !e.altKey && (e.key === 'y' || e.key === 'Y')) {
+      if (!e.shiftKey && !e.altKey && !inField && (e.key === 'y' || e.key === 'Y')) {
         e.preventDefault();
         e.stopPropagation();
         state.cmykProof = !state.cmykProof;
@@ -208,8 +208,8 @@ export function wireKeyboardShortcuts(deps) {
         if (uiModule) uiModule.showToast(state.cmykProof ? 'Proof Colors: CMYK preview on' : 'Proof Colors off');
       }
       // Ctrl+'  → toggle grid · Ctrl+;  → toggle guide visibility (layout aids).
-      if (e.key === "'") { e.preventDefault(); e.stopPropagation(); state.showGrid = !state.showGrid; composite(); }
-      if (e.key === ';' && !e.shiftKey) { e.preventDefault(); e.stopPropagation(); state.guidesVisible = !state.guidesVisible; composite(); }
+      if (e.key === "'" && !inField) { e.preventDefault(); e.stopPropagation(); state.showGrid = !state.showGrid; composite(); }
+      if (e.key === ';' && !e.shiftKey && !inField) { e.preventDefault(); e.stopPropagation(); state.guidesVisible = !state.guidesVisible; composite(); }
       // Ctrl+Alt+I / Ctrl+Shift+I — invert current selection (PS uses
       // Ctrl+Shift+I). Uses e.code so Alt-modified key values don't break it.
       if (!inField && (e.altKey || e.shiftKey) && e.code === 'KeyI') {
