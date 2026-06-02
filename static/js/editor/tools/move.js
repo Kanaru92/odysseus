@@ -31,6 +31,9 @@ export function createMoveTool({ activeLayer, saveState, composite }) {
         canvas: l.canvas,
         offset: state.layerOffsets.get(l.id) || { x: 0, y: 0 },
       })),
+      guides: state.guides || [],
+      showGrid: !!state.showGrid,
+      gridSize: state.gridSize || 0,
     });
   }
 

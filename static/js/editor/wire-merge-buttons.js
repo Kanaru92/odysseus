@@ -20,10 +20,22 @@
  */
 import { state } from './state.js';
 
+// Build an id→group map for gating members by their folder's visibility/opacity.
+function _groupMap() {
+  const m = {};
+  for (const g of state.layers) if (g.isGroup) m[g.id] = g;
+  return m;
+}
+
 export function mergeLayerDownAtIndex(idx) {
   if (idx < 1 || idx >= state.layers.length) return null;
   const upper = state.layers[idx];
-  const lower = state.layers[idx - 1];
+  if (upper.isGroup) return null; // a folder has no pixels to merge
+  // Skip any group (folder) entries beneath to land on a real raster layer.
+  let li = idx - 1;
+  while (li >= 0 && state.layers[li].isGroup) li--;
+  if (li < 0) return null;
+  const lower = state.layers[li];
   const upperOff = state.layerOffsets.get(upper.id) || { x: 0, y: 0 };
   const lowerOff = state.layerOffsets.get(lower.id) || { x: 0, y: 0 };
   lower.ctx.save();
@@ -47,10 +59,17 @@ export function wireMergeButtons({ saveState, createLayer, renderLayerPanel, com
     saveState('Flatten copy');
     const merged = createLayer('Flattened', state.imgWidth, state.imgHeight);
     const ctx = merged.ctx;
+    const groups = _groupMap();
     for (const l of state.layers) {
-      if (!l.visible) continue;
+      if (l.isGroup || !l.visible) continue;
+      let gm = 1;
+      if (l.groupId && groups[l.groupId]) {
+        const g = groups[l.groupId];
+        if (!g.visible) continue;            // member of a hidden folder
+        gm = g.opacity == null ? 1 : g.opacity;
+      }
       const off = state.layerOffsets.get(l.id) || { x: 0, y: 0 };
-      ctx.globalAlpha = l.opacity;
+      ctx.globalAlpha = l.opacity * gm;
       ctx.drawImage(l.canvas, off.x, off.y);
       ctx.globalAlpha = 1;
     }
@@ -63,7 +82,11 @@ export function wireMergeButtons({ saveState, createLayer, renderLayerPanel, com
 
   // Merge All — drop hidden layers; base = lowest visible.
   document.getElementById('ge-merge-all')?.addEventListener('click', () => {
-    const visibleLayers = state.layers.filter(l => l.visible);
+    const groups = _groupMap();
+    const groupHidden = (l) => l.groupId && groups[l.groupId] && !groups[l.groupId].visible;
+    const gmOf = (l) => (l.groupId && groups[l.groupId] && groups[l.groupId].opacity != null)
+      ? groups[l.groupId].opacity : 1;
+    const visibleLayers = state.layers.filter(l => !l.isGroup && l.visible && !groupHidden(l));
     if (visibleLayers.length < 2) {
       if (uiModule) uiModule.showToast('Need at least two visible layers to merge');
       return;
@@ -74,7 +97,7 @@ export function wireMergeButtons({ saveState, createLayer, renderLayerPanel, com
     for (let i = 1; i < visibleLayers.length; i++) {
       const l = visibleLayers[i];
       const off = state.layerOffsets.get(l.id) || { x: 0, y: 0 };
-      baseCtx.globalAlpha = l.opacity;
+      baseCtx.globalAlpha = l.opacity * gmOf(l);
       baseCtx.drawImage(l.canvas, off.x, off.y);
       baseCtx.globalAlpha = 1;
     }
@@ -83,6 +106,7 @@ export function wireMergeButtons({ saveState, createLayer, renderLayerPanel, com
       if (l === base) continue;
       state.layerOffsets.delete(l.id);
     }
+    base.groupId = null; // folders are gone after a full merge
     state.layers = [base];
     state.activeLayerId = base.id;
     renderLayerPanel();

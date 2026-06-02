@@ -16053,6 +16053,18 @@ body:not(.email-doc-split-active) #email-lib-modal.email-lib-fullscreen:not(.mod
    so the Photos/Albums views keep sizing to their content. */
 .gallery-modal-content:has(#gallery-editor-container[style*="flex"]) {
   height: 92vh;
+  /* The painting editor needs a wide workspace, not the default 820px box
+     (that was the "thin modal in the middle"). Fill most of the window. */
+  width: 96vw;
+  max-width: 96vw;
+}
+/* True fullscreen (F key) — fill the screen edge to edge, no rounded corners. */
+.gallery-modal-content:fullscreen {
+  width: 100vw;
+  height: 100vh;
+  max-width: none;
+  max-height: none;
+  border-radius: 0;
 }
 /* Containing block for the photo-detail overlay — keeps it inside the body
    so it sits below the modal header and the tab strip instead of covering them. */
@@ -22440,22 +22452,22 @@ input.settings-select::placeholder { color: color-mix(in srgb, var(--fg) 35%, tr
   /* Asymmetric horizontal padding shifts the whole column 4 px left —
      buttons, hover backgrounds, active highlight pills, and section
      separators all move together. */
-  padding: 8px 8px 8px 0;
+  padding: 7px 6px 7px 2px;
   background: var(--panel);
   border-right: 1px solid var(--border);
-  width: 56px;
+  width: 44px;
   flex-shrink: 0;
 }
+/* Icon-only, PS-style: tool name lives in the hover tooltip (button title),
+   so each separator is just a thin divider rule between tool groups. */
 .ge-tool-sep {
-  font-size: 8px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--color-muted);
-  text-align: center;
-  padding: 8px 0 4px;
+  font-size: 0;
+  line-height: 0;
+  padding: 0;
+  height: 0;
   border-top: 1px solid var(--border);
-  margin-top: 4px;
-  opacity: 0.6;
+  margin: 5px 4px;
+  opacity: 0.5;
   flex-shrink: 0;
 }
 /* All tool buttons share a fixed height so the column reads as a clean
@@ -22478,12 +22490,7 @@ input.settings-select::placeholder { color: color-mix(in srgb, var(--fg) 35%, tr
   border-radius: 6px;
   transition: background 0.15s, opacity 0.15s;
 }
-.ge-tool-btn .ge-tool-label {
-  max-width: 100%;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
+.ge-tool-btn .ge-tool-label { display: none; }
 .ge-tool-btn { position: relative; }
 /* Hover background is now a pseudo so we can shift it 2 px left
    independently from the button's own bounds (which contain the icon
@@ -22767,7 +22774,7 @@ input.settings-select::placeholder { color: color-mix(in srgb, var(--fg) 35%, tr
 
 /* Right panel */
 .ge-right-panel {
-  width: 200px;
+  width: 280px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
@@ -23126,6 +23133,10 @@ input.settings-select::placeholder { color: color-mix(in srgb, var(--fg) 35%, tr
   font-size: 11px;
   color: var(--fg);
 }
+/* Rows whose control now lives on the top options bar (PS layout). The input
+   stays in the DOM as the canonical source the top-bar remote proxies; we just
+   don't show the duplicate here. */
+.ge-control-row.ge-dup-top { display: none !important; }
 .ge-control-row label {
   flex-shrink: 0;
   opacity: 0.7;
@@ -24687,6 +24698,25 @@ input.settings-select::placeholder { color: color-mix(in srgb, var(--fg) 35%, tr
   opacity: 0.5;
   text-align: center;
 }
+/* New-canvas presets + ratio chips */
+.ge-cp-presets { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 12px; }
+.ge-cp-preset {
+  display: flex; flex-direction: column; align-items: center; gap: 1px;
+  padding: 6px 4px; font-size: 11px; cursor: pointer;
+  background: color-mix(in srgb, var(--fg) 5%, transparent);
+  color: var(--fg); border: 1px solid var(--border); border-radius: 6px;
+}
+.ge-cp-preset small { font-size: 9px; opacity: 0.55; }
+.ge-cp-preset:hover { border-color: var(--red); }
+.ge-cp-ratios { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin-bottom: 12px; }
+.ge-cp-ratios-lbl { font-size: 11px; opacity: 0.55; margin-right: 2px; }
+.ge-cp-ratio {
+  padding: 3px 9px; font-size: 11px; cursor: pointer;
+  background: color-mix(in srgb, var(--fg) 5%, transparent);
+  color: var(--fg); border: 1px solid var(--border); border-radius: 999px; opacity: 0.75;
+}
+.ge-cp-ratio:hover { opacity: 1; }
+.ge-cp-ratio.active { opacity: 1; background: color-mix(in srgb, var(--red) 18%, transparent); border-color: var(--red); }
 
 .ge-btn-primary {
   background: var(--red);
@@ -24819,6 +24849,157 @@ button .spinner-whirlpool {
 }
 .ge-layers-title { flex: 1; }
 .ge-layers-grab { display: none; } /* mobile only */
+/* Active-layer blend + opacity (PS-style, in the header). */
+.ge-layers-props {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.ge-active-blend {
+  flex: 0 1 auto;
+  max-width: 104px;
+  font-size: 10px;
+  background: color-mix(in srgb, var(--fg) 6%, transparent);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 4px;
+}
+.ge-active-op-label { font-size: 10px; opacity: 0.6; }
+.ge-active-opacity { flex: 1; min-width: 40px; }
+.ge-active-op-val { font-size: 10px; opacity: 0.85; min-width: 34px; text-align: right; }
+.ge-active-blend:disabled, .ge-active-opacity:disabled { opacity: 0.4; cursor: not-allowed; }
+/* ── Tabbed Color panel (OK Color / Swatches) + OK Color Picker ── */
+.ge-color-tabs { display: flex; gap: 2px; margin-bottom: 8px; }
+.ge-color-tab {
+  flex: 1; font-size: 11px; padding: 4px 6px; cursor: pointer;
+  background: transparent; color: var(--fg); opacity: 0.55;
+  border: none; border-bottom: 2px solid transparent; transition: opacity 0.12s;
+}
+.ge-color-tab:hover { opacity: 0.85; }
+.ge-color-tab.active { opacity: 1; border-bottom-color: var(--red); }
+.ge-ok-top { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.ge-ok-chip { width: 28px; height: 28px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.25); flex-shrink: 0; }
+.ge-ok-hex {
+  flex: 1; font-family: monospace; font-size: 12px; padding: 4px 6px;
+  background: color-mix(in srgb, var(--fg) 6%, transparent); color: var(--fg);
+  border: 1px solid var(--border); border-radius: 4px;
+}
+.ge-ok-hex:focus { outline: none; border-color: var(--red); }
+.ge-ok-row { display: flex; align-items: center; gap: 6px; margin: 7px 0; }
+.ge-ok-lbl { width: 12px; font-size: 11px; opacity: 0.6; text-align: center; }
+.ge-ok-val { width: 34px; font-size: 10px; opacity: 0.8; text-align: right; }
+.ge-ok-track {
+  position: relative; flex: 1; height: 14px; border-radius: 7px;
+  border: 1px solid rgba(255,255,255,0.18);
+}
+.ge-ok-slider {
+  -webkit-appearance: none; appearance: none;
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  margin: 0; background: transparent; cursor: pointer;
+}
+.ge-ok-slider::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 11px; height: 20px; border-radius: 3px;
+  background: #fff; border: 1px solid rgba(0,0,0,0.6);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.55);
+}
+.ge-ok-slider::-moz-range-thumb {
+  width: 11px; height: 20px; border-radius: 3px;
+  background: #fff; border: 1px solid rgba(0,0,0,0.6);
+}
+.ge-ok-slider::-moz-range-track { background: transparent; border: none; }
+/* Pressure-response curve editor */
+.ge-pcurve {
+  display: block;
+  background: color-mix(in srgb, var(--fg) 4%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  touch-action: none;
+  cursor: crosshair;
+}
+.ge-pcurve-btns { display: flex; gap: 4px; margin-top: 4px; }
+.ge-pcurve-btns .ge-btn { flex: 1; font-size: 10px; padding: 2px 4px; }
+/* Classic HSV "Color" pane */
+.ge-hsv-sqwrap { position: relative; width: 150px; height: 150px; margin: 0 auto 8px; }
+.ge-hsv-sq { display: block; border-radius: 6px; cursor: crosshair; touch-action: none; }
+.ge-hsv-sv-handle { position: absolute; width: 12px; height: 12px; margin: -6px 0 0 -6px; border: 2px solid #fff; border-radius: 50%; box-shadow: 0 0 0 1px rgba(0,0,0,0.6); pointer-events: none; }
+.ge-hsv-huewrap { position: relative; width: 150px; height: 14px; margin: 0 auto; }
+.ge-hsv-hue { display: block; border-radius: 4px; cursor: crosshair; touch-action: none; }
+.ge-hsv-hue-handle { position: absolute; top: -2px; width: 4px; height: 18px; margin-left: -2px; border: 2px solid #fff; border-radius: 2px; box-shadow: 0 0 0 1px rgba(0,0,0,0.6); pointer-events: none; }
+/* Actions panel */
+#ge-actions-panel {
+  position: fixed; right: 18px; bottom: 18px; z-index: 220;
+  width: 280px; max-width: 90vw;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+  box-shadow: 0 12px 32px rgba(0,0,0,0.55); color: var(--fg);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.ge-actions-head { display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; font-size: 12px; font-weight: 600; border-bottom: 1px solid var(--border); }
+.ge-actions-close { background: none; border: none; color: inherit; font-size: 16px; cursor: pointer; opacity: 0.7; }
+.ge-actions-bar { display: flex; gap: 6px; padding: 6px 8px; }
+#ge-actions-record.recording { color: #fff; background: var(--red); border-color: var(--red); }
+.ge-actions-steps { max-height: 120px; overflow: auto; padding: 4px 10px; font-size: 11px; }
+.ge-actions-step { padding: 2px 0; opacity: 0.85; }
+.ge-actions-empty { opacity: 0.5; font-size: 10px; padding: 4px 0; }
+.ge-actions-saved-title { font-size: 10px; opacity: 0.55; padding: 4px 10px 2px; border-top: 1px solid var(--border); text-transform: uppercase; letter-spacing: 0.05em; }
+.ge-actions-saved { max-height: 120px; overflow: auto; padding: 2px 8px 8px; }
+.ge-actions-saved-row { display: flex; align-items: center; gap: 6px; padding: 2px 0; }
+.ge-actions-saved-name { flex: 1; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Tabbed documents */
+.ge-doc-tabs {
+  display: flex; align-items: stretch; gap: 2px;
+  background: var(--panel); border-bottom: 1px solid var(--border);
+  padding: 3px 4px 0; overflow-x: auto; flex-shrink: 0; min-height: 28px;
+}
+.ge-doc-tab {
+  display: flex; align-items: center; gap: 4px;
+  padding: 4px 8px; font-size: 11px; color: var(--fg); opacity: 0.6;
+  background: color-mix(in srgb, var(--fg) 4%, transparent);
+  border: 1px solid var(--border); border-bottom: none;
+  border-radius: 6px 6px 0 0; cursor: pointer; white-space: nowrap; max-width: 220px;
+}
+.ge-doc-tab.active { opacity: 1; background: color-mix(in srgb, var(--red) 10%, transparent); border-color: var(--red); }
+.ge-doc-tab-label { overflow: hidden; text-overflow: ellipsis; }
+.ge-doc-tab-x { background: none; border: none; color: inherit; cursor: pointer; font-size: 14px; line-height: 1; opacity: 0.6; padding: 0 2px; }
+.ge-doc-tab-x:hover { opacity: 1; }
+.ge-doc-tab-new { background: none; border: none; color: var(--fg); opacity: 0.6; cursor: pointer; font-size: 16px; padding: 0 8px; }
+.ge-doc-tab-new:hover { opacity: 1; }
+/* Eyedropper hover preview swatch */
+.ge-eyedrop-preview {
+  position: fixed; z-index: 240; width: 28px; height: 28px;
+  border-radius: 50%; border: 2px solid #fff;
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.6), 0 2px 8px rgba(0,0,0,0.5);
+  pointer-events: none;
+}
+/* Script Console */
+#ge-script-panel {
+  position: fixed; right: 18px; bottom: 18px; z-index: 220;
+  width: 340px; max-width: 90vw;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+  box-shadow: 0 12px 32px rgba(0,0,0,0.55); color: var(--fg);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.ge-script-head { display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; font-size: 12px; font-weight: 600; border-bottom: 1px solid var(--border); }
+.ge-script-close { background: none; border: none; color: inherit; font-size: 16px; cursor: pointer; opacity: 0.7; }
+#ge-script-code { width: 100%; box-sizing: border-box; height: 130px; resize: vertical; border: none; border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--fg) 4%, transparent); color: var(--fg); font-family: monospace; font-size: 12px; padding: 8px; outline: none; }
+.ge-script-btns { display: flex; gap: 6px; padding: 6px 8px; }
+.ge-script-out { margin: 0; padding: 6px 10px; max-height: 120px; overflow: auto; font-family: monospace; font-size: 11px; white-space: pre-wrap; opacity: 0.85; border-top: 1px solid var(--border); }
+.ge-script-out:empty { display: none; }
+/* Brush Settings live preview / test strip */
+.ge-brush-preview {
+  display: block;
+  width: 100%;
+  height: 64px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background:
+    repeating-conic-gradient(#2b2b2f 0% 25%, #232327 0% 50%) 0 / 16px 16px;
+  cursor: crosshair;
+  touch-action: none;
+}
 .ge-layers-merge-wrap { position: relative; display: inline-flex; }
 .ge-layers-merge-wrap #ge-layers-merge-btn { position: relative; top: 0; }
 .ge-layers-merge-menu {
@@ -24904,6 +25085,11 @@ button .spinner-whirlpool {
   font-size: 11px;
   color: var(--fg);
 }
+/* Inline layer preview must hold its size — never let the flex row collapse it
+   (the row is dense; thumb + name would otherwise shrink to 0 at narrow panel
+   widths). The layer name may truncate, but the thumbnail stays a fixed chip. */
+.ge-row-thumb { flex: 0 0 auto; display: block; }
+.ge-layer-item .ge-layer-name { min-width: 18px; }
 /* Row-hover tint removed — kept the layer row's background stable so
    it doesn't shift visually as the user reaches for the opacity slider. */
 .ge-layer-item.active {
@@ -25064,6 +25250,24 @@ button .spinner-whirlpool {
   gap: 2px;
   flex-shrink: 0;
 }
+/* PS-style declutter: per-row action buttons stay hidden so the row reads as
+   eye + thumbnail + full name; they slide in (over the row's right edge) on
+   hover or when the layer is active. Keeps every existing per-row handler. */
+.ge-layer-item > .ge-layer-controls {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: none;
+  background: var(--panel);
+  padding-left: 8px;
+  box-shadow: -10px 0 10px -5px var(--panel);
+  z-index: 2;
+}
+.ge-layer-item:hover > .ge-layer-controls,
+.ge-layer-item.active > .ge-layer-controls,
+.ge-layer-item.active-parent > .ge-layer-controls { display: flex; }
+.ge-layer-item .ge-layer-name { flex: 1; }
 /* Left-edge drag handle on each layer row. */
 .ge-layer-drag {
   display: flex;

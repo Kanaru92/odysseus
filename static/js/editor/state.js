@@ -73,6 +73,18 @@ export const state = {
   // Shared paint color (brush picks up the swatch; eraser and clone
   // ignore color but reuse the same picker control).
   color: '#e06c75',
+  // Background color (FG/BG model). `color` is the foreground (what
+  // the brush paints). X swaps the two; D resets to black/white.
+  bgColor: '#ffffff',
+  eyedropperSampleSize: 1, // 1 = point, 3 = 3×3 avg, 5 = 5×5 avg
+  cmykProof: false, // soft-proof: simulate CMYK print appearance on-screen (view-only, Ctrl+Y)
+  pasteboardColor: '#232323', // colour of the area behind the image (display-only; right-click the canvas)
+  // ── Guides / grid (layout aids; display-only, feed the snap targets) ──
+  viewRotation: 0, // non-destructive canvas VIEW rotation in degrees (R / Shift+R), display-only
+  showGrid: false,
+  gridSize: 50,
+  guidesVisible: true,
+  guides: [], // user guides: { axis: 'v'|'h', pos } in canvas pixels
   // Brush diameter in canvas pixels. Persisted across tool switches;
   // bumped to a mask-friendly default on first inpaint entry.
   brushSize: 8,
@@ -114,6 +126,7 @@ export const state = {
   maskCanvas: null,
   maskCtx: null,
   maskVisible: true,
+  layerMaskEdit: false, // when true, brush/eraser paint the active layer's PS visibility mask (layer.layerMask): brush reveals, eraser hides
   // Reused canvas for the union-of-masks tint pass (saves repeated
   // allocation on every composite).
   compositeMaskUnion: null,
@@ -167,6 +180,8 @@ export const state = {
   cropEnd: null,
   cropRect: null,
   cropAspectLock: null,
+  cropAspectPreset: null, // fixed crop ratio (w/h) from the preset buttons; null = free
+  cropDeletePixels: true, // true = discard cropped-out pixels; false = keep them hidden (shift layer offsets)
   // True while the user drags the inside of an already-finished crop
   // rect to reposition it.
   cropMoving: false,
@@ -254,4 +269,106 @@ export const state = {
   // True when an edit happened during an in-flight save — triggers a
   // follow-up persist after the current one finishes.
   persistDirty: false,
+
+  // ── Morph (FILM frame-interpolation) ──
+  // Active source mode + the last completed morph session so the
+  // scrubber/insert controls know which frames to fetch.
+  morphMode: 'two-layers',  // 'two-layers' | 'active-vs-below'
+  morphSession: null,       // { sid, frameCount }
+
+  // ── Brush engine (M1) ──
+  // Routes the paint brush through the dab/spacing/pressure engine
+  // (editor/brush/). Legacy lineTo stroke remains as an automatic fallback
+  // on any engine error. Toggle off to force the legacy brush.
+  useBrushEngine: true,
+  brushPresetId: 'hard-round',
+  // Symmetry/mirror painting: 'none' | 'x' | 'y' | 'xy' (mirror across the
+  // canvas center axis/axes).
+  brushSymmetry: 'none',
+  brushSymmetryN: 6, // radial/mandala segment count
+  // Stroke stabilizer (0..95) — lags the brush toward the cursor for smooth,
+  // shake-free lines. smoothX/Y hold the lagged position during a stroke.
+  brushSmoothing: 0,
+  smoothX: 0,
+  smoothY: 0,
+  rawX: null, rawY: null,            // true cursor during a smoothed stroke
+  brushSmoothPull: false,            // "Pulled String" — brush trails by a radius
+  brushSmoothCatchupEnd: true,       // finish the lagged tail to the cursor on lift
+  brushSmoothAdjustZoom: true,       // keep smoothing feel consistent across zoom
+  // Brush dynamics (live overrides of the active preset; initialised from the
+  // preset on selection, then editable). scatter 0..1 jitter, spacing fraction
+  // of diameter, roundness = tip aspect ratio (1 = circular).
+  brushScatter: 0,
+  brushSpacing: 0.1,
+  brushRoundness: 1,
+  brushAngleFollow: false, // rotate the tip to follow the stroke direction
+  brushTiltAngle: false,   // rotate the tip toward the pen's tilt azimuth (tablet)
+  brushTiltSize: false,    // pen tilt ELEVATION grows the dab (flat pen = broader stroke, tablet)
+  brushPressureOpacity: true, // pen pressure scales per-dab opacity/flow (default on)
+  brushBlendMode: 'source-over', // brush blend mode (Normal/Multiply/Screen/…) for shading & glazing
+  brushColorJitter: 0, // per-dab hue jitter 0..1 (Color Dynamics, natural-media variation)
+  brushSizeJitter: 0,  // per-dab size jitter 0..1 (Shape Dynamics)
+  brushFlowJitter: 0,  // per-dab flow jitter 0..1 (Transfer Dynamics)
+
+  // Tab toggles tool + side panels for a full-canvas view.
+  panelsHidden: false,
+  // Hold Space → temporary hand tool (drag the canvas to pan / overscan).
+  spaceDown: false,
+  // Live pointer readings captured from Pointer Events (pen pressure/tilt).
+  // Default pressure 1 so mouse input paints at full strength.
+  pressure: 1,
+  lastPressure: 1, // previous sample's pressure → smooth per-segment pressure taper
+  lastStrokeT: 0,  // timestamp of the previous stroke sample (for the speed sensor)
+  brushVelocityTaper: 0, // 0..100 — fast strokes paint thinner (the speed sensor)
+  lineAnchor: null, // last stroke end-point → Shift-click draws a straight line from here
+  airbrush: false, // build-up: paint keeps accumulating while the brush is held (Alt+Shift+P)
+  brushHudActive: false, // Alt+right-drag on-canvas brush HUD in progress
+  brushHudStart: null,   // { x, y, size, soft } captured when the HUD drag began
+  quickSelecting: false, // Quick Selection drag in progress (drag-flood selection)
+  // ── Text / Type tool ──
+  textSize: 48,
+  textFont: 'sans-serif',
+  textEditingLayerId: null,
+  tiltX: 0,
+  tiltY: 0,
+
+  // ── Gradient tool ──
+  gradActive: false,
+  gradStart: null,  // { x, y } in canvas/image coords
+  gradEnd: null,
+
+  // ── Marquee selection tool ──
+  // Writes state.lassoPoints (rect/ellipse) so it reuses the lasso selection
+  // machinery (overlay, delete/copy/mask, feather/grow, invert).
+  marqueeActive: false,
+  marqueeStart: null,
+  // Boolean combine mode for the next marquee commit (Shift/Alt → add/subtract/
+  // intersect into the shared wandMask selection). See editor/selection/mask-ops.js.
+  selCombineMode: 'replace',
+  // Quick Mask (Q): brush/eraser paint the selection mask (wandMask) instead of
+  // the layer — white = selected. Toggle back to a normal selection with Q.
+  quickMask: false,
+
+  // ── Liquify (forward-warp) tool ──
+  liquifyActive: false,
+  liquifyLast: null,
+  // ── Smudge (smear) tool ──
+  smudgeActive: false,
+  smudgeLast: null,
+  smudgeFingerPaint: false, // start each smudge stroke loaded with the foreground colour
+  // ── Mixer brush (wet-paint blending) ──
+  mixerActive: false,
+  mixerLast: null,
+  // ── Dodge / Burn / Sponge tool ──
+  dodgeBurnActive: false,
+  dodgeBurnLast: null,
+  // ── Distort transform (free 4-corner warp) ──
+  distortMode: 'free', // 'free' | 'skew' | 'perspective' — constrains corner dragging
+  distortActive: false,
+  distortLayer: null,
+  distortSnapshot: null,
+  distortCorners: null,
+  // ── Perspective crop (mark a quad → de-skew to a rectangle) ──
+  pcropActive: false,
+  pcropCorners: null,
 };

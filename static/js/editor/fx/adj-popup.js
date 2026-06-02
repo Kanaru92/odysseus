@@ -46,6 +46,9 @@ import {
   defaultAdjParams,
 } from '../layer-helpers.js';
 import { drawHistogram } from './histogram.js';
+import { buildCurveLUT } from './curves.js';
+
+const clampV = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 
 export function createAdjPopupSystem({ composite, saveState, renderLayerPanel }) {
   function suppressLayerGhostTap() {
@@ -137,7 +140,18 @@ export function createAdjPopupSystem({ composite, saveState, renderLayerPanel })
       { type: 'brightness-contrast', label: 'Brightness / Contrast' },
       { type: 'hue-saturation',      label: 'Hue / Saturation' },
       { type: 'levels',              label: 'Levels' },
+      { type: 'curves',              label: 'Curves' },
       { type: 'color-balance',       label: 'Color Balance' },
+      { type: 'vibrance',            label: 'Vibrance' },
+      { type: 'exposure',            label: 'Exposure' },
+      { type: 'photo-filter',        label: 'Photo Filter' },
+      { type: 'gradient-map',        label: 'Gradient Map' },
+      { type: 'channel-mixer',       label: 'Channel Mixer' },
+      { type: 'grain',               label: 'Grain' },
+      { type: 'posterize',           label: 'Posterize' },
+      { type: 'threshold',           label: 'Threshold' },
+      { type: 'invert',              label: 'Invert' },
+      { type: 'black-white',         label: 'Black & White' },
     ];
     menu.innerHTML = items.map(i =>
       `<button class="ge-fx-menu-item" data-fx-type="${i.type}"><span class="ge-fx-menu-icon">${ADJ_ICONS[i.type] || ''}</span><span>${i.label}</span></button>`
@@ -489,6 +503,42 @@ export function createAdjPopupSystem({ composite, saveState, renderLayerPanel })
       body.querySelector('.ge-adj-hist-details')?.addEventListener('toggle', (e) => {
         if (e.target.open) drawHistogram(hist, layer);
       });
+    } else if (type === 'curves') {
+      // Draggable tone curve. Master "RGB" plus per-channel R/G/B, like a
+      // standard curves editor. Points live in p[channel] as [in,out] pairs.
+      const ch = p.channel || 'rgb';
+      body.innerHTML = `
+      <div class="ge-adj-row" style="align-items:center;gap:8px;">
+        <label>Channel</label>
+        <select class="ge-adj-curve-channel ge-tool-select" style="flex:1;min-width:0;">
+          <option value="rgb">RGB</option>
+          <option value="r">Red</option>
+          <option value="g">Green</option>
+          <option value="b">Blue</option>
+        </select>
+        <button class="ge-btn ge-btn-sm ge-adj-curve-reset" type="button" title="Reset this channel to a straight line">Reset</button>
+      </div>
+      <canvas class="ge-adj-curve" width="256" height="256" style="display:block;margin:8px auto 2px;width:228px;height:228px;border-radius:6px;cursor:crosshair;background:rgba(0,0,0,0.16);touch-action:none;"></canvas>
+      <p style="font-size:10px;opacity:0.55;margin:2px 0 0;text-align:center;">Click to add a point · drag to bend · double-click or drag out to delete</p>
+    `;
+      const drawCurve = wireCurveEditor(body, layer);
+      const sel = body.querySelector('.ge-adj-curve-channel');
+      if (sel) {
+        sel.value = ch;
+        sel.addEventListener('change', () => {
+          layer._stagedAdj.params.channel = sel.value;
+          drawCurve();
+        });
+      }
+      body.querySelector('.ge-adj-curve-reset')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const cur = layer._stagedAdj.params.channel || 'rgb';
+        layer._stagedAdj.params[cur] = [[0, 0], [255, 255]];
+        layer._adjFinalKey = null;
+        composite();
+        drawCurve();
+      });
+      drawCurve();
     } else if (type === 'color-balance') {
       // Color-tinted slider ends so the user sees what direction does what.
       const cbRow = (key, leftCol, rightCol, label, value) => `
@@ -527,7 +577,66 @@ export function createAdjPopupSystem({ composite, saveState, renderLayerPanel })
         body.innerHTML = '';
         buildAdjBody(layer, type, body, popEl);
       });
+    } else if (type === 'vibrance') {
+      body.innerHTML = sliderRow('amount', 'Vibrance', -100, 100, Math.round(p.amount || 0), '');
+    } else if (type === 'exposure') {
+      body.innerHTML = sliderRow('exposure', 'Exposure', -100, 100, Math.round(p.exposure || 0), '');
+    } else if (type === 'posterize') {
+      body.innerHTML = sliderRow('levels', 'Levels', 2, 32, Math.round(p.levels || 4), '');
+    } else if (type === 'threshold') {
+      body.innerHTML = sliderRow('level', 'Threshold', 1, 255, Math.round(p.level || 128), '');
+    } else if (type === 'photo-filter') {
+      body.innerHTML = `
+      <div class="ge-adj-row" style="align-items:center;gap:8px;">
+        <label>Color</label>
+        <input type="color" class="ge-adj-color" data-color-key="color" value="${p.color || '#ec8a00'}" style="width:34px;height:24px;padding:0;border:1px solid var(--border);border-radius:4px;background:none;" />
+      </div>
+      ${sliderRow('density', 'Density', 0, 100, Math.round(p.density || 25), '%')}`;
+    } else if (type === 'gradient-map') {
+      body.innerHTML = `
+      <div class="ge-adj-row" style="align-items:center;gap:8px;">
+        <label>Shadows</label>
+        <input type="color" class="ge-adj-color" data-color-key="lo" value="${p.lo || '#000000'}" style="width:34px;height:24px;padding:0;border:1px solid var(--border);border-radius:4px;background:none;" />
+        <label style="margin-left:auto;">Highlights</label>
+        <input type="color" class="ge-adj-color" data-color-key="hi" value="${p.hi || '#ffffff'}" style="width:34px;height:24px;padding:0;border:1px solid var(--border);border-radius:4px;background:none;" />
+      </div>`;
+    } else if (type === 'grain') {
+      body.innerHTML = sliderRow('amount', 'Amount', 0, 100, Math.round(p.amount || 0), '%');
+    } else if (type === 'channel-mixer') {
+      const out = p.mono ? 'gray' : (popEl._cmOut || 'r');
+      popEl._cmOut = out;
+      const o = p[out];
+      body.innerHTML = `
+      <label style="display:flex;align-items:center;gap:6px;margin:2px 2px 6px;cursor:pointer;font-size:11px;"><input type="checkbox" class="ge-cm-mono" ${p.mono ? 'checked' : ''}> Monochrome</label>
+      ${p.mono ? '' : `<div class="ge-adj-row" style="align-items:center;gap:8px;"><label>Output</label>
+        <select class="ge-cm-out ge-tool-select" style="flex:1;min-width:0;">
+          <option value="r"${out === 'r' ? ' selected' : ''}>Red</option>
+          <option value="g"${out === 'g' ? ' selected' : ''}>Green</option>
+          <option value="b"${out === 'b' ? ' selected' : ''}>Blue</option>
+        </select></div>`}
+      ${sliderRow(out + '-r', 'Red',   -200, 200, o.r, '%')}
+      ${sliderRow(out + '-g', 'Green', -200, 200, o.g, '%')}
+      ${sliderRow(out + '-b', 'Blue',  -200, 200, o.b, '%')}`;
+      body.querySelector('.ge-cm-mono')?.addEventListener('change', (e) => {
+        layer._stagedAdj.params.mono = e.target.checked;
+        popEl._cmOut = e.target.checked ? 'gray' : 'r';
+        layer._adjFinalKey = null; body.innerHTML = ''; buildAdjBody(layer, type, body, popEl); scheduleAdjRefresh(layer);
+      });
+      body.querySelector('.ge-cm-out')?.addEventListener('change', (e) => {
+        popEl._cmOut = e.target.value; body.innerHTML = ''; buildAdjBody(layer, type, body, popEl);
+      });
+    } else {
+      // Parameter-free adjustments (Invert, Black & White): nothing to tweak.
+      body.innerHTML = '<p style="font-size:11px;opacity:0.6;margin:4px 2px;">No options. Click Apply to add this adjustment — blend with the layer opacity or delete it from the layer panel.</p>';
     }
+    // Wire colour inputs (photo-filter / gradient-map) → staged params.
+    body.querySelectorAll('.ge-adj-color').forEach((ci) => {
+      ci.addEventListener('input', () => {
+        layer._stagedAdj.params[ci.dataset.colorKey] = ci.value;
+        layer._adjFinalKey = null;
+        scheduleAdjRefresh(layer);
+      });
+    });
     // Wire all sliders.
     body.querySelectorAll('input[type="range"]').forEach(sl => {
       sl.addEventListener('input', () => onAdjSliderInput(layer, type, sl));
@@ -583,6 +692,10 @@ export function createAdjPopupSystem({ composite, saveState, renderLayerPanel })
     } else if (type === 'color-balance') {
       const [tone, ch] = key.split('-');
       p[tone][ch] = raw;
+    } else {
+      // vibrance/exposure/posterize/threshold/photo-filter density: 1:1 numeric.
+      p[key] = raw;
+      if (key === 'density') display = raw + '%';
     }
     if (valEl) valEl.textContent = display;
     scheduleAdjRefresh(layer);
@@ -661,6 +774,124 @@ export function createAdjPopupSystem({ composite, saveState, renderLayerPanel })
         h.addEventListener('pointerup', onUp);
       });
     });
+  }
+
+  // Curve editor — a draggable tone-curve canvas. Mutates the staged params
+  // for the active channel and previews live. Returns its redraw function.
+  function wireCurveEditor(body, layer) {
+    const canvas = body.querySelector('.ge-adj-curve');
+    if (!canvas) return () => {};
+    const ctx = canvas.getContext('2d');
+    const W = canvas.width, H = canvas.height;
+    const HIT = 13;
+    const toCanvas = (x, y) => [(x / 255) * W, H - (y / 255) * H];
+    const evtXY = (e) => {
+      const rect = canvas.getBoundingClientRect();
+      return [(e.clientX - rect.left) * (W / rect.width), (e.clientY - rect.top) * (H / rect.height)];
+    };
+    const fromCanvas = (cx, cy) => [
+      Math.round(clampV((cx / W) * 255, 0, 255)),
+      Math.round(clampV(255 - (cy / H) * 255, 0, 255)),
+    ];
+    const curPts = () => { const p = layer._stagedAdj.params; return p[p.channel || 'rgb']; };
+
+    function draw() {
+      const p = layer._stagedAdj.params;
+      const ch = p.channel || 'rgb';
+      const pts = p[ch];
+      ctx.clearRect(0, 0, W, H);
+      ctx.fillStyle = 'rgba(0,0,0,0.16)';
+      ctx.fillRect(0, 0, W, H);
+      ctx.strokeStyle = 'rgba(255,255,255,0.09)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let i = 1; i < 4; i++) {
+        const gx = (i / 4) * W; ctx.moveTo(gx, 0); ctx.lineTo(gx, H);
+        const gy = (i / 4) * H; ctx.moveTo(0, gy); ctx.lineTo(W, gy);
+      }
+      ctx.stroke();
+      ctx.strokeStyle = 'rgba(255,255,255,0.16)';
+      ctx.beginPath(); ctx.moveTo(0, H); ctx.lineTo(W, 0); ctx.stroke();
+      const lut = buildCurveLUT(pts);
+      const col = ch === 'r' ? '#ff6b6b' : ch === 'g' ? '#5ed98a' : ch === 'b' ? '#6ba8ff' : '#e8e8e8';
+      ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.beginPath();
+      for (let v = 0; v < 256; v++) {
+        const cx = (v / 255) * W, cy = H - (lut[v] / 255) * H;
+        if (v === 0) ctx.moveTo(cx, cy); else ctx.lineTo(cx, cy);
+      }
+      ctx.stroke();
+      for (const pt of pts) {
+        const [cx, cy] = toCanvas(pt[0], pt[1]);
+        ctx.beginPath(); ctx.arc(cx, cy, 4, 0, Math.PI * 2);
+        ctx.fillStyle = col; ctx.fill();
+        ctx.strokeStyle = 'rgba(0,0,0,0.65)'; ctx.lineWidth = 1; ctx.stroke();
+      }
+    }
+
+    let dragIdx = -1;
+    canvas.addEventListener('pointerdown', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      const [cx, cy] = evtXY(e);
+      const pts = curPts();
+      let best = -1, bestD = HIT * HIT;
+      for (let i = 0; i < pts.length; i++) {
+        const [px, py] = toCanvas(pts[i][0], pts[i][1]);
+        const dd = (px - cx) * (px - cx) + (py - cy) * (py - cy);
+        if (dd < bestD) { bestD = dd; best = i; }
+      }
+      if (best >= 0) {
+        dragIdx = best;
+      } else {
+        const [nx, ny] = fromCanvas(cx, cy);
+        pts.push([nx, ny]);
+        pts.sort((a, b) => a[0] - b[0]);
+        dragIdx = pts.findIndex((pp) => pp[0] === nx && pp[1] === ny);
+        layer._adjFinalKey = null; scheduleAdjRefresh(layer);
+      }
+      try { canvas.setPointerCapture(e.pointerId); } catch {}
+      draw();
+    });
+    canvas.addEventListener('pointermove', (e) => {
+      if (dragIdx < 0) return;
+      e.preventDefault();
+      const [cx, cy] = evtXY(e);
+      const pts = curPts();
+      const n = pts.length;
+      const isFirst = dragIdx === 0, isLast = dragIdx === n - 1;
+      if (!isFirst && !isLast && (cy < -18 || cy > H + 18)) {
+        pts.splice(dragIdx, 1);
+        dragIdx = -1;
+        layer._adjFinalKey = null; scheduleAdjRefresh(layer); draw();
+        return;
+      }
+      let [nx, ny] = fromCanvas(cx, cy);
+      if (isFirst) nx = 0;
+      else if (isLast) nx = 255;
+      else nx = clampV(nx, pts[dragIdx - 1][0] + 1, pts[dragIdx + 1][0] - 1);
+      pts[dragIdx] = [nx, ny];
+      layer._adjFinalKey = null; scheduleAdjRefresh(layer); draw();
+    });
+    const endDrag = (e) => {
+      if (dragIdx >= 0) { try { canvas.releasePointerCapture(e.pointerId); } catch {} dragIdx = -1; }
+    };
+    canvas.addEventListener('pointerup', endDrag);
+    canvas.addEventListener('pointercancel', endDrag);
+    canvas.addEventListener('dblclick', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      const [cx, cy] = evtXY(e);
+      const pts = curPts();
+      let best = -1, bestD = HIT * HIT;
+      for (let i = 0; i < pts.length; i++) {
+        const [px, py] = toCanvas(pts[i][0], pts[i][1]);
+        const dd = (px - cx) * (px - cx) + (py - cy) * (py - cy);
+        if (dd < bestD) { bestD = dd; best = i; }
+      }
+      if (best > 0 && best < pts.length - 1) {
+        pts.splice(best, 1);
+        layer._adjFinalKey = null; composite(); draw();
+      }
+    });
+    return draw;
   }
 
   // Legacy sidebar-FX panel sync — FX now lives in a per-layer popup;

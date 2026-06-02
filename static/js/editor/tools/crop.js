@@ -60,32 +60,34 @@ export function createCropTool({ composite, showCropApply }) {
       if (!state.cropping) return;
       e.preventDefault();
       state.cropEnd = canvasCoords(e, state.mainCanvas);
-      // Shift-held = lock aspect ratio. First Shift press during the
-      // drag snapshots the current aspect; subsequent moves stay locked.
-      // Releasing Shift resets so the user can re-lock at a new ratio.
-      if (e.shiftKey) {
-        const rawDx = state.cropEnd.x - state.cropStart.x;
-        const rawDy = state.cropEnd.y - state.cropStart.y;
-        if (state.cropAspectLock == null) {
-          const rawW = Math.abs(rawDx) || 1;
-          const rawH = Math.abs(rawDy) || 1;
-          state.cropAspectLock = rawW / rawH;
-        }
-        const absDx = Math.abs(rawDx);
-        const absDy = Math.abs(rawDy);
-        // Whichever axis the user moved more (relative to the lock) is
-        // the driver; scale the other to preserve aspect.
-        let dx, dy;
-        if (absDx >= absDy * state.cropAspectLock) {
-          dx = rawDx;
-          dy = Math.sign(rawDy || 1) * (absDx / state.cropAspectLock);
-        } else {
-          dy = rawDy;
-          dx = Math.sign(rawDx || 1) * (absDy * state.cropAspectLock);
-        }
-        state.cropEnd = { x: state.cropStart.x + dx, y: state.cropStart.y + dy };
+      // Aspect constraint: a chosen ratio PRESET (w/h) takes priority; else
+      // Shift-held snapshots+locks the current aspect (release to re-lock).
+      let lockRatio = null;
+      if (state.cropAspectPreset) {
+        lockRatio = state.cropAspectPreset;
+      } else if (e.shiftKey) {
+        const rawW = Math.abs(state.cropEnd.x - state.cropStart.x) || 1;
+        const rawH = Math.abs(state.cropEnd.y - state.cropStart.y) || 1;
+        if (state.cropAspectLock == null) state.cropAspectLock = rawW / rawH;
+        lockRatio = state.cropAspectLock;
       } else {
         state.cropAspectLock = null;
+      }
+      if (lockRatio) {
+        const rawDx = state.cropEnd.x - state.cropStart.x;
+        const rawDy = state.cropEnd.y - state.cropStart.y;
+        const absDx = Math.abs(rawDx), absDy = Math.abs(rawDy);
+        // Whichever axis the user moved more (relative to the ratio) drives;
+        // scale the other to preserve aspect.
+        let dx, dy;
+        if (absDx >= absDy * lockRatio) {
+          dx = rawDx;
+          dy = Math.sign(rawDy || 1) * (absDx / lockRatio);
+        } else {
+          dy = rawDy;
+          dx = Math.sign(rawDx || 1) * (absDy * lockRatio);
+        }
+        state.cropEnd = { x: state.cropStart.x + dx, y: state.cropStart.y + dy };
       }
       composite();
       // Draw crop overlay.

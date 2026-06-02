@@ -46,21 +46,44 @@ export function createTransformSession({
     if (state.transformActive) { cancelTransform(); return; } // toggle off
     state.transformActive = true;
     state.transformLayer = layer;
-    state.transformOrigW = layer.canvas.width;
-    state.transformOrigH = layer.canvas.height;
-    state.transformPendingW = state.transformOrigW;
-    state.transformPendingH = state.transformOrigH;
-    state.transformPendingRot = 0;
-    state.transformPendingFlipH = false;
-    state.transformPendingFlipV = false;
-    // Snapshot the layer so live preview can re-derive from the
-    // original pixels on every keystroke instead of stacking
-    // destructive edits.
+    // Smart Objects re-derive from their PRISTINE source each session (no
+    // compounding resample loss); normal layers snapshot the current pixels.
+    // Strictly gated on isSmart so the normal-layer path is byte-identical.
+    const smart = !!(layer.isSmart && layer.sourceCanvas && layer.smartXf);
+    const srcCanvas = smart ? layer.sourceCanvas : layer.canvas;
+    state.transformOrigW = srcCanvas.width;
+    state.transformOrigH = srcCanvas.height;
+    if (smart) {
+      // Seed the pending transform with the already-applied one so the first
+      // frame shows the current state, and confirm re-derives from source.
+      state.transformPendingW = layer.smartXf.w;
+      state.transformPendingH = layer.smartXf.h;
+      state.transformPendingRot = layer.smartXf.rot || 0;
+      state.transformPendingFlipH = !!layer.smartXf.flipH;
+      state.transformPendingFlipV = !!layer.smartXf.flipV;
+    } else {
+      state.transformPendingW = state.transformOrigW;
+      state.transformPendingH = state.transformOrigH;
+      state.transformPendingRot = 0;
+      state.transformPendingFlipH = false;
+      state.transformPendingFlipV = false;
+    }
+    // Snapshot the source so live preview can re-derive on every keystroke
+    // instead of stacking destructive edits.
     state.transformOrigCanvas = document.createElement('canvas');
     state.transformOrigCanvas.width = state.transformOrigW;
     state.transformOrigCanvas.height = state.transformOrigH;
-    state.transformOrigCanvas.getContext('2d').drawImage(layer.canvas, 0, 0);
-    state.transformOrigOffset = { ...(state.layerOffsets.get(layer.id) || { x: 0, y: 0 }) };
+    state.transformOrigCanvas.getContext('2d').drawImage(srcCanvas, 0, 0);
+    const curOff = state.layerOffsets.get(layer.id) || { x: 0, y: 0 };
+    if (smart) {
+      // Keep the current visual centre fixed while re-deriving from a source
+      // whose size differs from the on-canvas (baked) size.
+      const cx = curOff.x + layer.canvas.width / 2;
+      const cy = curOff.y + layer.canvas.height / 2;
+      state.transformOrigOffset = { x: cx - state.transformOrigW / 2, y: cy - state.transformOrigH / 2 };
+    } else {
+      state.transformOrigOffset = { ...curOff };
+    }
     saveState();
     // Fit canvas to viewport so the corner handles are visible —
     // without this, a layer larger than the viewport leaves the grab
@@ -95,9 +118,9 @@ export function createTransformSession({
     const hInput = pop.querySelector('#ge-transform-h');
     const rotInput = pop.querySelector('#ge-transform-rot');
     const aspectBtn = pop.querySelector('#ge-transform-aspect');
-    wInput.value = String(state.transformOrigW);
-    hInput.value = String(state.transformOrigH);
-    rotInput.value = '0';
+    wInput.value = String(state.transformPendingW);
+    hInput.value = String(state.transformPendingH);
+    rotInput.value = String(state.transformPendingRot || 0);
     aspectBtn.classList.toggle('active', state.transformAspectLock);
     aspectBtn.setAttribute('aria-pressed', state.transformAspectLock ? 'true' : 'false');
 
@@ -353,6 +376,15 @@ export function createTransformSession({
   }
 
   function confirmTransform() {
+    // Persist the applied transform onto a Smart Object so it serializes and so
+    // the NEXT transform session re-derives from the pristine source again.
+    if (state.transformLayer && state.transformLayer.isSmart) {
+      state.transformLayer.smartXf = {
+        w: state.transformPendingW, h: state.transformPendingH,
+        rot: state.transformPendingRot,
+        flipH: state.transformPendingFlipH, flipV: state.transformPendingFlipV,
+      };
+    }
     closeTransformPopup();
     state.transformOrigCanvas = null;
     state.transformOrigOffset = null;

@@ -12,15 +12,122 @@
 export function controlsHTML({ color, brushSize, wandTolerance }) {
   const brushSliderValue = Math.round(Math.log(Math.max(1, brushSize)) / Math.log(800) * 1000);
   return `
+    <div class="ge-color-panel" id="ge-color-panel">
+      <div class="ge-color-tabs" role="tablist">
+        <button type="button" class="ge-color-tab active" data-ctab="color">Color</button>
+        <button type="button" class="ge-color-tab" data-ctab="ok">OK Color</button>
+        <button type="button" class="ge-color-tab" data-ctab="swatches">Swatches</button>
+      </div>
+      <div class="ge-color-pane" data-cpane="color" id="ge-color-hsv"></div>
+      <div class="ge-color-pane" data-cpane="ok" id="ge-okpicker" style="display:none;"></div>
+      <div class="ge-color-pane ge-swatches-section" id="ge-swatches-section" data-cpane="swatches" style="display:none;">
+        <div class="ge-section-title" style="display:flex;align-items:center;justify-content:space-between;gap:6px;">
+          <span>Swatches</span>
+          <span style="display:flex;gap:4px;">
+            <button type="button" class="ge-btn ge-btn-sm" id="ge-swatch-import" title="Import a palette (.json)" style="padding:1px 7px;">↥</button>
+            <button type="button" class="ge-btn ge-btn-sm" id="ge-swatch-export" title="Export your saved swatches (.json)" style="padding:1px 7px;">↧</button>
+            <button type="button" class="ge-btn ge-btn-sm" id="ge-swatch-add" title="Save the current foreground colour" style="padding:1px 8px;">+</button>
+          </span>
+        </div>
+        <div id="ge-swatches" style="display:flex;flex-wrap:wrap;gap:3px;"></div>
+        <div id="ge-swatch-recent-wrap" style="margin-top:5px;display:none;">
+          <div style="font-size:10px;opacity:0.5;margin-bottom:2px;">Recent</div>
+          <div id="ge-swatch-recent" style="display:flex;flex-wrap:wrap;gap:3px;"></div>
+        </div>
+      </div>
+    </div>
+    <div class="ge-quicktransform-section" id="ge-quicktransform-section">
+      <div class="ge-section-title">Rotate &amp; Flip</div>
+      <div class="ge-control-row" style="display:flex;gap:4px;">
+        <button type="button" class="ge-btn ge-btn-sm" id="ge-qt-fliph" title="Flip canvas horizontal — great for checking a drawing" style="flex:1;">⇋</button>
+        <button type="button" class="ge-btn ge-btn-sm" id="ge-qt-flipv" title="Flip canvas vertical" style="flex:1;">⇅</button>
+        <button type="button" class="ge-btn ge-btn-sm" id="ge-qt-rotccw" title="Rotate 90° counter-clockwise" style="flex:1;">↺</button>
+        <button type="button" class="ge-btn ge-btn-sm" id="ge-qt-rotcw" title="Rotate 90° clockwise" style="flex:1;">↻</button>
+      </div>
+    </div>
+    <div class="ge-eraser-section" id="ge-crop-section" style="display:none;">
+      <div class="ge-section-title">Crop</div>
+      <div class="ge-control-row" style="display:flex;flex-wrap:wrap;gap:4px;">
+        <button type="button" class="ge-btn ge-btn-sm ge-crop-ratio active" data-crop-ratio="0">Free</button>
+        <button type="button" class="ge-btn ge-btn-sm ge-crop-ratio" data-crop-ratio="1">1:1</button>
+        <button type="button" class="ge-btn ge-btn-sm ge-crop-ratio" data-crop-ratio="1.7778">16:9</button>
+        <button type="button" class="ge-btn ge-btn-sm ge-crop-ratio" data-crop-ratio="1.3333">4:3</button>
+        <button type="button" class="ge-btn ge-btn-sm ge-crop-ratio" data-crop-ratio="1.5">3:2</button>
+      </div>
+      <label class="ge-control-row" style="display:flex;align-items:center;gap:6px;font-size:11px;margin-top:6px;cursor:pointer;">
+        <input type="checkbox" id="ge-crop-delete" checked>
+        <span>Delete cropped pixels</span>
+      </label>
+      <p style="font-size:10px;opacity:0.5;margin:2px 0 0;">Drag to crop — drag past an edge to extend the canvas. Pick a ratio to constrain it (or hold Shift to lock the current one). Uncheck to keep cropped-out pixels hidden instead of deleting them.</p>
+    </div>
+    <div class="ge-eraser-section" id="ge-distort-section" style="display:none;">
+      <div class="ge-section-title">Distort</div>
+      <div class="ge-control-row ge-tool-model-row">
+        <label>Mode</label>
+        <select id="ge-distort-mode" class="ge-tool-select" style="flex:1;min-width:0;" title="Free = drag each corner; Skew = the edge shears; Perspective = symmetric trapezoid.">
+          <option value="free">Free</option>
+          <option value="skew">Skew</option>
+          <option value="perspective">Perspective</option>
+        </select>
+      </div>
+      <div class="ge-control-row ge-actions" style="gap:4px;">
+        <button class="ge-btn ge-btn-sm ge-btn-primary" id="ge-distort-apply">Apply</button>
+        <button class="ge-btn ge-btn-sm" id="ge-distort-cancel">Cancel</button>
+      </div>
+    </div>
+    <div class="ge-eraser-section" id="ge-pcrop-section" style="display:none;">
+      <div class="ge-section-title">Perspective Crop</div>
+      <p style="font-size:10px;opacity:0.5;margin:0 0 4px;">Drag the 4 corners over a skewed subject, then Apply to straighten it to a rectangle.</p>
+      <div class="ge-control-row ge-actions" style="gap:4px;">
+        <button class="ge-btn ge-btn-sm ge-btn-primary" id="ge-pcrop-apply">Apply</button>
+        <button class="ge-btn ge-btn-sm" id="ge-pcrop-cancel">Cancel</button>
+      </div>
+      <p style="font-size:10px;opacity:0.5;margin:2px 0 0;">Drag the corner handles to free-distort the layer. Enter applies · Esc cancels.</p>
+    </div>
+    <div class="ge-eraser-section" id="ge-eyedropper-section" style="display:none;">
+      <div class="ge-section-title">Eyedropper</div>
+      <div class="ge-control-row ge-tool-model-row">
+        <label>Sample</label>
+        <select id="ge-eyedropper-sample" class="ge-tool-select" style="flex:1;min-width:0;" title="Average a region instead of a single pixel — steadier picks off noisy / textured areas.">
+          <option value="1">Point</option>
+          <option value="3">3 × 3 average</option>
+          <option value="5">5 × 5 average</option>
+        </select>
+      </div>
+    </div>
     <div id="ge-brush-controls">
       <div class="ge-control-row" id="ge-color-row">
         <label>Color</label>
-        <input type="color" class="ge-color-picker" value="${color}" />
+        <span class="ge-fgbg" style="display:inline-flex;align-items:center;gap:4px;">
+          <input type="color" class="ge-color-picker ge-fg-color" value="${color}" title="Foreground color — what the brush paints" />
+          <input type="color" class="ge-color-picker ge-bg-color" value="#ffffff" title="Background color" />
+          <button type="button" class="ge-btn ge-btn-sm" id="ge-swap-colors" title="Swap foreground/background (X)" aria-label="Swap colors" style="padding:2px 6px;">⇄</button>
+          <button type="button" class="ge-btn ge-btn-sm" id="ge-default-colors" title="Default colors — black/white (D)" aria-label="Default colors" style="padding:2px 6px;">◫</button>
+        </span>
       </div>
       <div class="ge-control-row">
         <label>Size <span class="ge-size-label">${brushSize}px</span></label>
       <input type="range" class="ge-size-slider" min="0" max="1000" value="${brushSliderValue}" />
     </div>
+    </div>
+    <div class="ge-marquee-section" id="ge-marquee-section" style="display:none;">
+      <div class="ge-section-title">Marquee</div>
+      <div class="ge-control-row" style="display:flex;gap:4px;flex-wrap:wrap;">
+        <button type="button" class="ge-btn ge-btn-sm ge-marquee-mode active" data-marquee-mode="rect">Rectangle</button>
+        <button type="button" class="ge-btn ge-btn-sm ge-marquee-mode" data-marquee-mode="ellipse">Ellipse</button>
+        <button type="button" class="ge-btn ge-btn-sm ge-marquee-mode" data-marquee-mode="row" title="Single Row (1px tall, full width)">Row</button>
+        <button type="button" class="ge-btn ge-btn-sm ge-marquee-mode" data-marquee-mode="col" title="Single Column (1px wide, full height)">Column</button>
+      </div>
+      <p style="font-size:10px;opacity:0.5;margin:2px 0 0;">Drag to select. Then Del clears pixels, Ctrl+C copies, M makes a mask, Ctrl+Alt+I inverts.</p>
+    </div>
+    <div class="ge-shape-section" id="ge-shape-section" style="display:none;">
+      <div class="ge-section-title">Shape</div>
+      <div class="ge-control-row" style="display:flex;gap:4px;flex-wrap:wrap;">
+        <button type="button" class="ge-btn ge-btn-sm ge-shape-mode active" data-shape-mode="rect">Rectangle</button>
+        <button type="button" class="ge-btn ge-btn-sm ge-shape-mode" data-shape-mode="ellipse">Ellipse</button>
+        <button type="button" class="ge-btn ge-btn-sm ge-shape-mode" data-shape-mode="line">Line</button>
+      </div>
+      <p style="font-size:10px;opacity:0.5;margin:2px 0 0;">Drag to draw with the foreground colour. Hold Shift for a square / circle / 45° line. Line width uses the brush size.</p>
     </div>
     <div class="ge-lasso-section" id="ge-lasso-section" style="display:none;">
       <div class="ge-control-row ge-eraser-row ge-sel-refine" id="ge-lasso-refine-feather" style="display:none;">
@@ -213,6 +320,33 @@ export function controlsHTML({ color, brushSize, wandTolerance }) {
     </div>
     <div class="ge-eraser-section" id="ge-brush-section" style="display:none;">
       <div class="ge-section-title">Brush</div>
+      <div class="ge-control-row ge-tool-model-row">
+        <label>Blend</label>
+        <select id="ge-brush-blend" class="ge-tool-select" style="flex:1;min-width:0;" title="Brush blend mode — how the stroke combines with the layer (Multiply/Screen/Overlay for shading & glazing)."></select>
+      </div>
+      <div class="ge-control-row ge-tool-model-row">
+        <label>Preset</label>
+        <select id="ge-brush-preset" class="ge-tool-select" style="flex:1;min-width:0;" title="Brush preset — tip shape + pressure dynamics (pen pressure shapes size/flow)."></select>
+      </div>
+      <div class="ge-control-row ge-actions" style="margin-top:2px;">
+        <button class="ge-btn ge-btn-sm" id="ge-brush-import" title="Import brushes exported from other paint programs (.abr, .gbr, .gih, .brush) — or any image as a brush tip">Import brush…</button>
+        <input type="file" id="ge-brush-import-file" accept="image/*,.gbr,.abr,.gih,.brush" style="display:none" />
+      </div>
+      <div class="ge-control-row ge-tool-model-row">
+        <label>Symmetry</label>
+        <select id="ge-brush-symmetry" class="ge-tool-select" style="flex:1;min-width:0;" title="Mirror / radial / mandala symmetry around the canvas center">
+          <option value="none">None</option>
+          <option value="x">Mirror X (Vertical)</option>
+          <option value="y">Mirror Y (Horizontal)</option>
+          <option value="xy">Dual Axis</option>
+          <option value="radial">Radial</option>
+          <option value="mandala">Mandala</option>
+        </select>
+      </div>
+      <div class="ge-control-row ge-eraser-row" id="ge-symn-row" style="display:none;">
+        <label>Segments <span id="ge-brush-symn-label">6</span></label>
+        <input type="range" id="ge-brush-symn" min="2" max="24" value="6" title="Number of radial/mandala segments" />
+      </div>
       <div class="ge-control-row ge-eraser-row">
         <span class="ge-eraser-preview" id="ge-brush-preview-opacity" aria-hidden="true"></span>
         <label>Opacity <span id="ge-brush-opacity-label">100%</span></label>
@@ -227,6 +361,66 @@ export function controlsHTML({ color, brushSize, wandTolerance }) {
         <span class="ge-eraser-preview" id="ge-brush-preview-softness" aria-hidden="true"></span>
         <label>Softness <span id="ge-brush-softness-label">100%</span></label>
         <input type="range" id="ge-brush-softness" min="0" max="300" value="100" title="Soft brush edge — blurs the stroke's alpha for a feathered fade at the perimeter." />
+      </div>
+      <div class="ge-control-row ge-eraser-row">
+        <label style="display:flex;align-items:center;gap:6px;">Smoothing <span id="ge-brush-smoothing-label">0%</span>
+          <button type="button" id="ge-smoothing-gear" title="Smoothing options" style="margin-left:auto;background:none;border:none;color:inherit;cursor:pointer;opacity:0.7;padding:0;">⚙</button>
+        </label>
+        <input type="range" id="ge-brush-smoothing" min="0" max="95" value="0" title="Stroke stabilizer — smooths shaky lines by lagging the brush toward the cursor." />
+      </div>
+      <div class="ge-control-row ge-eraser-row" id="ge-smoothing-opts" style="display:none;flex-direction:column;align-items:stretch;gap:3px;font-size:11px;">
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="ge-sm-pull"> Pulled String Mode</label>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="ge-sm-catchup-end" checked> Catch-up on Stroke End</label>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="ge-sm-adjust-zoom" checked> Adjust for Zoom</label>
+      </div>
+      <div class="ge-control-row ge-eraser-row">
+        <label>Scatter <span id="ge-brush-scatter-label">0%</span></label>
+        <input type="range" id="ge-brush-scatter" min="0" max="100" value="0" title="Random per-dab position jitter — scatters the brush for texture / spray." />
+      </div>
+      <div class="ge-control-row ge-eraser-row">
+        <label>Spacing <span id="ge-brush-spacing-label">10%</span></label>
+        <input type="range" id="ge-brush-spacing" min="1" max="200" value="10" title="Gap between stamped dabs as a % of brush size — low = smooth, high = dotted." />
+      </div>
+      <div class="ge-control-row ge-eraser-row">
+        <label>Roundness <span id="ge-brush-roundness-label">100%</span></label>
+        <input type="range" id="ge-brush-roundness" min="5" max="100" value="100" title="Tip roundness — lower squashes the tip into an ellipse for calligraphic strokes." />
+      </div>
+      <div class="ge-control-row ge-eraser-row">
+        <label>Color jitter <span id="ge-brush-colorjitter-label">0%</span></label>
+        <input type="range" id="ge-brush-colorjitter" min="0" max="100" value="0" title="Randomises the hue per dab for natural-media variation (foliage, texture). Greys are unaffected." />
+      </div>
+      <div class="ge-control-row ge-eraser-row">
+        <label>Size jitter <span id="ge-brush-sizejitter-label">0%</span></label>
+        <input type="range" id="ge-brush-sizejitter" min="0" max="100" value="0" title="Randomises the dab size per stamp for organic, varied strokes." />
+      </div>
+      <div class="ge-control-row ge-eraser-row">
+        <label>Flow jitter <span id="ge-brush-flowjitter-label">0%</span></label>
+        <input type="range" id="ge-brush-flowjitter" min="0" max="100" value="0" title="Randomises the per-dab flow (opacity build-up) for textured, broken strokes." />
+      </div>
+      <div class="ge-control-row ge-eraser-row" style="gap:6px;">
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="ge-brush-angle-follow" /> Tip follows stroke direction</label>
+      </div>
+      <div class="ge-control-row ge-eraser-row" style="gap:6px;">
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;" title="Rotate the tip toward the pen's tilt direction (needs a tilt-capable stylus)."><input type="checkbox" id="ge-brush-tilt-angle" /> Tip follows pen tilt</label>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;" title="Pen tilt grows the brush — a flatter pen lays a broader stroke (needs a tilt-capable stylus)."><input type="checkbox" id="ge-brush-tilt-size" /> Tilt affects size</label>
+      </div>
+      <div class="ge-control-row ge-eraser-row" style="gap:6px;">
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;" title="Pen pressure controls opacity — a light touch paints more transparent (needs a pressure pen)."><input type="checkbox" id="ge-brush-pressure-opacity" checked /> Pressure → Opacity</label>
+      </div>
+      <div class="ge-control-row ge-eraser-row" style="gap:6px;">
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;" title="Airbrush / build-up: paint keeps accumulating while you hold the cursor still (Alt+Shift+P)."><input type="checkbox" id="ge-brush-airbrush" /> Airbrush (build up while held)</label>
+      </div>
+      <div class="ge-control-row ge-eraser-row">
+        <label>Velocity taper <span id="ge-brush-velocity-label">0%</span></label>
+        <input type="range" id="ge-brush-velocity" min="0" max="100" value="0" title="Fast strokes paint thinner (speed sensor). 0 = off." />
+      </div>
+      <div class="ge-control-row ge-eraser-row" style="flex-direction:column;align-items:stretch;gap:4px;">
+        <label>Pressure response</label>
+        <div id="ge-pressure-curve-host"></div>
+      </div>
+      <div class="ge-control-row ge-eraser-row" style="flex-direction:column;align-items:stretch;gap:4px;">
+        <label>Preview <span style="opacity:0.5;font-weight:normal;">— drag to test</span></label>
+        <div id="ge-brush-preview-host"></div>
       </div>
     </div>
     <div class="ge-eraser-section" id="ge-eraser-section" style="display:none;">
@@ -340,6 +534,184 @@ export function controlsHTML({ color, brushSize, wandTolerance }) {
         <button class="ge-btn ge-btn-primary" id="ge-style-run">Apply Style</button>
       </div>
     </div>
+    <div class="ge-filter-section" id="ge-filter-section" style="display:none;">
+      <div class="ge-section-title">Filters</div>
+      <div class="ge-control-row ge-tool-model-row">
+        <label>Filter</label>
+        <select id="ge-filter-type" class="ge-tool-select" style="flex:1;min-width:0;" title="Filter to apply to the active layer"></select>
+      </div>
+      <div class="ge-control-row ge-eraser-row" id="ge-filter-amount-row">
+        <label>Amount <span id="ge-filter-amount-label">50</span></label>
+        <input type="range" id="ge-filter-amount" min="0" max="100" value="50" />
+      </div>
+      <div class="ge-control-row ge-actions" style="margin-top:4px;">
+        <button class="ge-btn ge-btn-primary" id="ge-filter-apply">Apply</button>
+        <button class="ge-btn ge-btn-sm" id="ge-filter-reset">Reset</button>
+      </div>
+      <p style="font-size:10px;opacity:0.5;margin:2px 0 0;">Live preview on the active layer — Apply to bake, Reset to revert.</p>
+    </div>
+    <div class="ge-liquify-section" id="ge-liquify-section" style="display:none;">
+      <div class="ge-section-title">Liquify</div>
+      <div class="ge-control-row ge-eraser-row">
+        <label>Strength <span id="ge-liquify-strength-label">50%</span></label>
+        <input type="range" id="ge-liquify-strength" min="1" max="100" value="50" title="How hard the drag pushes pixels." />
+      </div>
+      <p style="font-size:10px;opacity:0.5;margin:2px 0 0;">Drag to push/warp pixels (Brush Size = radius). Great for nudging poses — pairs with Morph.</p>
+    </div>
+    <div class="ge-smudge-section" id="ge-smudge-section" style="display:none;">
+      <div class="ge-section-title">Smudge</div>
+      <div class="ge-control-row ge-eraser-row">
+        <label>Strength <span id="ge-smudge-strength-label">60%</span></label>
+        <input type="range" id="ge-smudge-strength" min="1" max="100" value="60" title="How far paint smears — higher carries colour longer along the stroke." />
+      </div>
+      <label class="ge-control-row" style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer;">
+        <input type="checkbox" id="ge-smudge-finger">
+        <span>Finger painting (drag foreground colour)</span>
+      </label>
+      <p style="font-size:10px;opacity:0.5;margin:2px 0 0;">Drag to smear paint like a finger (Brush Size = radius; pen pressure smears further, brush softness shapes the edge). Blends colours and edges.</p>
+    </div>
+    <div class="ge-mixer-section" id="ge-mixer-section" style="display:none;">
+      <div class="ge-section-title">Mixer Brush</div>
+      <div class="ge-control-row ge-eraser-row">
+        <label>Wet <span id="ge-mixer-wet-label">50%</span></label>
+        <input type="range" id="ge-mixer-wet" min="0" max="100" value="50" title="How fast the loaded colour picks up the canvas it's dragged over — higher = more blending along the stroke." />
+      </div>
+      <div class="ge-control-row ge-eraser-row">
+        <label>Mix <span id="ge-mixer-mix-label">50%</span></label>
+        <input type="range" id="ge-mixer-mix" min="0" max="100" value="50" title="Deposited colour: 100% = all canvas (pure smear), 0% = all loaded paint." />
+      </div>
+      <div class="ge-control-row ge-eraser-row">
+        <label>Flow <span id="ge-mixer-flow-label">80%</span></label>
+        <input type="range" id="ge-mixer-flow" min="1" max="100" value="80" title="How much paint each dab lays down." />
+      </div>
+      <p style="font-size:10px;opacity:0.5;margin:2px 0 0;">Wet-paint blending: loads the foreground colour and mixes it into the canvas as you drag (Brush Size = radius). Try Wet+Mix ~50% for natural-media mixing.</p>
+    </div>
+    <div class="ge-text-section" id="ge-text-section" style="display:none;">
+      <div class="ge-section-title">Type</div>
+      <div class="ge-control-row ge-eraser-row">
+        <label>Size <span id="ge-text-size-label">48</span></label>
+        <input type="range" id="ge-text-size" min="8" max="200" value="48" title="Text size in pixels." />
+      </div>
+      <div class="ge-control-row ge-tool-model-row">
+        <label>Font</label>
+        <select id="ge-text-font" class="ge-tool-select" style="flex:1;min-width:0;">
+          <option value="sans-serif">Sans</option>
+          <option value="serif">Serif</option>
+          <option value="monospace">Mono</option>
+        </select>
+      </div>
+      <p style="font-size:10px;opacity:0.5;margin:2px 0 0;">Click the canvas to add text (uses the foreground colour). Ctrl+Enter or click away to commit.</p>
+    </div>
+    <div class="ge-dodgeburn-section" id="ge-dodgeburn-section" style="display:none;">
+      <div class="ge-section-title">Dodge / Burn</div>
+      <div class="ge-control-row ge-tool-model-row">
+        <label>Mode</label>
+        <select id="ge-dodgeburn-mode" class="ge-tool-select" style="flex:1;min-width:0;" title="What the brush does as you paint">
+          <option value="dodge">Dodge (lighten)</option>
+          <option value="burn">Burn (darken)</option>
+          <option value="desaturate">Sponge — Desaturate</option>
+          <option value="saturate">Sponge — Saturate</option>
+        </select>
+      </div>
+      <div class="ge-control-row ge-eraser-row">
+        <label>Strength <span id="ge-dodgeburn-strength-label">50%</span></label>
+        <input type="range" id="ge-dodgeburn-strength" min="1" max="100" value="50" title="How strongly each pass lightens/darkens/shifts saturation." />
+      </div>
+      <p style="font-size:10px;opacity:0.5;margin:2px 0 0;">Drag to paint tone (Brush Size = radius). Builds up as you scrub — affects existing pixels only.</p>
+    </div>
+    <div class="ge-bucket-section" id="ge-bucket-section" style="display:none;">
+      <div class="ge-section-title">Paint Bucket</div>
+      <div class="ge-control-row ge-eraser-row">
+        <label>Tolerance <span id="ge-bucket-tolerance-label">30</span></label>
+        <input type="range" id="ge-bucket-tolerance" min="0" max="100" value="30" title="How similar neighbouring pixels must be to get filled — higher fills across more colour variation." />
+      </div>
+      <p style="font-size:10px;opacity:0.5;margin:2px 0 0;">Click to flood-fill the area under the cursor with the foreground colour.</p>
+    </div>
+    <div class="ge-gradient-section" id="ge-gradient-section" style="display:none;">
+      <div class="ge-section-title">Gradient</div>
+      <div class="ge-control-row" style="display:flex;gap:4px;">
+        <button type="button" class="ge-btn ge-btn-sm ge-grad-type active" data-grad-type="linear">Linear</button>
+        <button type="button" class="ge-btn ge-btn-sm ge-grad-type" data-grad-type="radial">Radial</button>
+      </div>
+      <div class="ge-control-row" style="display:flex;gap:4px;">
+        <button type="button" class="ge-btn ge-btn-sm ge-grad-mode active" data-grad-mode="fg-bg">FG → BG</button>
+        <button type="button" class="ge-btn ge-btn-sm ge-grad-mode" data-grad-mode="fg-transparent">FG → Transp.</button>
+      </div>
+      <div class="ge-control-row ge-eraser-row">
+        <label>Opacity <span id="ge-grad-opacity-label">100%</span></label>
+        <input type="range" id="ge-grad-opacity" min="0" max="100" value="100" />
+      </div>
+      <div class="ge-control-row" style="flex-direction:column;align-items:stretch;gap:2px;">
+        <label style="opacity:0.7;">Gradient — double-click bar to add a stop</label>
+        <div id="ge-gradient-editor-host"></div>
+      </div>
+      <p style="font-size:10px;opacity:0.5;margin:2px 0 0;">Drag on the canvas to draw the gradient. The editor's stops/colours/alpha override FG→BG once used.</p>
+    </div>
+    <div class="ge-morph-section" id="ge-morph-section" style="display:none;">
+      <div class="ge-section-title ge-section-title-with-help"><span>Morph</span><span class="ge-section-help" tabindex="0" role="img" aria-label="What this does" title="Generates in-between frames between two states using FILM frame interpolation — e.g. reposition a pose on a new layer, then morph the old pose into it to recover the intermediate poses. Needs the morph server running: python scripts/morph_server.py">?</span></div>
+      <div class="ge-control-row" style="display:flex;gap:4px;">
+        <button class="ge-btn ge-btn-sm ge-morph-mode active" data-morph-mode="two-layers">Two layers</button>
+        <button class="ge-btn ge-btn-sm ge-morph-mode" data-morph-mode="active-vs-below">Active vs below</button>
+      </div>
+      <div id="ge-morph-layers">
+        <div class="ge-control-row ge-tool-model-row">
+          <label>From (A)</label>
+          <select id="ge-morph-layer-a" class="ge-tool-select" style="flex:1;min-width:0;" title="Start layer"></select>
+        </div>
+        <div class="ge-control-row ge-tool-model-row">
+          <label>To (B)</label>
+          <select id="ge-morph-layer-b" class="ge-tool-select" style="flex:1;min-width:0;" title="End layer"></select>
+        </div>
+      </div>
+      <div class="ge-control-row ge-eraser-row">
+        <label>Frames <span id="ge-morph-frames-label">10</span></label>
+        <input type="range" id="ge-morph-frames" min="3" max="60" value="10" title="Number of frames including endpoints. More = smoother but slower." />
+      </div>
+      <div class="ge-control-row ge-eraser-row">
+        <label>Max size <span id="ge-morph-maxsize-label">1024</span>px</label>
+        <input type="range" id="ge-morph-maxsize" min="256" max="2048" value="1024" step="128" title="Longest-side cap sent to the model. Lower = faster." />
+      </div>
+      <div class="ge-control-row ge-actions" style="margin-top:4px;">
+        <button class="ge-btn ge-btn-primary ge-btn-ai" id="ge-morph-generate"><span class="ge-btn-ai-mark" aria-hidden="true">✦</span> Generate</button>
+      </div>
+      <div id="ge-morph-progress" style="display:none;height:4px;background:rgba(255,255,255,0.1);border-radius:2px;margin-top:6px;overflow:hidden;">
+        <div id="ge-morph-progress-fill" style="height:100%;width:0;background:var(--ge-accent,#e06c75);transition:width .2s;"></div>
+      </div>
+      <div id="ge-morph-status" style="font-size:10px;opacity:0.6;margin-top:4px;min-height:12px;"></div>
+      <div id="ge-morph-result" style="display:none;margin-top:8px;">
+        <img id="ge-morph-preview" alt="morph frame preview" style="width:100%;border-radius:4px;display:block;background:rgba(0,0,0,0.2);" />
+        <div class="ge-control-row ge-eraser-row" style="margin-top:6px;">
+          <label>Morph <span id="ge-morph-frame-label">0</span> / <span id="ge-morph-frame-total">0</span></label>
+          <input type="range" id="ge-morph-scrubber" min="0" max="0" value="0" title="Drag to scrub the in-between live on the canvas, like the Opacity slider." />
+        </div>
+        <p style="font-size:10px;opacity:0.5;margin:2px 0 4px;">Drag to preview the morph live on the canvas, then keep it.</p>
+        <div class="ge-control-row ge-actions">
+          <button class="ge-btn ge-btn-primary" id="ge-morph-insert">Keep this frame</button>
+        </div>
+      </div>
+    </div>
+    <details class="ge-histogram-section" id="ge-histogram-section">
+      <summary class="ge-section-title" style="cursor:pointer;list-style:revert;">Histogram</summary>
+      <canvas id="ge-histogram-canvas" width="256" height="80" style="display:block;width:100%;height:64px;border-radius:4px;background:rgba(0,0,0,0.25);margin-top:4px;"></canvas>
+      <p style="font-size:10px;opacity:0.5;margin:4px 0 0;">Luminance distribution of the active layer (live).</p>
+    </details>
+    <details class="ge-reference-section" id="ge-reference-section">
+      <summary class="ge-section-title" style="cursor:pointer;list-style:revert;">Reference image</summary>
+      <div class="ge-control-row ge-actions" style="margin-top:4px;gap:4px;">
+        <button class="ge-btn ge-btn-sm" id="ge-ref-load">Load…</button>
+        <button class="ge-btn ge-btn-sm" id="ge-ref-flip" title="Flip horizontally">⇄ Flip</button>
+        <button class="ge-btn ge-btn-sm" id="ge-ref-clear" title="Remove reference">Clear</button>
+        <input type="file" id="ge-ref-file" accept="image/*" style="display:none" />
+      </div>
+      <div class="ge-control-row ge-eraser-row">
+        <label>Opacity <span id="ge-ref-opacity-label">100%</span></label>
+        <input type="range" id="ge-ref-opacity" min="10" max="100" value="100" />
+      </div>
+      <div id="ge-ref-wrap" style="display:none;margin-top:4px;">
+        <img id="ge-ref-img" alt="reference" style="max-width:100%;display:block;border-radius:4px;transform-origin:center;" />
+      </div>
+      <p style="font-size:10px;opacity:0.5;margin:4px 0 0;">A reference to paint from — display only, never part of the artwork.</p>
+    </details>
   `;
 }
 
@@ -361,6 +733,21 @@ export function layerPanelHTML() {
       <button class="ge-btn ge-btn-sm ge-icon-btn" id="ge-flatten" title="Flatten copy (keeps originals)" aria-label="Flatten copy">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 L4 6 L4 18 L12 22 L20 18 L20 6 Z"/><path d="M12 2 L12 22"/><path d="M4 6 L20 6"/><path d="M4 18 L20 18"/></svg>
       </button>
-      <button class="ge-btn ge-btn-sm" id="ge-add-layer" title="Add empty layer">+ Add</button>
-    </div><div class="ge-layers-list" id="ge-layers-list"></div>`;
+      <button class="ge-btn ge-btn-sm ge-icon-btn" id="ge-layer-mask" title="Add / edit layer mask (paint to reveal, erase to hide)" aria-label="Layer mask">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="12" cy="12" r="4" fill="currentColor" stroke="none"/></svg>
+      </button>
+      <button class="ge-btn ge-btn-sm ge-icon-btn" id="ge-layer-fx" title="Blending Options — layer effects (stroke / drop shadow / glow / overlay)" aria-label="Layer effects">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/></svg>
+      </button>
+      <button class="ge-btn ge-btn-sm ge-icon-btn" id="ge-add-layer" title="New layer (Ctrl+Alt+J)" aria-label="New layer"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg></button>
+      <button class="ge-btn ge-btn-sm ge-icon-btn" id="ge-group-layer" title="Group into folder (Ctrl+G)" aria-label="Group layer"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></button>
+      <button class="ge-btn ge-btn-sm ge-icon-btn danger" id="ge-del-layer" title="Delete layer" aria-label="Delete layer"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg></button>
+    </div>
+    <div class="ge-layers-props" title="Blend mode + opacity of the active layer">
+      <select id="ge-active-blend" class="ge-active-blend" title="Blend mode"></select>
+      <span class="ge-active-op-label">Opacity</span>
+      <input id="ge-active-opacity" class="ge-layer-opacity ge-active-opacity" type="range" min="0" max="100" value="100" title="Opacity">
+      <span id="ge-active-opacity-val" class="ge-active-op-val">100%</span>
+    </div>
+    <div class="ge-layers-list" id="ge-layers-list"></div>`;
 }

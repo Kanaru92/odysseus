@@ -55,11 +55,30 @@ export function defaultAdjParams(type) {
     case 'brightness-contrast': return { brightness: 1, contrast: 1 };
     case 'hue-saturation':      return { hue: 0, saturation: 1 };
     case 'levels':              return { inBlack: 0, inWhite: 255, gamma: 1.0, outBlack: 0, outWhite: 255 };
+    case 'curves':              return {
+      channel: 'rgb',
+      rgb: [[0, 0], [255, 255]],
+      r:   [[0, 0], [255, 255]],
+      g:   [[0, 0], [255, 255]],
+      b:   [[0, 0], [255, 255]],
+    };
     case 'color-balance':       return {
       shadows:    { r: 0, g: 0, b: 0 },
       midtones:   { r: 0, g: 0, b: 0 },
       highlights: { r: 0, g: 0, b: 0 },
     };
+    case 'vibrance':     return { amount: 0 };
+    case 'exposure':     return { exposure: 0 };
+    case 'posterize':    return { levels: 4 };
+    case 'threshold':    return { level: 128 };
+    case 'photo-filter': return { color: '#ec8a00', density: 25 };
+    case 'gradient-map': return { lo: '#1a0033', hi: '#ffd9a0' };
+    case 'channel-mixer': return {
+      mono: false,
+      r: { r: 100, g: 0, b: 0 }, g: { r: 0, g: 100, b: 0 }, b: { r: 0, g: 0, b: 100 },
+      gray: { r: 40, g: 40, b: 20 },
+    };
+    case 'grain': return { amount: 25 };
   }
   return {};
 }
@@ -71,7 +90,18 @@ export function adjLayerLabel(type) {
     'brightness-contrast': 'Brightness/Contrast',
     'hue-saturation': 'Hue/Saturation',
     'levels': 'Levels',
+    'curves': 'Curves',
     'color-balance': 'Color Balance',
+    'invert': 'Invert',
+    'black-white': 'Black & White',
+    'vibrance': 'Vibrance',
+    'exposure': 'Exposure',
+    'posterize': 'Posterize',
+    'threshold': 'Threshold',
+    'photo-filter': 'Photo Filter',
+    'gradient-map': 'Gradient Map',
+    'channel-mixer': 'Channel Mixer',
+    'grain': 'Grain',
   }[type] || type;
 }
 
@@ -85,7 +115,16 @@ export const ADJ_ICONS = {
   'brightness-contrast': '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18Z" fill="currentColor" stroke="none"/></svg>',
   'hue-saturation': '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="12" r="4"/><circle cx="15" cy="9.5" r="4"/><circle cx="15" cy="14.5" r="4"/></svg>',
   'levels': '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="14" width="3" height="6" rx="0.5"/><rect x="8" y="9" width="3" height="11" rx="0.5"/><rect x="13" y="11" width="3" height="9" rx="0.5"/><rect x="18" y="6" width="3" height="14" rx="0.5"/></svg>',
+  'curves': '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21C8 21 8.5 4 21 4"/></svg>',
   'color-balance': '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 3v18M3 12a9 9 0 0 1 9-9v18a9 9 0 0 1-9-9z" fill="currentColor" stroke="none"/></svg>',
+  'vibrance': '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3v18M3 12h18" opacity="0.5"/><circle cx="12" cy="12" r="5" fill="currentColor" stroke="none"/></svg>',
+  'exposure': '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/></svg>',
+  'posterize': '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="15" width="5" height="5"/><rect x="9.5" y="10" width="5" height="10" opacity="0.7"/><rect x="16" y="5" width="5" height="15" opacity="0.45"/></svg>',
+  'threshold': '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3a9 9 0 0 0 0 18z"/><path d="M12 3a9 9 0 0 1 0 18z" fill="none" stroke="currentColor" stroke-width="2"/></svg>',
+  'photo-filter': '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3" fill="currentColor" stroke="none"/></svg>',
+  'gradient-map': '<svg width="14" height="14" viewBox="0 0 24 24"><defs><linearGradient id="gmI" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="currentColor" stop-opacity="0.2"/><stop offset="1" stop-color="currentColor"/></linearGradient></defs><rect x="3" y="7" width="18" height="10" rx="2" fill="url(#gmI)"/></svg>',
+  'channel-mixer': '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 4v16M12 4v16M19 4v16"/><circle cx="5" cy="9" r="1.6" fill="currentColor"/><circle cx="12" cy="14" r="1.6" fill="currentColor"/><circle cx="19" cy="7" r="1.6" fill="currentColor"/></svg>',
+  'grain': '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="6" r="1"/><circle cx="11" cy="5" r="1"/><circle cx="18" cy="8" r="1"/><circle cx="7" cy="12" r="1"/><circle cx="14" cy="11" r="1"/><circle cx="20" cy="14" r="1"/><circle cx="5" cy="18" r="1"/><circle cx="12" cy="18" r="1"/><circle cx="18" cy="19" r="1"/></svg>',
 };
 
 

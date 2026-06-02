@@ -12,7 +12,7 @@
  * Gaussian blur with clamp-to-edge sampling.
  *
  * Canvas `filter: blur()` naively blends with TRANSPARENT pixels outside
- * the image which fades the borders out. To match Photoshop's
+ * the image which fades the borders out. To match a standard
  * "Edge: Clamp" Gaussian we pad the source onto a larger buffer with
  * the edge pixels stretched into the margin (4 strips + 4 corners),
  * blur the padded buffer, then copy only the original-size centre back.

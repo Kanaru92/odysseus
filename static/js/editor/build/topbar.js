@@ -45,6 +45,11 @@ export function buildTopbar() {
         <span class="ge-stacked-label">SCALE</span>
       </button>
       <span class="ge-topbar-sep"></span>
+      <button class="ge-btn ge-btn-sm ge-icon-btn" id="ge-tb-fliph" title="Flip canvas horizontal">⇋</button>
+      <button class="ge-btn ge-btn-sm ge-icon-btn" id="ge-tb-flipv" title="Flip canvas vertical">⇅</button>
+      <button class="ge-btn ge-btn-sm ge-icon-btn" id="ge-tb-rotccw" title="Rotate 90° counter-clockwise">↺</button>
+      <button class="ge-btn ge-btn-sm ge-icon-btn" id="ge-tb-rotcw" title="Rotate 90° clockwise">↻</button>
+      <span class="ge-topbar-sep"></span>
     </div>
     <div class="ge-topbar-right">
       <span class="ge-canvas-size" id="ge-canvas-size" title="Canvas size" hidden></span>
@@ -59,6 +64,10 @@ export function buildTopbar() {
           <button class="dropdown-item-compact" data-image-action="rotate-90">
             <span class="dropdown-icon"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><polyline points="21 3 21 9 15 9"/></svg></span>
             <span>Rotate 90° CW</span>
+          </button>
+          <button class="dropdown-item-compact" data-image-action="rotate-270">
+            <span class="dropdown-icon"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" transform="scale(-1,1) translate(-24,0)"><path d="M21 12a9 9 0 1 1-3-6.7"/><polyline points="21 3 21 9 15 9"/></svg></span>
+            <span>Rotate 90° CCW</span>
           </button>
           <button class="dropdown-item-compact" data-image-action="rotate-180">
             <span class="dropdown-icon"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg></span>
@@ -89,6 +98,9 @@ export function buildTopbar() {
         </div>
       </div>
       <span class="ge-topbar-sep"></span>
+      <button class="ge-btn ge-btn-sm" id="ge-fullscreen-btn" title="Fullscreen (F)" aria-label="Toggle fullscreen" aria-pressed="false">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="position:relative;top:2px;"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3"/></svg>
+      </button>
       <button class="ge-btn ge-btn-sm" id="ge-shortcuts-btn" title="Keyboard shortcuts (?)" aria-label="Shortcuts">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="position:relative;top:2px;"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></svg>
       </button>

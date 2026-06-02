@@ -115,8 +115,8 @@ export function wireTopbar(deps) {
   // Zoom buttons.
   document.getElementById('ge-zoom-fit')?.addEventListener('click', fitZoom);
   document.getElementById('ge-zoom-100')?.addEventListener('click', () => { state.zoom = 1; applyZoom(); });
-  document.getElementById('ge-zoom-in')?.addEventListener('click', () => { state.zoom = Math.min(5, state.zoom * 1.25); applyZoom(); });
-  document.getElementById('ge-zoom-out')?.addEventListener('click', () => { state.zoom = Math.max(0.1, state.zoom / 1.25); applyZoom(); });
+  document.getElementById('ge-zoom-in')?.addEventListener('click', () => { state.zoom = Math.min(32, state.zoom * 1.25); applyZoom(); });
+  document.getElementById('ge-zoom-out')?.addEventListener('click', () => { state.zoom = Math.max(0.02, state.zoom / 1.25); applyZoom(); });
 
   // Export / Download / Project Save / Project Load.
   document.getElementById('ge-export-gallery')?.addEventListener('click', exportToGallery);

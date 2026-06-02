@@ -22,41 +22,54 @@ export function shortcutsPopupHTML() {
         <div class="ge-shortcuts-col">
           <h5>Tools</h5>
           <div><kbd>V</kbd> Move</div>
-          <div><kbd>T</kbd> Transform</div>
-          <div><kbd>B</kbd> Brush</div>
-          <div><kbd>E</kbd> Eraser</div>
-          <div><kbd>K</kbd> Clone Stamp <span style="opacity:0.5">(Alt-click = set source)</span></div>
+          <div><kbd>M</kbd> Marquee</div>
           <div><kbd>L</kbd> Lasso</div>
           <div><kbd>W</kbd> Wand</div>
-          <div><kbd>M</kbd> Inpaint</div>
-          <div><kbd>E</kbd> Eraser</div>
           <div><kbd>C</kbd> Crop</div>
-          <div><kbd>S</kbd> Sharpen</div>
+          <div><kbd>B</kbd> Brush</div>
+          <div><kbd>E</kbd> Eraser</div>
+          <div><kbd>S</kbd> Clone <span style="opacity:0.5">(Alt-click source)</span></div>
+          <div><kbd>I</kbd> Eyedropper <span style="opacity:0.5">(Alt while painting)</span></div>
+          <div><kbd>G</kbd> Gradient</div>
+          <div><kbd>O</kbd> Dodge / Burn</div>
+          <div><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>X</kbd> Liquify</div>
         </div>
         <div class="ge-shortcuts-col">
-          <h5>Edit</h5>
+          <h5>Edit / Layer</h5>
           <div><kbd>Ctrl</kbd>+<kbd>Z</kbd> Undo</div>
           <div><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> Redo</div>
           <div><kbd>Ctrl</kbd>+<kbd>S</kbd> Save</div>
-          <div><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> Save to Gallery</div>
-          <div><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>J</kbd> New Layer</div>
+          <div><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> Save a copy</div>
+          <div><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>J</kbd> New layer</div>
+          <div><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>E</kbd> Stamp visible</div>
+          <div><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>G</kbd> Clip to below</div>
+          <div><kbd>Ctrl</kbd>+<kbd>G</kbd> Group layer</div>
+          <div><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>G</kbd> Ungroup</div>
           <div><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>T</kbd> Free Transform</div>
           <div><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>T</kbd> Canvas size…</div>
         </div>
         <div class="ge-shortcuts-col">
-          <h5>Selection</h5>
-          <div><kbd>Ctrl</kbd>+<kbd>A</kbd> Select All</div>
-          <div><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>D</kbd> Deselect</div>
-          <div><kbd>Ctrl</kbd>+<kbd>C</kbd> Copy to layer</div>
-          <div><kbd>Ctrl</kbd>+<kbd>X</kbd> Cut lasso</div>
-          <div><kbd>Ctrl</kbd>+<kbd>D</kbd> Delete pixels</div>
-          <div><kbd>Esc</kbd> Cancel selection / crop</div>
+          <h5>Selection / Fill</h5>
+          <div><kbd>Ctrl</kbd>+<kbd>A</kbd> Select all</div>
+          <div><kbd>Ctrl</kbd>+<kbd>D</kbd> Deselect</div>
+          <div><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>I</kbd> Invert</div>
+          <div><kbd>Q</kbd> Quick mask</div>
+          <div><kbd>Alt</kbd>+<kbd>⌫</kbd> Fill foreground</div>
+          <div><kbd>Ctrl</kbd>+<kbd>⌫</kbd> Fill background</div>
+          <div><kbd>Enter</kbd> Apply transform / crop</div>
+          <div><kbd>Esc</kbd> Cancel</div>
         </div>
         <div class="ge-shortcuts-col">
-          <h5>Brush / Mask</h5>
-          <div><kbd>[</kbd> Brush size −</div>
-          <div><kbd>]</kbd> Brush size +</div>
-          <div>Drag tolerance slider → live wand retune</div>
+          <h5>Brush / View</h5>
+          <div><kbd>[</kbd> <kbd>]</kbd> Brush size</div>
+          <div><kbd>{</kbd> <kbd>}</kbd> Hardness</div>
+          <div><kbd>1</kbd>–<kbd>0</kbd> Opacity</div>
+          <div><kbd>X</kbd> Swap colors</div>
+          <div><kbd>D</kbd> Default colors</div>
+          <div><kbd>/</kbd> Lock transparency</div>
+          <div><kbd>Space</kbd> Pan · <kbd>Tab</kbd> Hide panels</div>
+          <div><kbd>Ctrl</kbd>+<kbd>Y</kbd> Proof colors (CMYK)</div>
+          <div><kbd>F</kbd> Fullscreen</div>
         </div>
       </div>
       <div style="margin-top:8px;font-size:10px;opacity:0.5;text-align:center;">Press <kbd>?</kbd> or click the keyboard icon to toggle.</div>
@@ -87,22 +100,37 @@ export function historyPanelHTML(historyIcon) {
  * hide and wires the Cancel / Create buttons).
  */
 export function canvasSizePromptHTML() {
+  const presets = [
+    ['Square', 2048, 2048], ['1080p', 1920, 1080], ['4K UHD', 3840, 2160],
+    ['HD 720', 1280, 720], ['Portrait', 1080, 1920], ['Insta', 1080, 1080],
+    ['A4 300dpi', 2480, 3508], ['Web', 1280, 800],
+  ];
+  const ratios = [
+    ['Free', 'free'], ['1:1', '1:1'], ['16:9', '16:9'], ['9:16', '9:16'],
+    ['4:3', '4:3'], ['3:2', '3:2'], ['2:3', '2:3'], ['A4', '210:297'],
+  ];
+  const presetBtns = presets.map(([n, w, h]) =>
+    `<button type="button" class="ge-cp-preset" data-w="${w}" data-h="${h}">${n}<small>${w}×${h}</small></button>`).join('');
+  const ratioBtns = ratios.map(([n, r], i) =>
+    `<button type="button" class="ge-cp-ratio${i === 0 ? ' active' : ''}" data-ratio="${r}">${n}</button>`).join('');
   return `
         <div class="modal-content ge-canvas-prompt">
           <div class="modal-header"><h4 id="ge-canvas-prompt-title">New canvas</h4></div>
           <div class="modal-body">
+            <div class="ge-cp-presets">${presetBtns}</div>
+            <div class="ge-cp-ratios"><span class="ge-cp-ratios-lbl">Ratio</span>${ratioBtns}</div>
             <div class="ge-canvas-prompt-row">
               <label class="ge-canvas-prompt-field">
                 <span>Width</span>
-                <input type="text" id="ge-canvas-prompt-w" inputmode="numeric" value="1024">
+                <input type="text" id="ge-canvas-prompt-w" inputmode="numeric" value="1920">
               </label>
               <span class="ge-canvas-prompt-x">×</span>
               <label class="ge-canvas-prompt-field">
                 <span>Height</span>
-                <input type="text" id="ge-canvas-prompt-h" inputmode="numeric" value="1024">
+                <input type="text" id="ge-canvas-prompt-h" inputmode="numeric" value="1080">
               </label>
             </div>
-            <p class="ge-canvas-prompt-hint">Pixels, or type a ratio like 3x5 / 16:9 in either field.</p>
+            <p class="ge-canvas-prompt-hint">Pick a ratio to constrain W×H (type one, the other follows). "Free" = independent.</p>
           </div>
           <div class="modal-footer">
             <button class="confirm-btn confirm-btn-secondary" id="ge-canvas-prompt-cancel">Cancel</button>

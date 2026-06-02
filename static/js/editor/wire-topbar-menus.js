@@ -108,6 +108,7 @@ export function wireTopbarMenus({
         else if (action === 'selection') document.getElementById('ge-edge-menu-btn')?.click();
         else if (action === 'fill') doFillSelection();
         else if (action === 'rotate-90') rotateAllLayers(90);
+        else if (action === 'rotate-270') rotateAllLayers(270);
         else if (action === 'rotate-180') rotateAllLayers(180);
         else if (action === 'flip-h') flipAllLayers('h');
         else if (action === 'flip-v') flipAllLayers('v');

@@ -19,6 +19,39 @@
  * }} deps
  */
 import { state } from './state.js';
+import { samplePressure } from './pressure-response.js';
+import { createBrushEngine } from './brush/index.js';
+import { getPreset } from './brush/presets.js';
+import { makeNoiseGrain } from './brush/grain-textures.js';
+
+// Lazily-built brush engine, rebuilt when the active preset OR a live dynamics
+// override (scatter / spacing / roundness) changes. Module singleton so the
+// dab-spacing residual + tip cache persist across strokes. The dynamics
+// overrides are merged onto the preset here, so the engine itself stays
+// unaware of editor state.
+let _brushEngine = null;
+let _brushEngineKey = null;
+function getBrushEngine() {
+  const sc = state.brushScatter, sp = state.brushSpacing, rd = state.brushRoundness;
+  const key = `${state.brushPresetId}|${sc}|${sp}|${rd}`;
+  if (!_brushEngine || _brushEngineKey !== key) {
+    const preset = getPreset(state.brushPresetId);
+    // Materialise procedural grain (built-in textured presets) once, cached.
+    if (preset.grainKind === 'noise' && !preset._grainCanvas) {
+      preset._grainCanvas = makeNoiseGrain(128, 128);
+    }
+    _brushEngine = createBrushEngine({
+      ...preset,
+      grain: preset.grain || preset._grainCanvas || null,
+      grainDepth: preset.grainDepth != null ? preset.grainDepth : 1,
+      scatter: sc != null ? sc : preset.scatter,
+      spacing: sp != null ? sp : preset.spacing,
+      ratio: rd != null ? rd : preset.ratio,
+    });
+    _brushEngineKey = key;
+  }
+  return _brushEngine;
+}
 
 export function createStrokePipeline({ activeLayer, getActiveMaskLayer, composite }) {
   function cloneStrokeTo(x, y, layer) {
@@ -75,6 +108,33 @@ export function createStrokePipeline({ activeLayer, getActiveMaskLayer, composit
   }
 
   function strokeTo(x, y) {
+    // Quick Mask — brush/eraser paint the selection mask (wandMask) rather than
+    // a layer. Paint adds to the selection, eraser removes. White = selected.
+    if (state.quickMask && (state.tool === 'brush' || state.tool === 'eraser')) {
+      if (!state.wandMask && state.imgWidth) {
+        const m = document.createElement('canvas');
+        m.width = state.imgWidth; m.height = state.imgHeight;
+        state.wandMask = m; state.wandLayerId = state.activeLayerId; state.wandMaskVisible = true;
+      }
+      if (state.wandMask) {
+        const mctx = state.wandMask.getContext('2d');
+        mctx.save();
+        mctx.lineWidth = state.brushSize;
+        mctx.lineCap = 'round';
+        mctx.lineJoin = 'round';
+        if (state.tool === 'eraser') { mctx.globalCompositeOperation = 'destination-out'; mctx.strokeStyle = 'rgba(0,0,0,1)'; }
+        else { mctx.globalCompositeOperation = 'source-over'; mctx.strokeStyle = 'rgba(255,255,255,1)'; }
+        mctx.beginPath();
+        mctx.moveTo(state.lastX, state.lastY);
+        mctx.lineTo(x, y);
+        mctx.stroke();
+        mctx.restore();
+      }
+      state.lastX = x;
+      state.lastY = y;
+      composite();
+      return;
+    }
     const layer = activeLayer();
     if (!layer) return;
     // Clone uses a stamp-based paint loop, not the line-stroke
@@ -87,12 +147,135 @@ export function createStrokePipeline({ activeLayer, getActiveMaskLayer, composit
     // Inpaint still works (its mask plumbing was already pointed at
     // the same canvas).
     const activeMask = getActiveMaskLayer();
-    const paintingMask = !!activeMask &&
-      (state.tool === 'brush' || state.tool === 'eraser' || state.tool === 'inpaint');
-    const ctx = paintingMask
-      ? activeMask.ctx
-      : (state.tool === 'inpaint' ? state.maskCtx : layer.ctx);
+    // PS raster layer mask: when editing the active layer's visibility mask,
+    // route paint onto it (brush reveals = adds coverage, eraser hides = carves)
+    // exactly like the inpaint-region mask path, but onto `layer.layerMask`.
+    const editingLayerMask = !!(state.layerMaskEdit && layer.layerMask) &&
+      (state.tool === 'brush' || state.tool === 'eraser');
+    const paintingMask = editingLayerMask || (!!activeMask &&
+      (state.tool === 'brush' || state.tool === 'eraser' || state.tool === 'inpaint'));
+    const ctx = editingLayerMask
+      ? layer.layerMask.getContext('2d')
+      : paintingMask
+        ? activeMask.ctx
+        : (state.tool === 'inpaint' ? state.maskCtx : layer.ctx);
     const off = state.layerOffsets.get(layer.id) || { x: 0, y: 0 };
+
+    // Brush engine path (M1) — dab stamping with pressure dynamics. Only the
+    // paint brush on a pixel layer (not masks / inpaint / eraser / clone),
+    // and only when enabled. Any engine error falls through to the legacy
+    // line stroke below so painting never hard-fails.
+    if (state.useBrushEngine && (state.tool === 'brush' || state.tool === 'eraser') && !paintingMask) {
+      try {
+        const eng = getBrushEngine();
+        const isStart = state.lastX === x && state.lastY === y;
+        // Stroke stabilizer — lag the painted target toward the cursor for
+        // smoother lines. brushSmoothing 0 → alpha 1 → no change (no
+        // regression). Reset to the cursor at stroke start.
+        if (isStart) { state.smoothX = x; state.smoothY = y; }
+        state.rawX = x; state.rawY = y; // true cursor (for Catch-up on Stroke End)
+        const sm = Math.max(0, Math.min(95, state.brushSmoothing || 0)) / 100;
+        let sa = 1 - sm * 0.92;
+        // "Adjust for Zoom" — ease the catch-up more when zoomed in so the
+        // smoothing feels consistent regardless of magnification.
+        if (state.brushSmoothAdjustZoom && (state.zoom || 1) > 1) sa = 1 - (1 - sa) / Math.sqrt(state.zoom);
+        if (state.brushSmoothPull && sm > 0 && !isStart) {
+          // "Pulled String" — the brush trails the cursor by a fixed radius and
+          // only moves once the cursor pulls past it (lasso-like control).
+          const dx = x - state.smoothX, dy = y - state.smoothY, d = Math.hypot(dx, dy);
+          const R = 6 / (state.zoom || 1) + state.brushSize * 0.15;
+          if (d <= R) return; // inside the slack — brush stays put, nothing painted
+          state.smoothX = x - (dx / d) * R;
+          state.smoothY = y - (dy / d) * R;
+        } else {
+          state.smoothX += (x - state.smoothX) * sa;
+          state.smoothY += (y - state.smoothY) * sa;
+        }
+        const tx = state.smoothX, ty = state.smoothY;
+        const fromX = state.lastX - off.x;
+        const fromY = state.lastY - off.y;
+        const toX = tx - off.x;
+        const toY = ty - off.y;
+        // Remap raw stylus pressure through the user's response curve (CSP-style
+        // calibration). Identity for the default linear curve, so mouse/no-curve
+        // users are unaffected.
+        const pr = samplePressure(state.pressure != null ? state.pressure : 1);
+        // Interpolate pressure ACROSS the segment: use the previous sample's
+        // pressure as the segment start so a press/release tapers smoothly
+        // along the dabs, instead of stepping once per frame (flat per segment).
+        if (isStart || state.lastPressure == null) state.lastPressure = pr;
+        const fromPr = state.lastPressure;
+        // Velocity taper (the "speed" sensor): fast strokes paint thinner. The
+        // segment speed is dist/dt; brushVelocityTaper 0 = off (no change).
+        const nowT = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+        if (isStart || state.lastStrokeT == null) state.lastStrokeT = nowT;
+        const dt = Math.max(1, nowT - state.lastStrokeT);
+        const segDist = Math.hypot(tx - state.lastX, ty - state.lastY);
+        state.lastStrokeT = nowT;
+        let effSize = state.brushSize;
+        const vt = (state.brushVelocityTaper || 0) / 100;
+        if (vt > 0 && !isStart) {
+          const speed = segDist / dt; // px per ms
+          effSize = Math.max(1, state.brushSize * (1 - Math.min(1, speed / 4) * vt));
+        }
+        // Pen tilt ELEVATION (the "tilt" sensor): a flatter pen lays down a
+        // broader dab, like a real brush held at an angle. tiltX/tiltY are
+        // degrees from vertical; magnitude 0 (upright) = no change, ~90° (flat)
+        // ≈ +100% size. Composes multiplicatively with pressure/velocity. The
+        // azimuth (direction) already drives tip rotation via rt.tiltAz.
+        const tiltMag = Math.min(1, Math.hypot(state.tiltX || 0, state.tiltY || 0) / 90);
+        if (state.brushTiltSize && tiltMag > 0) effSize *= (1 + tiltMag);
+        const isEraser = state.tool === 'eraser';
+        const rt = {
+          size: effSize,
+          opacity: (isEraser ? state.eraserOpacity : state.brushOpacity) / 100,  // stroke-level cap
+          flow: (isEraser ? state.eraserFlow : state.brushFlow) / 100,           // per-dab build-up
+          color: isEraser ? '#000000' : state.color,  // color is irrelevant when erasing
+          hardness: Math.max(0, Math.min(1, 1 - (isEraser ? state.eraserSoftness : state.brushSoftness) / 300)),
+          symmetry: state.brushSymmetry || 'none',
+          symN: state.brushSymmetryN || 6,
+          flowPressure: !isEraser && !!state.brushPressureOpacity, // pen pressure → opacity
+
+          angleFollow: !isEraser && !!state.brushAngleFollow,
+          tiltAngle: !isEraser && !!state.brushTiltAngle,
+          tiltAz: Math.atan2(state.tiltY || 0, state.tiltX || 0), // pen tilt azimuth (rad)
+          brushBlend: isEraser ? 'source-over' : (state.brushBlendMode || 'source-over'),
+          colorJitter: isEraser ? 0 : (state.brushColorJitter || 0),
+          sizeJitter: isEraser ? 0 : (state.brushSizeJitter || 0),
+          flowJitter: isEraser ? 0 : (state.brushFlowJitter || 0),
+          lockAlpha: !isEraser && !!(layer && layer.lockAlpha),
+          erase: isEraser,
+        };
+        // tryBegin seeds lastX/lastY to the start point, so a dist-0 first
+        // call marks the stroke start → snapshot the layer + reset the buffer.
+        if (isStart) eng.begin(ctx, rt);
+        eng.segment(
+          ctx,
+          { x: fromX, y: fromY, pressure: fromPr, tilt: tiltMag },
+          { x: toX, y: toY, pressure: pr, tilt: tiltMag },
+          rt,
+        );
+        // Dirty rect = the segment's bounding box grown by the dab footprint
+        // (diameter + a margin for soft edges). In IMAGE space — composite()
+        // renders 1:1 (view zoom/pan is CSS). composite() ignores it when a
+        // global redraw is needed (overlays / custom blends / fx), so the
+        // result is always correct; this just skips a full repaint per dab.
+        const _m = effSize * 1.2 + 6;
+        const dirty = {
+          x: Math.min(state.lastX, tx) - _m,
+          y: Math.min(state.lastY, ty) - _m,
+          w: Math.abs(tx - state.lastX) + 2 * _m,
+          h: Math.abs(ty - state.lastY) + 2 * _m,
+        };
+        state.lastX = tx;
+        state.lastY = ty;
+        state.lastPressure = pr;
+        composite(dirty);
+        return;
+      } catch (err) {
+        if (typeof console !== 'undefined') console.warn('[brush-engine] fell back to legacy stroke:', err);
+      }
+    }
 
     ctx.save();
     ctx.lineWidth = state.brushSize;

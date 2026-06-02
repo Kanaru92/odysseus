@@ -11,8 +11,17 @@
  *   { type: 'brightness-contrast', params: { brightness, contrast } }
  *   { type: 'hue-saturation',      params: { hue, saturation } }
  *   { type: 'levels',              params: { inBlack, inWhite, gamma, outBlack, outWhite } }
+ *   { type: 'curves',              params: { channel, rgb, r, g, b } }   // each = [[in,out],…]
  *   { type: 'color-balance',       params: { shadows, midtones, highlights } }
  */
+import { buildCurvesLUTs } from './curves.js';
+
+function _hexRgb(hex) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || '').trim());
+  const n = m ? parseInt(m[1], 16) : 0;
+  return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
+}
+
 export function applyAdjustment(srcCanvas, adj) {
   const w = srcCanvas.width, h = srcCanvas.height;
   const out = document.createElement('canvas');
@@ -63,6 +72,15 @@ export function applyAdjustment(srcCanvas, adj) {
     return out;
   }
 
+  if (adj.type === 'curves') {
+    const { r: lr, g: lg, b: lb } = buildCurvesLUTs(adj.params);
+    for (let i = 0; i < d.length; i += 4) {
+      d[i] = lr[d[i]]; d[i + 1] = lg[d[i + 1]]; d[i + 2] = lb[d[i + 2]];
+    }
+    octx.putImageData(img, 0, 0);
+    return out;
+  }
+
   if (adj.type === 'color-balance') {
     const cb = adj.params;
     const scale = 0.6;
@@ -90,6 +108,113 @@ export function applyAdjustment(srcCanvas, adj) {
       d[i]   = r < 0 ? 0 : r > 255 ? 255 : r;
       d[i+1] = g < 0 ? 0 : g > 255 ? 255 : g;
       d[i+2] = b < 0 ? 0 : b > 255 ? 255 : b;
+    }
+    octx.putImageData(img, 0, 0);
+    return out;
+  }
+
+  if (adj.type === 'invert') {
+    for (let i = 0; i < d.length; i += 4) { d[i] = 255 - d[i]; d[i + 1] = 255 - d[i + 1]; d[i + 2] = 255 - d[i + 2]; }
+    octx.putImageData(img, 0, 0);
+    return out;
+  }
+
+  if (adj.type === 'black-white') {
+    for (let i = 0; i < d.length; i += 4) {
+      const y = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+      d[i] = d[i + 1] = d[i + 2] = y;
+    }
+    octx.putImageData(img, 0, 0);
+    return out;
+  }
+
+  if (adj.type === 'vibrance') {
+    // Boost saturation more for less-saturated pixels (protects already-vivid
+    // colours / skin), unlike a flat Saturation. d is Uint8ClampedArray → auto-clamps.
+    const amt = (adj.params.amount || 0) / 100;
+    for (let i = 0; i < d.length; i += 4) {
+      const r = d[i], g = d[i + 1], b = d[i + 2];
+      const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+      const sat = (mx - mn) / 255;
+      const avg = (r + g + b) / 3;
+      const k = 1 + amt * (1 - sat);
+      d[i] = avg + (r - avg) * k; d[i + 1] = avg + (g - avg) * k; d[i + 2] = avg + (b - avg) * k;
+    }
+    octx.putImageData(img, 0, 0);
+    return out;
+  }
+
+  if (adj.type === 'exposure') {
+    const m = Math.pow(2, (adj.params.exposure || 0) / 50); // ±100 ≈ ±2 stops
+    const lut = new Uint8ClampedArray(256);
+    for (let v = 0; v < 256; v++) lut[v] = v * m;
+    for (let i = 0; i < d.length; i += 4) { d[i] = lut[d[i]]; d[i + 1] = lut[d[i + 1]]; d[i + 2] = lut[d[i + 2]]; }
+    octx.putImageData(img, 0, 0);
+    return out;
+  }
+
+  if (adj.type === 'posterize') {
+    const n = Math.max(2, Math.min(255, Math.round(adj.params.levels || 4)));
+    const lut = new Uint8ClampedArray(256);
+    for (let v = 0; v < 256; v++) lut[v] = Math.round(Math.round((v / 255) * (n - 1)) / (n - 1) * 255);
+    for (let i = 0; i < d.length; i += 4) { d[i] = lut[d[i]]; d[i + 1] = lut[d[i + 1]]; d[i + 2] = lut[d[i + 2]]; }
+    octx.putImageData(img, 0, 0);
+    return out;
+  }
+
+  if (adj.type === 'threshold') {
+    const t = Math.max(1, Math.min(255, Math.round(adj.params.level || 128)));
+    for (let i = 0; i < d.length; i += 4) {
+      const y = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+      const v = y >= t ? 255 : 0;
+      d[i] = d[i + 1] = d[i + 2] = v;
+    }
+    octx.putImageData(img, 0, 0);
+    return out;
+  }
+
+  if (adj.type === 'photo-filter') {
+    const c = _hexRgb(adj.params.color || '#ec8a00');
+    const k = Math.max(0, Math.min(1, (adj.params.density || 0) / 100));
+    const tr = c.r / 255, tg = c.g / 255, tb = c.b / 255;
+    for (let i = 0; i < d.length; i += 4) {
+      d[i] = d[i] * (1 - k) + d[i] * tr * k;
+      d[i + 1] = d[i + 1] * (1 - k) + d[i + 1] * tg * k;
+      d[i + 2] = d[i + 2] * (1 - k) + d[i + 2] * tb * k;
+    }
+    octx.putImageData(img, 0, 0);
+    return out;
+  }
+
+  if (adj.type === 'channel-mixer') {
+    const p = adj.params, mono = !!p.mono;
+    const mix = (o, R, G, B) => (R * o.r + G * o.g + B * o.b) / 100;
+    for (let i = 0; i < d.length; i += 4) {
+      const R = d[i], G = d[i + 1], B = d[i + 2];
+      if (mono) { const y = mix(p.gray, R, G, B); d[i] = d[i + 1] = d[i + 2] = y; }
+      else { d[i] = mix(p.r, R, G, B); d[i + 1] = mix(p.g, R, G, B); d[i + 2] = mix(p.b, R, G, B); }
+    }
+    octx.putImageData(img, 0, 0);
+    return out;
+  }
+
+  if (adj.type === 'grain') {
+    const a = (Math.max(0, Math.min(100, adj.params.amount || 0)) / 100) * 128;
+    for (let i = 0; i < d.length; i += 4) {
+      const n = (Math.random() * 2 - 1) * a; // monochrome grain
+      d[i] += n; d[i + 1] += n; d[i + 2] += n;
+    }
+    octx.putImageData(img, 0, 0);
+    return out;
+  }
+
+  if (adj.type === 'gradient-map') {
+    const lo = _hexRgb(adj.params.lo || '#000000'), hi = _hexRgb(adj.params.hi || '#ffffff');
+    const lr = new Uint8ClampedArray(256), lg = new Uint8ClampedArray(256), lb = new Uint8ClampedArray(256);
+    for (let v = 0; v < 256; v++) { const t = v / 255; lr[v] = lo.r + (hi.r - lo.r) * t; lg[v] = lo.g + (hi.g - lo.g) * t; lb[v] = lo.b + (hi.b - lo.b) * t; }
+    for (let i = 0; i < d.length; i += 4) {
+      const y = (0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]) | 0;
+      d[i] = lr[y]; d[i + 1] = lg[y]; d[i + 2] = lb[y];
     }
     octx.putImageData(img, 0, 0);
     return out;

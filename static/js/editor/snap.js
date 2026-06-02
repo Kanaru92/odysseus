@@ -49,6 +49,20 @@ export function computeSnap(layer, nx, ny, ctx) {
     hTargets.push({ y: o.y + oh / 2,   label: 'layer-cy' });
   }
 
+  // User-placed guides snap too.
+  if (ctx.guides) {
+    for (const g of ctx.guides) {
+      if (g.axis === 'v') vTargets.push({ x: g.pos, label: 'guide-v' });
+      else hTargets.push({ y: g.pos, label: 'guide-h' });
+    }
+  }
+  // Grid lines (when the grid is shown) act as snap targets.
+  if (ctx.showGrid && ctx.gridSize > 0) {
+    const gs = ctx.gridSize;
+    for (let x = 0; x <= cw; x += gs) vTargets.push({ x, label: 'grid-v' });
+    for (let y = 0; y <= ch; y += gs) hTargets.push({ y, label: 'grid-h' });
+  }
+
   const myEdgesX = { l: nx, cx: nx + w / 2, r: nx + w };
   const myEdgesY = { t: ny, cy: ny + h / 2, b: ny + h };
   let bestX = null, bestDx = Infinity;

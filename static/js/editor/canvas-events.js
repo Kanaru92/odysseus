@@ -60,6 +60,71 @@ export function wireCanvasEvents({ canvasArea, beginDraw, continueDraw, endDraw,
     if (state.cursorEl) state.cursorEl.style.display = 'none';
   });
 
+  // Pen pressure / tilt capture (Pointer Events). Additive — the mouse
+  // handlers above still DRIVE drawing (browsers fire compat mouse events
+  // for the primary pointer, including pens), so this only RECORDS the
+  // stylus readings the brush engine reads for dynamics. Mouse/touch report
+  // pressure 0 or 0.5, so only trust a real pen; everything else paints at
+  // full pressure. Pointer events fire before their compat mouse events, so
+  // state.pressure is fresh when continueDraw → strokeTo runs.
+  const capturePen = (e) => {
+    if (e.pointerType === 'pen') {
+      state.isPen = true;
+      // Pressure: a Wacom + Windows Ink can fire a brief 1.0 on light contact
+      // (full-pressure spike). Seed LOW on pointerdown (no carryover from the
+      // last stroke), floor so a 0 reading doesn't give a zero-size dab, then
+      // EMA-smooth + cap upward jumps so a momentary spike can't punch through.
+      const raw = (typeof e.pressure === 'number' && e.pressure > 0) ? e.pressure : 0;
+      if (e.type === 'pointerdown') {
+        state.pressure = Math.max(0.05, raw);
+      } else {
+        const prev = state.pressure != null ? state.pressure : (raw || 0.5);
+        let p = Math.max(0.04, raw || prev);
+        if (p > prev + 0.4) p = prev + 0.4;     // clamp sudden upward spikes
+        state.pressure = prev * 0.4 + p * 0.6;  // light smoothing
+      }
+      // Tilt is reported two ways across platforms: tiltX/tiltY (degrees, the
+      // older fields — Windows/Chromium) OR altitudeAngle/azimuthAngle (radians,
+      // the newer spec — common on Linux/other stacks). Prefer tilt*, fall back
+      // to altitude/azimuth, normalizing to tiltX/tiltY degrees so the brush
+      // dynamics (tilt→size, tilt→angle) work the same everywhere.
+      if (e.tiltX || e.tiltY) {
+        state.tiltX = e.tiltX || 0;
+        state.tiltY = e.tiltY || 0;
+      } else if (typeof e.altitudeAngle === 'number' && e.altitudeAngle < Math.PI / 2 - 1e-3) {
+        // altitudeAngle: 0 = pen flat on the surface, π/2 = perfectly upright.
+        const fromVertical = (Math.PI / 2 - e.altitudeAngle) * 180 / Math.PI; // degrees
+        const az = e.azimuthAngle || 0;
+        state.tiltX = fromVertical * Math.cos(az);
+        state.tiltY = fromVertical * Math.sin(az);
+      } else {
+        state.tiltX = e.tiltX || 0;
+        state.tiltY = e.tiltY || 0;
+      }
+    } else {
+      state.isPen = false;
+      state.pressure = 1;
+    }
+  };
+  state.mainCanvas.addEventListener('pointerdown', capturePen);
+  // High-Hz stroke sampling: a single frame's pointermove carries the sub-frame
+  // samples in getCoalescedEvents(). Mouse/pen compat events fire at most once
+  // per frame, so fast strokes lose curvature and look stepped/polygonal. While
+  // a stroke is active we replay the coalesced points (each with its OWN
+  // pressure/tilt) through continueDraw — except the LAST one, which the compat
+  // mousemove that fires right after this handler will draw, so it's not doubled.
+  // Touch keeps its dedicated touchmove path, so it's excluded here.
+  state.mainCanvas.addEventListener('pointermove', (e) => {
+    capturePen(e);
+    if (state.drawing && e.pointerType !== 'touch' && typeof e.getCoalescedEvents === 'function') {
+      let co;
+      try { co = e.getCoalescedEvents(); } catch { co = null; }
+      if (co && co.length > 1) {
+        for (let i = 0; i < co.length - 1; i++) { capturePen(co[i]); continueDraw(co[i]); }
+      }
+    }
+  });
+
   // Touch — single finger draws; two fingers pan + pinch-zoom.
   let multiActive = false;
   let multiStartDist = 0;
@@ -77,9 +142,11 @@ export function wireCanvasEvents({ canvasArea, beginDraw, continueDraw, endDraw,
   const applyCanvasOffset = (x, y) => {
     canvasArea.dataset.panX = String(x);
     canvasArea.dataset.panY = String(y);
-    const t = `translate3d(${x}px, ${y}px, 0)`;
+    const rot = state.viewRotation || 0;
+    const t = `translate3d(${x}px, ${y}px, 0)` + (rot ? ` rotate(${rot}deg)` : '');
+    state.mainCanvas.style.transformOrigin = 'center center';
     state.mainCanvas.style.transform = t;
-    if (state.transformOverlay) state.transformOverlay.style.transform = t;
+    if (state.transformOverlay) { state.transformOverlay.style.transformOrigin = 'center center'; state.transformOverlay.style.transform = t; }
   };
   state.mainCanvas.addEventListener('touchstart', (e) => {
     e.preventDefault();
@@ -150,9 +217,11 @@ export function wireCanvasEvents({ canvasArea, beginDraw, continueDraw, endDraw,
   const applyOffset = (x, y) => {
     canvasArea.dataset.panX = String(x);
     canvasArea.dataset.panY = String(y);
-    const t = `translate3d(${x}px, ${y}px, 0)`;
+    const rot = state.viewRotation || 0;
+    const t = `translate3d(${x}px, ${y}px, 0)` + (rot ? ` rotate(${rot}deg)` : '');
+    state.mainCanvas.style.transformOrigin = 'center center';
     state.mainCanvas.style.transform = t;
-    if (state.transformOverlay) state.transformOverlay.style.transform = t;
+    if (state.transformOverlay) { state.transformOverlay.style.transformOrigin = 'center center'; state.transformOverlay.style.transform = t; }
   };
   canvasArea.addEventListener('pointerdown', (e) => {
     if (state.tool === 'lasso') return;
@@ -192,6 +261,75 @@ export function wireCanvasEvents({ canvasArea, beginDraw, continueDraw, endDraw,
   };
   canvasArea.addEventListener('pointerup', endPan);
   canvasArea.addEventListener('pointercancel', endPan);
+
+  // ── Space-to-pan (hand tool) ─────────────────────────────────────────
+  // Hold Space and drag the CANVAS itself to pan. Reuses the same translate
+  // offset as the around-canvas pan, and since that offset is never clamped the
+  // canvas can be pushed fully offscreen (overscan) — so you can zoom into and
+  // paint an edge comfortably. A capture-phase mousedown pre-empts beginDraw.
+  let spacePanning = false, spStartX = 0, spStartY = 0;
+  state.mainCanvas.addEventListener('mousedown', (e) => {
+    if (!state.spaceDown) return;
+    const off = getOffset();
+    spacePanning = true;
+    spStartX = e.clientX - off.x;
+    spStartY = e.clientY - off.y;
+    canvasArea.style.cursor = 'grabbing';
+    e.preventDefault();
+    e.stopPropagation(); // don't let beginDraw fire
+  }, true);
+  window.addEventListener('mousemove', (e) => { if (spacePanning) applyOffset(e.clientX - spStartX, e.clientY - spStartY); });
+  window.addEventListener('mouseup', () => { if (spacePanning) { spacePanning = false; canvasArea.style.cursor = state.spaceDown ? 'grab' : ''; } });
+  document.addEventListener('keydown', (e) => {
+    if (e.code !== 'Space' || !state.editorOpen) return;
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+    if (!state.spaceDown) {
+      state.spaceDown = true;
+      canvasArea.style.cursor = 'grab';
+      if (state.cursorEl) state.cursorEl.style.display = 'none';
+    }
+    e.preventDefault(); // suppress page scroll while panning
+  });
+  document.addEventListener('keyup', (e) => {
+    if (e.code !== 'Space') return;
+    state.spaceDown = false;
+    if (!spacePanning) canvasArea.style.cursor = '';
+  });
+
+  // ── Wheel zoom-to-cursor ───────────────────────────────────────────────
+  // Wheel / trackpad-pinch zooms TOWARD the pointer: the image point under the
+  // cursor stays fixed (PS/Procreate navigation). Kept on the canvas-area and
+  // preventDefault'd so it doesn't scroll the page. Pan offset is adjusted
+  // rather than reset, so you can zoom into any corner.
+  canvasArea.addEventListener('wheel', (e) => {
+    const canvas = state.mainCanvas;
+    if (!canvas || !state.imgWidth) return;
+    e.preventDefault();
+    const before = canvas.getBoundingClientRect();
+    const fx = (e.clientX - before.left) / (before.width || 1);
+    const fy = (e.clientY - before.top) / (before.height || 1);
+    const cur = getOffset();
+    // Normalize delta across deltaMode (pixels / lines / pages); ctrl|⌘ = finer.
+    const unit = e.deltaMode === 1 ? 33 : e.deltaMode === 2 ? 300 : 1;
+    const factor = Math.exp(-e.deltaY * unit * ((e.ctrlKey || e.metaKey) ? 0.0014 : 0.0022));
+    const newZoom = Math.max(0.05, Math.min(32, state.zoom * factor));
+    if (Math.abs(newZoom - state.zoom) < 1e-4) return;
+    state.zoom = newZoom;
+    canvas.style.width = (state.imgWidth * newZoom) + 'px';
+    canvas.style.height = (state.imgHeight * newZoom) + 'px';
+    // Crisp pixels when zoomed in; smooth (browser default) when zoomed out so
+    // downscaled previews aren't nearest-neighbour aliased.
+    canvas.style.imageRendering = newZoom >= 4 ? 'pixelated' : 'auto';
+    const after = canvas.getBoundingClientRect();
+    applyOffset(cur.x + (e.clientX - (after.left + fx * after.width)),
+                cur.y + (e.clientY - (after.top + fy * after.height)));
+    const label = state.container && state.container.querySelector('.ge-zoom-label');
+    if (label) label.textContent = Math.round(newZoom * 100) + '%';
+    syncZoomControls?.();
+  }, { passive: false });
+
   // Reset offset whenever zoom/fit changes the canvas size.
   canvasArea._resetPan = () => applyOffset(0, 0);
+  // Re-apply the current pan + view rotation (called when viewRotation changes).
+  canvasArea._reapplyView = () => { const o = getOffset(); applyOffset(o.x, o.y); };
 }

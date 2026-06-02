@@ -46,6 +46,20 @@ export function createStrokeTool({
   getActiveMaskLayer, activeParentLayer, ensureActiveMaskLayer, createLayer,
   renderLayerPanel, syncToolClearIndicators,
 }) {
+  // Airbrush / build-up: while the brush is held, re-stamp at the current point
+  // on a timer so paint keeps accumulating (the engine's flow buffer builds
+  // toward the opacity cap) even when the cursor isn't moving.
+  let airbrushTimer = null;
+  function stopAirbrush() { if (airbrushTimer) { clearInterval(airbrushTimer); airbrushTimer = null; } }
+  function startAirbrush() {
+    stopAirbrush();
+    if (state.tool !== 'brush' || !state.airbrush) return;
+    airbrushTimer = setInterval(() => {
+      if (state.drawing) strokeTo(state.lastX, state.lastY);
+      else stopAirbrush();
+    }, 40);
+  }
+
   return {
     /**
      * Begin a stroke. Returns true if the dispatcher should consider
@@ -53,6 +67,23 @@ export function createStrokeTool({
      */
     tryBegin(e) {
       if (!STROKE_TOOLS.has(state.tool)) return false;
+      // Shift-click straight line (brush/eraser): draw from the previous stroke's
+      // end-point to the clicked point. Smoothing is bypassed so the line lands
+      // exactly on the click; drawing stays on so a continued drag extends it.
+      if ((state.tool === 'brush' || state.tool === 'eraser') && e && e.shiftKey && state.lineAnchor) {
+        const c = canvasCoords(e, state.mainCanvas);
+        saveState(strokeLabel(state.tool));
+        state.drawing = true;
+        const savedSmooth = state.brushSmoothing;
+        state.brushSmoothing = 0;
+        state.lastX = state.lineAnchor.x;
+        state.lastY = state.lineAnchor.y;
+        strokeTo(state.lineAnchor.x, state.lineAnchor.y); // begin + dab at the anchor
+        strokeTo(c.x, c.y);                                // straight segment to the click
+        state.brushSmoothing = savedSmooth;
+        state.lineAnchor = { x: state.lastX, y: state.lastY };
+        return true;
+      }
       // Capture the inpaint-erase flag for this stroke. Ctrl+Alt
       // pressed at pointerdown flips the persistent toggle for one
       // stroke only.
@@ -93,6 +124,7 @@ export function createStrokeTool({
       state.lastX = coords.x;
       state.lastY = coords.y;
       strokeTo(coords.x, coords.y);
+      startAirbrush();
       return true;
     },
 
@@ -113,8 +145,14 @@ export function createStrokeTool({
      */
     tryEnd() {
       if (!state.drawing) return false;
+      stopAirbrush();
       const wasDrawingInpaint = state.tool === 'inpaint';
       state.drawing = false;
+      // Remember the stroke's end so a following Shift-click draws a straight
+      // line from here (brush/eraser only).
+      if (state.tool === 'brush' || state.tool === 'eraser') {
+        state.lineAnchor = { x: state.lastX, y: state.lastY };
+      }
       composite();
       if (wasDrawingInpaint) syncToolClearIndicators();
       return true;
