@@ -139,6 +139,36 @@ export function applyAdjustment(srcCanvas, adj) {
     return out;
   }
 
+  if (adj.type === 'selective-color') {
+    // Per-colour-family CMYK push (PS Selective Color). For each pixel pick its
+    // dominant family (6 hue sextants for chromatic pixels; whites/neutrals/
+    // blacks for low-chroma) and shift it by that family's C/M/Y/K deltas
+    // (cyan↓red, magenta↓green, yellow↓blue, black↓all), weighted by chroma.
+    // Relative scales the push by each channel's room; Absolute is a flat push.
+    const rel = adj.params.relative !== false;
+    const famDelta = (fam) => adj.params[fam] || { c: 0, m: 0, y: 0, k: 0 };
+    for (let i = 0; i < d.length; i += 4) {
+      const r = d[i] / 255, g = d[i + 1] / 255, b = d[i + 2] / 255;
+      const mx = Math.max(r, g, b), mn = Math.min(r, g, b), ch = mx - mn, L = (mx + mn) / 2;
+      let fam, w;
+      if (ch < 0.10) { fam = L < 0.25 ? 'blacks' : (L > 0.75 ? 'whites' : 'neutrals'); w = 1; }
+      else {
+        let h; if (mx === r) h = ((g - b) / ch) % 6; else if (mx === g) h = (b - r) / ch + 2; else h = (r - g) / ch + 4;
+        h *= 60; if (h < 0) h += 360;
+        fam = (h < 30 || h >= 330) ? 'reds' : h < 90 ? 'yellows' : h < 150 ? 'greens' : h < 210 ? 'cyans' : h < 270 ? 'blues' : 'magentas';
+        w = ch; // more saturated → stronger effect
+      }
+      const dl = famDelta(fam);
+      const dr = (dl.c + dl.k), dg = (dl.m + dl.k), db2 = (dl.y + dl.k); // cyan/magenta/yellow + black
+      const push = (v, dd) => rel ? v - w * dd * v : v - w * dd; // relative scales by channel value
+      d[i] = Math.round(Math.min(1, Math.max(0, push(r, dr))) * 255);
+      d[i + 1] = Math.round(Math.min(1, Math.max(0, push(g, dg))) * 255);
+      d[i + 2] = Math.round(Math.min(1, Math.max(0, push(b, db2))) * 255);
+    }
+    octx.putImageData(img, 0, 0);
+    return out;
+  }
+
   if (adj.type === 'vibrance') {
     // Boost saturation more for less-saturated pixels (protects already-vivid
     // colours / skin), unlike a flat Saturation. d is Uint8ClampedArray → auto-clamps.

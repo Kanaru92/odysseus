@@ -147,6 +147,7 @@ export function createAdjPopupSystem({ composite, saveState, renderLayerPanel })
       { type: 'photo-filter',        label: 'Photo Filter' },
       { type: 'gradient-map',        label: 'Gradient Map' },
       { type: 'channel-mixer',       label: 'Channel Mixer' },
+      { type: 'selective-color',     label: 'Selective Color' },
       { type: 'grain',               label: 'Grain' },
       { type: 'posterize',           label: 'Posterize' },
       { type: 'threshold',           label: 'Threshold' },
@@ -626,6 +627,27 @@ export function createAdjPopupSystem({ composite, saveState, renderLayerPanel })
       body.querySelector('.ge-cm-out')?.addEventListener('change', (e) => {
         popEl._cmOut = e.target.value; body.innerHTML = ''; buildAdjBody(layer, type, body, popEl);
       });
+    } else if (type === 'selective-color') {
+      const fam = layer._scFam || 'reds';
+      layer._scFam = fam;
+      const f = p[fam] || { c: 0, m: 0, y: 0, k: 0 };
+      const FAMS = ['reds', 'yellows', 'greens', 'cyans', 'blues', 'magentas', 'whites', 'neutrals', 'blacks'];
+      body.innerHTML = `
+      <div class="ge-adj-row" style="align-items:center;gap:8px;"><label>Colors</label>
+        <select class="ge-sc-fam ge-tool-select" style="flex:1;min-width:0;">
+          ${FAMS.map((k) => `<option value="${k}"${k === fam ? ' selected' : ''}>${k[0].toUpperCase() + k.slice(1)}</option>`).join('')}
+        </select></div>
+      ${sliderRow('c', 'Cyan',    -100, 100, Math.round(f.c * 100), '%')}
+      ${sliderRow('m', 'Magenta', -100, 100, Math.round(f.m * 100), '%')}
+      ${sliderRow('y', 'Yellow',  -100, 100, Math.round(f.y * 100), '%')}
+      ${sliderRow('k', 'Black',   -100, 100, Math.round(f.k * 100), '%')}
+      <label style="display:flex;align-items:center;gap:6px;margin:6px 2px;font-size:11px;cursor:pointer;"><input type="checkbox" class="ge-sc-rel" ${p.relative !== false ? 'checked' : ''}> Relative</label>`;
+      body.querySelector('.ge-sc-fam')?.addEventListener('change', (e) => {
+        layer._scFam = e.target.value; body.innerHTML = ''; buildAdjBody(layer, type, body, popEl);
+      });
+      body.querySelector('.ge-sc-rel')?.addEventListener('change', (e) => {
+        p.relative = e.target.checked; layer._adjFinalKey = null; scheduleAdjRefresh(layer);
+      });
     } else {
       // Parameter-free adjustments (Invert, Black & White): nothing to tweak.
       body.innerHTML = '<p style="font-size:11px;opacity:0.6;margin:4px 2px;">No options. Click Apply to add this adjustment — blend with the layer opacity or delete it from the layer panel.</p>';
@@ -667,6 +689,9 @@ export function createAdjPopupSystem({ composite, saveState, renderLayerPanel })
     } else if (type === 'color-balance') {
       const [tone, ch] = key.split('-');
       p[tone][ch] = defaults[tone][ch];
+    } else if (type === 'selective-color') {
+      const fam = layer._scFam || 'reds';
+      if (p[fam]) p[fam][key] = 0;
     }
     layer._adjFinalKey = null;
     composite();
@@ -693,6 +718,10 @@ export function createAdjPopupSystem({ composite, saveState, renderLayerPanel })
     } else if (type === 'color-balance') {
       const [tone, ch] = key.split('-');
       p[tone][ch] = raw;
+    } else if (type === 'selective-color') {
+      const fam = layer._scFam || 'reds';
+      if (!p[fam]) p[fam] = { c: 0, m: 0, y: 0, k: 0 };
+      p[fam][key] = raw / 100; display = raw + '%';
     } else {
       // vibrance/exposure/posterize/threshold/photo-filter density: 1:1 numeric.
       p[key] = raw;

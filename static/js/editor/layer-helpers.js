@@ -79,6 +79,10 @@ export function defaultAdjParams(type) {
       gray: { r: 40, g: 40, b: 20 },
     };
     case 'grain': return { amount: 25 };
+    case 'selective-color': {
+      const z = () => ({ c: 0, m: 0, y: 0, k: 0 });
+      return { reds: z(), yellows: z(), greens: z(), cyans: z(), blues: z(), magentas: z(), whites: z(), neutrals: z(), blacks: z(), relative: true };
+    }
   }
   return {};
 }
@@ -102,6 +106,7 @@ export function adjLayerLabel(type) {
     'photo-filter': 'Photo Filter',
     'gradient-map': 'Gradient Map',
     'channel-mixer': 'Channel Mixer',
+    'selective-color': 'Selective Color',
     'grain': 'Grain',
   }[type] || type;
 }
