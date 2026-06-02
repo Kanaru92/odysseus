@@ -946,6 +946,8 @@ function _openFxMenu() {
     stroke: { enabled: false, size: 3, color: '#000000' },
     dropShadow: { enabled: false, dx: 5, dy: 5, blur: 6, color: '#000000', opacity: 0.6 },
     glow: { enabled: false, blur: 8, color: '#ffd24d', opacity: 0.75 },
+    innerShadow: { enabled: false, blur: 6, dx: 4, dy: 4, color: '#000000', opacity: 0.6 },
+    innerGlow: { enabled: false, blur: 8, color: '#ffd24d', opacity: 0.7 },
     colorOverlay: { enabled: false, color: '#ff3030', opacity: 0.5 },
   };
   for (const k in defaults) if (!fx[k]) fx[k] = { ...defaults[k] };
@@ -963,6 +965,8 @@ function _openFxMenu() {
     ${row('stroke', 'Stroke', `<input type="number" data-fxp="stroke.size" value="${fx.stroke.size}" min="1" max="50" style="width:44px;"><input type="color" data-fxp="stroke.color" value="${fx.stroke.color}">`)}
     ${row('dropShadow', 'Drop Shadow', `<input type="color" data-fxp="dropShadow.color" value="${fx.dropShadow.color}">`)}
     ${row('glow', 'Outer Glow', `<input type="color" data-fxp="glow.color" value="${fx.glow.color}">`)}
+    ${row('innerShadow', 'Inner Shadow', `<input type="color" data-fxp="innerShadow.color" value="${fx.innerShadow.color}">`)}
+    ${row('innerGlow', 'Inner Glow', `<input type="color" data-fxp="innerGlow.color" value="${fx.innerGlow.color}">`)}
     ${row('colorOverlay', 'Color Overlay', `<input type="color" data-fxp="colorOverlay.color" value="${fx.colorOverlay.color}">`)}
     <p style="font-size:10px;opacity:0.5;margin:6px 0 0;">Non-destructive effects on the active layer. Defaults are sensible; tweak colours/size here.</p>`;
   document.body.appendChild(pop);
@@ -1007,14 +1011,39 @@ function _fxOuterStroke(src, size, color) {
   x.drawImage(src, 0, 0); // keep only the ring outside the original alpha
   return c;
 }
+// Inner Shadow / Inner Glow overlay: a soft band of `color` hugging the INSIDE of
+// the layer's edges. Build a solid colour field, punch out the (optionally offset)
+// blurred layer silhouette so colour survives only in the inset gap, then clip to
+// the layer's real alpha so it shows only over opaque pixels. dx/dy=0 → uniform
+// inner glow; an offset → directional inner shadow. Returns a NEW canvas.
+function _fxInner(source, { color, blur, dx, dy }) {
+  const w = source.width, h = source.height;
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const cx = c.getContext('2d');
+  cx.fillStyle = color; cx.fillRect(0, 0, w, h);
+  cx.save();
+  cx.globalCompositeOperation = 'destination-out';
+  cx.filter = `blur(${Math.max(0, blur)}px)`;
+  cx.drawImage(source, dx || 0, dy || 0);
+  cx.restore();
+  cx.save();
+  cx.globalCompositeOperation = 'destination-in'; // clip to the layer's actual pixels
+  cx.filter = 'none';
+  cx.drawImage(source, 0, 0);
+  cx.restore();
+  return c;
+}
+
 // Non-destructive layer effects (PS "Blending Options"): drop shadow + outer
-// glow behind the layer, outer stroke around it, colour overlay on top. Returns
-// a NEW canvas; the layer's own pixels are never modified. No-op (returns the
-// source) when no effect is enabled.
+// glow behind the layer, outer stroke around it, inner shadow + inner glow inside
+// its edges, colour overlay on top. Returns a NEW canvas; the layer's own pixels
+// are never modified. No-op (returns the source) when no effect is enabled.
 function _applyLayerFx(source, fx) {
   if (!fx) return source;
   const ds = fx.dropShadow, gl = fx.glow, st = fx.stroke, co = fx.colorOverlay;
-  if (!(ds && ds.enabled) && !(gl && gl.enabled) && !(st && st.enabled) && !(co && co.enabled)) return source;
+  const ish = fx.innerShadow, igl = fx.innerGlow;
+  if (!(ds && ds.enabled) && !(gl && gl.enabled) && !(st && st.enabled) && !(co && co.enabled)
+      && !(ish && ish.enabled) && !(igl && igl.enabled)) return source;
   const w = source.width, h = source.height;
   const out = document.createElement('canvas');
   out.width = w; out.height = h;
@@ -1039,6 +1068,20 @@ function _applyLayerFx(source, fx) {
     ctx.drawImage(_fxOuterStroke(source, Math.max(1, st.size || 3), st.color || '#000000'), 0, 0);
   }
   ctx.drawImage(source, 0, 0);
+  // Inner Shadow / Inner Glow — on TOP of the layer, clipped to its alpha so they
+  // hug the inside edges (PS stacking: below Color Overlay).
+  if (ish && ish.enabled) {
+    ctx.save();
+    ctx.globalAlpha = ish.opacity == null ? 0.6 : ish.opacity;
+    ctx.drawImage(_fxInner(source, { color: ish.color || '#000000', blur: ish.blur == null ? 6 : ish.blur, dx: ish.dx == null ? 4 : ish.dx, dy: ish.dy == null ? 4 : ish.dy }), 0, 0);
+    ctx.restore();
+  }
+  if (igl && igl.enabled) {
+    ctx.save();
+    ctx.globalAlpha = igl.opacity == null ? 0.7 : igl.opacity;
+    ctx.drawImage(_fxInner(source, { color: igl.color || '#ffd24d', blur: igl.blur == null ? 8 : igl.blur, dx: 0, dy: 0 }), 0, 0);
+    ctx.restore();
+  }
   if (co && co.enabled) {
     ctx.save();
     ctx.globalAlpha = co.opacity == null ? 1 : co.opacity;
