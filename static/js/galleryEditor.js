@@ -8,7 +8,7 @@ import spinnerModule from './spinner.js';
 import { attachColorPicker } from './colorPicker.js';
 import modalManager from './modalManager.js';
 import { canvasCoords as _canvasCoords } from './editor/canvas-coords.js';
-import { drawCheckerboard as _drawCheckerboard } from './editor/checkerboard.js';
+import { drawCheckerboard as _drawCheckerboard, setChecker, checkerConfig, CHECKER_SIZES, CHECKER_PRESETS } from './editor/checkerboard.js';
 import { dilateMask as _dilateMask, applyInpaintFeather as _applyInpaintFeather } from './editor/mask-utils.js';
 import {
   lassoOffsetPoints as _lassoOffsetPointsImpl,
@@ -101,6 +101,10 @@ import { createRulerTool } from './editor/tools/ruler.js';
 import { createBrushQuickPick } from './editor/brush-quickpick.js';
 import { createShapeTool } from './editor/tools/shapes.js';
 import { createSmartObject } from './editor/smart-object.js';
+import { downloadImage, EXPORT_FORMATS } from './editor/export-image.js';
+import { createAnimation } from './editor/anim/animation.js';
+import { createTimeline } from './editor/anim/timeline.js';
+import { exportAnimation, downloadAnim, ANIM_FORMATS } from './editor/anim/export-anim.js';
 import { createWandTool } from './editor/tools/wand.js';
 import { createCloneTool } from './editor/tools/clone.js';
 import { createTransformDragTool } from './editor/tools/transform-drag.js';
@@ -176,6 +180,10 @@ function _galleryEditMounted() {
 // etc.) so the Escape hard guard below can dismiss it — the guard runs first
 // (window capture) and otherwise swallows Escape before the prompt sees it.
 let _activePromptClose = null;
+// Animation controller + timeline panel — assigned during openEditor (they need
+// container/createLayer/composite), referenced module-scope so composite() can
+// draw the onion-skin overlay.
+let _anim = null, _timeline = null;
 
 if (!window.__galleryEditEscHardGuardInstalled) {
   window.__galleryEditEscHardGuardInstalled = true;
@@ -863,6 +871,9 @@ function _canDirtyComposite() {
 // valid composite; only the dab rect is re-rendered.
 function composite(dirty) {
   if (!state.mainCtx) return;
+  // Animation mode needs a full repaint each time so the onion-skin overlay
+  // (and per-frame cel visibility) always redraw — skip the dirty-rect path.
+  if (state.anim && state.anim.enabled) dirty = null;
   const W = state.mainCanvas.width, H = state.mainCanvas.height;
   if (dirty && _canDirtyComposite()) {
     const ctx = state.mainCtx;
@@ -888,6 +899,9 @@ function composite(dirty) {
   // Checkerboard background
   _drawCheckerboard(state.mainCtx, state.mainCanvas.width, state.mainCanvas.height);
   _renderLayersTo(state.mainCtx, state.mainCanvas);
+  // Animation onion skin (light table) — faint tinted neighbour cels over the
+  // rendered frame, under the UI overlays below.
+  if (state.anim && state.anim.enabled && _anim) _anim.drawOnion();
   // CMYK soft-proof — a view-only pass over the composited image (BEFORE the UI
   // overlays below, so handles / marching-ants / mask tint stay un-proofed).
   // Never touches layer pixels or exports (flatten() rebuilds from layers).
@@ -2089,6 +2103,68 @@ function _resampleImage(newW, newH, method) {
   uiModule.showToast(`Image resampled to ${newW}×${newH}`);
 }
 
+// Export As… — pick a format (PNG/JPEG/WebP/TGA) + quality (lossy only) and
+// download the flattened composite. PNG/WebP/TGA keep alpha; JPEG flattens onto
+// white. Encoders live in editor/export-image.js.
+function _promptExportAs() {
+  let overlay = document.getElementById('ge-export-overlay');
+  if (overlay) overlay.remove();
+  overlay = document.createElement('div');
+  overlay.id = 'ge-export-overlay';
+  overlay.className = 'modal';
+  const opts = EXPORT_FORMATS.map((f) => `<option value="${f.id}">${f.label}</option>`).join('');
+  overlay.innerHTML = `
+    <div class="ge-prompt-card" style="background:#26262b;border:1px solid rgba(255,255,255,0.14);border-radius:10px;padding:18px;min-width:300px;color:#eee;box-shadow:0 18px 48px rgba(0,0,0,0.55);">
+      <div style="font-weight:600;margin-bottom:12px;">Export As</div>
+      <label style="display:flex;align-items:center;gap:8px;margin:6px 0;font-size:12px;">
+        <span style="min-width:54px;opacity:0.7;">Format</span>
+        <select id="ge-export-format" style="flex:1;padding:5px 8px;background:#1d1d22;border:1px solid rgba(255,255,255,0.15);border-radius:5px;color:#eee;">${opts}</select>
+      </label>
+      <label id="ge-export-q-row" style="display:flex;align-items:center;gap:8px;margin:6px 0;font-size:12px;">
+        <span style="min-width:54px;opacity:0.7;">Quality</span>
+        <input id="ge-export-q" type="range" min="10" max="100" value="92" style="flex:1;">
+        <span id="ge-export-q-val" style="min-width:36px;text-align:right;opacity:0.85;">92%</span>
+      </label>
+      <p id="ge-export-alpha-note" style="font-size:10px;opacity:0.55;margin:4px 0 0;"></p>
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;">
+        <button id="ge-export-cancel" class="ge-btn">Cancel</button>
+        <button id="ge-export-ok" class="ge-btn ge-btn-primary">Export</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  const fmtSel = overlay.querySelector('#ge-export-format');
+  const qRow = overlay.querySelector('#ge-export-q-row');
+  const qIn = overlay.querySelector('#ge-export-q');
+  const qVal = overlay.querySelector('#ge-export-q-val');
+  const note = overlay.querySelector('#ge-export-alpha-note');
+  const sync = () => {
+    const f = EXPORT_FORMATS.find((x) => x.id === fmtSel.value) || EXPORT_FORMATS[0];
+    qRow.style.display = f.lossy ? '' : 'none';
+    note.textContent = f.alpha ? 'Transparency preserved.' : 'No alpha — transparent areas become white.';
+  };
+  qIn.addEventListener('input', () => { qVal.textContent = qIn.value + '%'; });
+  fmtSel.addEventListener('change', sync);
+  sync();
+  const close = () => { overlay.remove(); document.removeEventListener('keydown', onKey, true); _activePromptClose = null; };
+  _activePromptClose = close;
+  const apply = () => {
+    const fmt = fmtSel.value;
+    const q = parseInt(qIn.value, 10) / 100;
+    close();
+    try { downloadImage(flatten(), fmt, q, 'image'); }
+    catch (e) { uiModule.showToast('Export failed'); }
+  };
+  const onKey = (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); apply(); }
+    else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); close(); }
+  };
+  overlay.querySelector('#ge-export-ok').addEventListener('click', apply);
+  overlay.querySelector('#ge-export-cancel').addEventListener('click', close);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+  document.addEventListener('keydown', onKey, true);
+  setTimeout(() => { fmtSel.focus(); }, 0);
+}
+
 // Themed prompt for placing a LINKED image (Smart Object whose source is an
 // external URL — e.g. a gallery asset — that "Update Linked" can re-fetch).
 function _promptLinkUrl() {
@@ -2121,6 +2197,127 @@ function _promptLinkUrl() {
   overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
   document.addEventListener('keydown', onKey, true);
   setTimeout(() => { input.focus(); }, 0);
+}
+
+// Export Animation… — pick GIF / WebM + FPS (+ loop for GIF) and download all
+// the timeline's frames. Frames come from the animation controller; if anim
+// mode is off there's nothing to export.
+function _promptExportAnim() {
+  if (!_anim || !_anim.isEnabled()) { uiModule.showToast('Turn on the Animation Timeline first (View ▸ Animation Timeline)'); return; }
+  let overlay = document.getElementById('ge-expanim-overlay');
+  if (overlay) overlay.remove();
+  overlay = document.createElement('div');
+  overlay.id = 'ge-expanim-overlay';
+  overlay.className = 'modal';
+  const opts = ANIM_FORMATS.map((f) => `<option value="${f.id}">${f.label}</option>`).join('');
+  const defFps = (state.anim && state.anim.fps) || 12;
+  overlay.innerHTML = `
+    <div class="ge-prompt-card" style="background:#26262b;border:1px solid rgba(255,255,255,0.14);border-radius:10px;padding:18px;min-width:300px;color:#eee;box-shadow:0 18px 48px rgba(0,0,0,0.55);">
+      <div style="font-weight:600;margin-bottom:12px;">Export Animation</div>
+      <label style="display:flex;align-items:center;gap:8px;margin:6px 0;font-size:12px;">
+        <span style="min-width:54px;opacity:0.7;">Format</span>
+        <select id="ge-expanim-format" style="flex:1;padding:5px 8px;background:#1d1d22;border:1px solid rgba(255,255,255,0.15);border-radius:5px;color:#eee;">${opts}</select>
+      </label>
+      <label style="display:flex;align-items:center;gap:8px;margin:6px 0;font-size:12px;">
+        <span style="min-width:54px;opacity:0.7;">FPS</span>
+        <input id="ge-expanim-fps" type="number" min="1" max="60" value="${defFps}" style="width:60px;padding:5px 8px;background:#1d1d22;border:1px solid rgba(255,255,255,0.15);border-radius:5px;color:#eee;">
+      </label>
+      <label id="ge-expanim-loop-row" style="display:flex;align-items:center;gap:8px;margin:6px 0;font-size:12px;cursor:pointer;">
+        <input id="ge-expanim-loop" type="checkbox" checked> Loop (GIF)
+      </label>
+      <p id="ge-expanim-note" style="font-size:10px;opacity:0.55;margin:4px 0 0;"></p>
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;">
+        <button id="ge-expanim-cancel" class="ge-btn">Cancel</button>
+        <button id="ge-expanim-ok" class="ge-btn ge-btn-primary">Export</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  const fmt = overlay.querySelector('#ge-expanim-format');
+  const loopRow = overlay.querySelector('#ge-expanim-loop-row');
+  const note = overlay.querySelector('#ge-expanim-note');
+  const sync = () => {
+    loopRow.style.display = fmt.value === 'gif' ? '' : 'none';
+    note.textContent = fmt.value === 'webm' ? 'WebM records in real time via the browser; keep the tab focused.' : `${(state.anim && state.anim.frameCount) || 1} frames.`;
+  };
+  fmt.addEventListener('change', sync); sync();
+  const close = () => { overlay.remove(); document.removeEventListener('keydown', onKey, true); _activePromptClose = null; };
+  _activePromptClose = close;
+  const apply = async () => {
+    const format = fmt.value;
+    const fps = parseInt(overlay.querySelector('#ge-expanim-fps').value, 10) || 12;
+    const loop = overlay.querySelector('#ge-expanim-loop').checked;
+    close();
+    try {
+      uiModule.showToast('Encoding ' + format.toUpperCase() + '…');
+      const blob = await exportAnimation(_anim.frameCanvases(), { format, fps, loop });
+      downloadAnim(blob, format);
+    } catch (e) { uiModule.showToast('Animation export failed: ' + (e && e.message || e)); }
+  };
+  const onKey = (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); apply(); }
+    else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); close(); }
+  };
+  overlay.querySelector('#ge-expanim-ok').addEventListener('click', apply);
+  overlay.querySelector('#ge-expanim-cancel').addEventListener('click', close);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+  document.addEventListener('keydown', onKey, true);
+}
+
+// Transparency-checkerboard preferences (PS parity) — square size + the two
+// square colours, with Light/Medium/Dark/Charcoal presets + custom colours and
+// a live preview. Changes apply immediately and persist in localStorage.
+function _persistChecker() {
+  try { localStorage.setItem('ge-checker', JSON.stringify({ size: checkerConfig.size, c1: checkerConfig.c1, c2: checkerConfig.c2 })); } catch {}
+}
+function _applyChecker(cfg) {
+  setChecker(cfg);
+  _persistChecker();
+  composite();
+  const pv = document.getElementById('ge-checker-preview');
+  if (pv) _drawCheckerboard(pv.getContext('2d'), pv.width, pv.height);
+  const c1 = document.getElementById('ge-checker-c1'); if (c1) c1.value = checkerConfig.c1;
+  const c2 = document.getElementById('ge-checker-c2'); if (c2) c2.value = checkerConfig.c2;
+}
+function _loadChecker() {
+  try { const s = JSON.parse(localStorage.getItem('ge-checker') || 'null'); if (s) setChecker(s); } catch {}
+}
+function _promptCheckerboard() {
+  let overlay = document.getElementById('ge-checker-overlay');
+  if (overlay) overlay.remove();
+  overlay = document.createElement('div');
+  overlay.id = 'ge-checker-overlay';
+  overlay.className = 'modal';
+  const sizeBtns = Object.entries(CHECKER_SIZES).map(([k, v]) => `<button type="button" class="ge-btn ge-btn-sm ge-chk-size" data-size="${v}">${k[0].toUpperCase() + k.slice(1)}</button>`).join('');
+  const presetBtns = Object.keys(CHECKER_PRESETS).map((k) => `<button type="button" class="ge-btn ge-btn-sm ge-chk-preset" data-preset="${k}">${k[0].toUpperCase() + k.slice(1)}</button>`).join('');
+  overlay.innerHTML = `
+    <div class="ge-prompt-card" style="background:#26262b;border:1px solid rgba(255,255,255,0.14);border-radius:10px;padding:18px;min-width:320px;color:#eee;box-shadow:0 18px 48px rgba(0,0,0,0.55);">
+      <div style="font-weight:600;margin-bottom:10px;">Transparency Checkerboard</div>
+      <canvas id="ge-checker-preview" width="288" height="64" style="width:100%;height:64px;border:1px solid rgba(255,255,255,0.2);border-radius:5px;display:block;image-rendering:pixelated;"></canvas>
+      <div style="font-size:11px;opacity:0.7;margin:10px 0 4px;">Grid size</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;">${sizeBtns}</div>
+      <div style="font-size:11px;opacity:0.7;margin:10px 0 4px;">Grid colors</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;">${presetBtns}</div>
+      <div style="display:flex;align-items:center;gap:10px;margin-top:10px;font-size:11px;">
+        <label style="display:inline-flex;align-items:center;gap:5px;">Square A <input id="ge-checker-c1" type="color" value="${checkerConfig.c1}" style="width:30px;height:22px;padding:0;border:1px solid rgba(255,255,255,0.2);border-radius:3px;background:none;cursor:pointer;"></label>
+        <label style="display:inline-flex;align-items:center;gap:5px;">Square B <input id="ge-checker-c2" type="color" value="${checkerConfig.c2}" style="width:30px;height:22px;padding:0;border:1px solid rgba(255,255,255,0.2);border-radius:3px;background:none;cursor:pointer;"></label>
+      </div>
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;">
+        <button id="ge-checker-done" class="ge-btn ge-btn-primary">Done</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  const pv = overlay.querySelector('#ge-checker-preview');
+  _drawCheckerboard(pv.getContext('2d'), pv.width, pv.height);
+  overlay.querySelectorAll('.ge-chk-size').forEach((b) => b.addEventListener('click', () => _applyChecker({ size: parseInt(b.dataset.size, 10) })));
+  overlay.querySelectorAll('.ge-chk-preset').forEach((b) => b.addEventListener('click', () => _applyChecker(CHECKER_PRESETS[b.dataset.preset])));
+  overlay.querySelector('#ge-checker-c1').addEventListener('input', (e) => _applyChecker({ c1: e.target.value }));
+  overlay.querySelector('#ge-checker-c2').addEventListener('input', (e) => _applyChecker({ c2: e.target.value }));
+  const close = () => { overlay.remove(); document.removeEventListener('keydown', onKey, true); _activePromptClose = null; };
+  _activePromptClose = close;
+  const onKey = (e) => { if (e.key === 'Enter' || e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); close(); } };
+  overlay.querySelector('#ge-checker-done').addEventListener('click', close);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+  document.addEventListener('keydown', onKey, true);
 }
 
 // Themed prompt for Image Size: W / H with an optional aspect lock + an
@@ -3801,6 +3998,7 @@ function _buildEditor(container) {
   const menuBar = _buildMenuBar();
   container.appendChild(menuBar);
   wireMenuBar(menuBar);
+  _loadChecker(); // apply persisted transparency-checkerboard prefs before first composite
   // Hidden relay target for the menu bar's "Image size… (resample)" item.
   const _imageSizeTrigger = document.createElement('button');
   _imageSizeTrigger.id = 'ge-image-size-trigger';
@@ -3814,6 +4012,10 @@ function _buildEditor(container) {
     ['ge-smart-rasterize', () => _smartObject.rasterize()],
     ['ge-smart-link', () => _promptLinkUrl()],
     ['ge-smart-update-linked', () => _smartObject.updateLinked()],
+    ['ge-export-as-trigger', () => _promptExportAs()],
+    ['ge-anim-toggle', () => { if (_anim) _anim.toggle(); }],
+    ['ge-checker-trigger', () => _promptCheckerboard()],
+    ['ge-export-anim-trigger', () => _promptExportAnim()],
   ]) {
     const b = document.createElement('button');
     b.id = id; b.hidden = true; b.addEventListener('click', fn);
@@ -4003,6 +4205,16 @@ function _buildEditor(container) {
     const gradHost = document.getElementById('ge-gradient-editor-host');
     if (gradHost) { const ed = createGradientEditor(); ed.mount(gradHost); }
   }
+  // Animation system — cel timeline (bottom strip) + onion skin + playback.
+  // Toggled via View ▸ Animation Timeline (#ge-anim-toggle). A cel is a normal
+  // layer, so the brush/mask/blend tools paint animation frames unchanged.
+  _anim = createAnimation({
+    composite,
+    createLayer,
+    renderLayerPanel: () => _renderLayerPanel(),
+    onChange: () => { if (_timeline) _timeline.render(); },
+  });
+  _timeline = createTimeline(_anim, container);
   // ── Command registry: one path for undo + scripting + Actions ──
   initCommands({ saveState: _saveState, composite });
   registerCommand('fill', { label: 'Fill', run: (a) => { const l = activeLayer(); if (!l) return; l.ctx.save(); l.ctx.fillStyle = (a && a.color) || state.color; l.ctx.fillRect(0, 0, l.canvas.width, l.canvas.height); l.ctx.restore(); } });

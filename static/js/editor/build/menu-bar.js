@@ -17,6 +17,8 @@ const MENUS = [
     { label: 'Save over original', click: '#ge-save' },
     { label: 'Save as copy', click: '#ge-export-gallery' },
     { label: 'Download PNG', click: '#ge-download' },
+    { label: 'Export As… (PNG / JPG / WebP / TGA)', click: '#ge-export-as-trigger' },
+    { label: 'Export Animation… (GIF / WebM)', click: '#ge-export-anim-trigger' },
     { sep: true },
     { label: 'Save project…', click: '#ge-save-project' },
     { label: 'Open project…', click: '#ge-load-project' },
@@ -74,6 +76,9 @@ const MENUS = [
     { sep: true },
     { label: 'Actions…', click: '#ge-actions-toggle' },
     { label: 'Script Console…', click: '#ge-script-toggle' },
+    { sep: true },
+    { label: 'Animation Timeline', click: '#ge-anim-toggle' },
+    { label: 'Transparency Checkerboard…', click: '#ge-checker-trigger' },
   ] },
   { title: 'View', items: [
     { label: 'Zoom In', click: '#ge-zoom-in' },
