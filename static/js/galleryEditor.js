@@ -627,18 +627,46 @@ function _compositeCustomBlend(source, off, opacity, mode, ctx, canvas) {
   ctx.putImageData(back, x0, y0);
 }
 
+// Build an alpha MATTE from a layer mask: coverage = (luminance × mask-alpha),
+// i.e. white-and-opaque → fully reveal, black → fully hide, mid-gray → ~50%,
+// and transparent → hide (alpha gate preserved for the lasso/wand region masks
+// that store coverage as alpha). This is the PS visibility-mask model: black
+// paint hides, white paint reveals. The returned canvas carries the coverage in
+// its ALPHA channel (RGB irrelevant) so it can be used with `destination-in`.
+// Recomputed each call (no cache) so a mask mutated in place by the stroke
+// pipeline / fill is always reflected; the per-pixel scan matches the cost of
+// the existing per-layer adjustment passes.
+function _maskCoverageMatte(mask) {
+  const w = mask.width, h = mask.height;
+  const mctx = mask.getContext('2d');
+  let img;
+  try { img = mctx.getImageData(0, 0, w, h); } catch { return mask; } // tainted → fall back to raw mask
+  const d = img.data;
+  for (let i = 0; i < d.length; i += 4) {
+    // Rec.601 luma; multiply by the existing alpha so a transparent mask still hides.
+    const lum = (d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114);
+    d[i + 3] = (lum * d[i + 3]) / 255; // coverage → alpha
+    d[i] = 0; d[i + 1] = 0; d[i + 2] = 0; // RGB unused by destination-in
+  }
+  const matte = document.createElement('canvas');
+  matte.width = w; matte.height = h;
+  matte.getContext('2d').putImageData(img, 0, 0);
+  return matte;
+}
+
 // Apply a PS-style raster layer mask: returns a NEW canvas = `source` with its
-// alpha intersected by the mask's alpha coverage (white/opaque mask = visible,
-// transparent = hidden). The mask is layer-local (same size as the layer canvas)
-// and stored on `layer.layerMask`, kept DISTINCT from the inpaint-region
-// `layer.masks`. Non-destructive — the layer's own pixels are never altered.
+// alpha multiplied by the mask's COVERAGE (luminance × mask-alpha) — white
+// reveals, black hides, gray = partial. The mask is layer-local (same size as
+// the layer canvas) and stored on `layer.layerMask`, kept DISTINCT from the
+// inpaint-region `layer.masks`. Non-destructive — the layer's own pixels are
+// never altered.
 function _applyLayerMask(source, mask) {
   const c = document.createElement('canvas');
   c.width = source.width; c.height = source.height;
   const mc = c.getContext('2d');
   mc.drawImage(source, 0, 0);
   mc.globalCompositeOperation = 'destination-in';
-  mc.drawImage(mask, 0, 0);
+  mc.drawImage(_maskCoverageMatte(mask), 0, 0);
   mc.globalCompositeOperation = 'source-over';
   return c;
 }
@@ -1167,6 +1195,15 @@ function _snapshotState() {
           canvasH: m.canvas.height,
           tiles: tileFor(m.id, m.ctx, m.canvas.width, m.canvas.height),
         })),
+        // PS visibility mask (layer.layerMask) — round-trip through undo so
+        // adding / painting / filling it (and deleting it) is reversible, like
+        // the inpaint-region masks above. Keyed by `<id>:layerMask` for tile
+        // dedup so an unchanged mask costs nothing across snapshots.
+        layerMask: l.layerMask ? {
+          canvasW: l.layerMask.width,
+          canvasH: l.layerMask.height,
+          tiles: tileFor(l.id + ':layerMask', l.layerMask.getContext('2d'), l.layerMask.width, l.layerMask.height),
+        } : null,
         activeMaskId: l.activeMaskId || null,
         isBase: !!l.isBase,
         groupId: l.groupId || null,
@@ -1586,6 +1623,21 @@ function _restoreState(snap) {
       } catch {}
       return { id: ms.id, name: ms.name, canvas: mc, ctx: mctx, visible: ms.visible !== false };
     });
+    // Restore the PS visibility mask (or clear it if the snapshot had none, so
+    // undoing "Add layer mask" actually removes it). Fresh canvas like masks[].
+    if (s.layerMask && (s.layerMask.tiles || s.layerMask.imageData)) {
+      const lm = document.createElement('canvas');
+      lm.width = s.layerMask.canvasW || state.imgWidth;
+      lm.height = s.layerMask.canvasH || state.imgHeight;
+      const lmx = lm.getContext('2d');
+      try {
+        if (s.layerMask.tiles) _detileTo(lmx, s.layerMask.tiles);
+        else if (s.layerMask.imageData) lmx.putImageData(s.layerMask.imageData, 0, 0);
+      } catch {}
+      layer.layerMask = lm;
+    } else {
+      layer.layerMask = null;
+    }
     layer.activeMaskId = s.activeMaskId || (layer.masks[0]?.id ?? null);
     layer._adjFinal = null;
     layer._adjFinalKey = null;
@@ -1604,6 +1656,7 @@ function _restoreState(snap) {
       if (s.isGroup) continue;
       if (s.tiles) h.set(s.id, s.tiles);
       for (const ms of (s.masks || [])) if (ms.tiles) h.set(ms.id, ms.tiles);
+      if (s.layerMask && s.layerMask.tiles) h.set(s.id + ':layerMask', s.layerMask.tiles);
     }
     state._histTiles = h;
   }
@@ -2733,6 +2786,34 @@ const _pcropTool = createPerspectiveCropTool({
 function _fillActiveLayer(color) {
   const layer = activeLayer();
   if (!layer || layer.locked) return;
+  // When the active layer's PS visibility mask is being edited, a fill writes
+  // the chosen tone INTO the mask (black = hide, white = reveal, gray = partial)
+  // rather than the layer's pixels — so "fill black to hide" works like PS. The
+  // matte (luminance × alpha) is recomputed at composite, so an opaque fill of
+  // any tone modulates the layer's alpha correctly.
+  if (state.layerMaskEdit && layer.layerMask) {
+    _saveState('Fill mask');
+    const mctx = layer.layerMask.getContext('2d');
+    mctx.save();
+    mctx.globalCompositeOperation = 'source-over';
+    mctx.globalAlpha = 1;
+    mctx.fillStyle = color;
+    if (state.wandMask) {
+      // Constrain the fill to the active wand selection.
+      const tmp = document.createElement('canvas');
+      tmp.width = layer.layerMask.width; tmp.height = layer.layerMask.height;
+      const tctx = tmp.getContext('2d');
+      tctx.fillStyle = color; tctx.fillRect(0, 0, tmp.width, tmp.height);
+      tctx.globalCompositeOperation = 'destination-in';
+      tctx.drawImage(state.wandMask, 0, 0);
+      mctx.drawImage(tmp, 0, 0);
+    } else {
+      mctx.fillRect(0, 0, layer.layerMask.width, layer.layerMask.height);
+    }
+    mctx.restore();
+    composite();
+    return;
+  }
   _saveState('Fill');
   const ctx = layer.ctx;
   const w = layer.canvas.width, h = layer.canvas.height;
