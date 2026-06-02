@@ -22454,10 +22454,9 @@ input.settings-select::placeholder { color: color-mix(in srgb, var(--fg) 35%, tr
   align-content: flex-start;
   max-height: 100%;
   gap: 2px;
-  /* Asymmetric horizontal padding shifts the whole column 4 px left —
-     buttons, hover backgrounds, active highlight pills, and section
-     separators all move together. */
-  padding: 7px 6px 7px 2px;
+  /* Symmetric horizontal padding so the tool column(s) sit centred in the
+     palette rather than hugging the left edge. */
+  padding: 7px 4px;
   background: var(--panel);
   border-right: 1px solid var(--border);
   width: auto;
@@ -22473,7 +22472,10 @@ input.settings-select::placeholder { color: color-mix(in srgb, var(--fg) 35%, tr
   height: 0;
   width: 36px;
   border-top: 1px solid var(--border);
-  margin: 5px 4px;
+  /* Match the 36px button width (no horizontal margin) so a separator doesn't
+     widen its wrap-column past the buttons — which would left-align the icons
+     inside an over-wide column. Keeps every column a clean 36px so icons centre. */
+  margin: 5px 0;
   opacity: 0.5;
   flex-shrink: 0;
 }
@@ -22501,14 +22503,13 @@ input.settings-select::placeholder { color: color-mix(in srgb, var(--fg) 35%, tr
 }
 .ge-tool-btn .ge-tool-label { display: none; }
 .ge-tool-btn { position: relative; }
-/* Hover background is now a pseudo so we can shift it 2 px left
-   independently from the button's own bounds (which contain the icon
-   and label at their already-shifted positions). */
+/* Hover background drawn as a pseudo so it can be a rounded pill inset
+   symmetrically from the button bounds without affecting layout. */
 .ge-tool-btn:hover { opacity: 0.85; }
 .ge-tool-btn:hover::after {
   content: '';
   position: absolute;
-  inset: 0 2px 0 -2px;
+  inset: 0 2px;
   background: color-mix(in srgb, var(--fg) 8%, transparent);
   border-radius: 6px;
   z-index: -1;
@@ -22526,19 +22527,16 @@ input.settings-select::placeholder { color: color-mix(in srgb, var(--fg) 35%, tr
 .ge-tool-btn.active::before {
   content: '';
   position: absolute;
-  /* Highlight pill shifted 2 px left of the button bounds so it sits
-     under the icon + label (which are also nudged left). Same total
-     width as before — just slid. */
-  inset: 0 2px 0 -2px;
+  /* Highlight pill inset 2 px each side — a centred rounded square behind
+     the (centred) icon. */
+  inset: 0 2px;
   background: color-mix(in srgb, var(--red) 18%, transparent);
   border-radius: 6px;
   z-index: 0;
   pointer-events: none;
 }
-/* Tool button contents stay above the active highlight pseudo. Also
-   shifted an additional 2 px left so the icon + label sit further inside
-   the highlight pill (which still anchors to the button bounds). */
-.ge-tool-btn > * { position: relative; z-index: 1; left: -2px; }
+/* Tool button contents stay above the active highlight pseudo. */
+.ge-tool-btn > * { position: relative; z-index: 1; }
 .ge-tool-icon { font-size: 18px; line-height: 1; }
 .ge-tool-label { font-size: 9px; line-height: 1.25; }
 /* AI badge — same ✦ glyph the Enhance tool uses, pinned to the top-
