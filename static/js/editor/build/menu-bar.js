@@ -47,6 +47,8 @@ const MENUS = [
   ] },
   { title: 'Layer', items: [
     { label: 'New Layer', click: '#ge-add-layer', sc: 'Ctrl+Alt+J' },
+    { label: 'New Fill Layer: Solid Color', click: '#ge-fill-solid' },
+    { label: 'New Fill Layer: Gradient', click: '#ge-fill-gradient' },
     { label: 'Group Layer', key: 'ctrl+g', sc: 'Ctrl+G' },
     { label: 'Ungroup', key: 'ctrl+shift+g', sc: 'Ctrl+Shift+G' },
     { label: 'Add / Edit Layer Mask', click: '#ge-layer-mask' },

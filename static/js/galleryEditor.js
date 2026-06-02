@@ -393,6 +393,64 @@ function createLayer(name, width, height) {
   return layer;
 }
 
+// ── Fill layers (Solid / Gradient) ──
+// A fill layer is an ordinary raster layer whose pixels are generated from a
+// re-editable `layer.fill` spec rather than painted. Because the result is baked
+// into layer.canvas it composites, masks, blends, and exports like any layer; the
+// spec just lets us regenerate it (re-edit, or resize the document) non-destructively.
+function _renderFillLayer(layer) {
+  const f = layer && layer.fill;
+  if (!f || !layer.ctx || !layer.canvas) return;
+  const w = layer.canvas.width, h = layer.canvas.height, ctx = layer.ctx;
+  ctx.save();
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.clearRect(0, 0, w, h);
+  if (f.type === 'gradient') {
+    const g = ctx.createLinearGradient(0, 0, w, 0); // left→right linear
+    g.addColorStop(0, f.from || '#000000');
+    g.addColorStop(1, f.to || '#ffffff');
+    ctx.fillStyle = g;
+  } else {
+    ctx.fillStyle = f.color || '#000000';
+  }
+  ctx.fillRect(0, 0, w, h);
+  ctx.restore();
+}
+
+// Create a new fill layer (kind: 'solid' | 'gradient') from the current colours,
+// inserted above the active layer (PS placement).
+function _addFillLayer(kind) {
+  _saveState(kind === 'gradient' ? 'Gradient fill layer' : 'Solid fill layer');
+  const layer = createLayer(kind === 'gradient' ? 'Gradient Fill' : 'Color Fill',
+    state.imgWidth, state.imgHeight);
+  layer.fill = (kind === 'gradient')
+    ? { type: 'gradient', from: state.color || '#000000', to: state.bgColor || '#ffffff' }
+    : { type: 'solid', color: state.color || '#000000' };
+  _renderFillLayer(layer);
+  const ai = state.layers.findIndex(l => l.id === state.activeLayerId);
+  if (ai >= 0) state.layers.splice(ai + 1, 0, layer); else state.layers.push(layer);
+  state.activeLayerId = layer.id;
+  state.selectedLayerIds = [layer.id];
+  _renderLayerPanel();
+  composite();
+  return layer;
+}
+
+// Re-edit an existing fill layer's spec from the current colours (double-click).
+function _editFillLayer(layer) {
+  if (!layer || !layer.fill) return;
+  _saveState('Edit fill');
+  if (layer.fill.type === 'gradient') {
+    layer.fill.from = state.color || layer.fill.from;
+    layer.fill.to = state.bgColor || layer.fill.to;
+  } else {
+    layer.fill.color = state.color || layer.fill.color;
+  }
+  _renderFillLayer(layer);
+  _renderLayerPanel();
+  composite();
+}
+
 // _layerFilterString + _fxFilterToSlider live in editor/fx/filter-string.js
 // — see import at top.
 
@@ -1520,6 +1578,7 @@ function _snapshotState() {
         } : null,
         maskEnabled: l.maskEnabled === false ? false : undefined, // disabled-mask state
         text: l.text ? JSON.parse(JSON.stringify(l.text)) : null, // editable text model
+        fill: l.fill ? JSON.parse(JSON.stringify(l.fill)) : null, // re-editable fill spec
         activeMaskId: l.activeMaskId || null,
         isBase: !!l.isBase,
         groupId: l.groupId || null,
@@ -1610,6 +1669,7 @@ function _buildDraftPayload() {
         maskEnabled: l.maskEnabled === false ? false : undefined,
         fx: l.fx || null,
         text: l.text || null,
+        fill: l.fill || null,
         // Smart Object: pristine source + applied transform (+ optional link).
         isSmart: !!l.isSmart,
         smartXf: l.isSmart ? l.smartXf : null,
@@ -1782,6 +1842,7 @@ function _restoreDraft(draft) {
       if (s.isBase) layer.isBase = true;
       if (s.fx) layer.fx = s.fx;       // layer effects (Blending Options)
       if (s.text) layer.text = s.text; // editable text field
+      if (s.fill) layer.fill = s.fill; // re-editable fill spec
       // Smart Object: rehydrate the applied transform + decode the pristine
       // source (an extra async image, counted in `pending`). The baked
       // layer.canvas still restores from s.dataUrl so the doc renders meanwhile.
@@ -1962,6 +2023,7 @@ function _restoreState(snap) {
     // value can't leak across undo on the reused layer object).
     if (s.maskEnabled === false) layer.maskEnabled = false; else delete layer.maskEnabled;
     if (s.text) layer.text = JSON.parse(JSON.stringify(s.text)); else delete layer.text;
+    if (s.fill) layer.fill = JSON.parse(JSON.stringify(s.fill)); else delete layer.fill;
     layer.activeMaskId = s.activeMaskId || (layer.masks[0]?.id ?? null);
     layer._adjFinal = null;
     layer._adjFinalKey = null;
@@ -4665,6 +4727,8 @@ function _buildEditor(container) {
     // Double-click a text layer to re-edit it (Type is no longer write-once).
     const al = activeLayer();
     if (al && al.text && !state.textEditingLayerId) { e.preventDefault(); _saveState('Edit text'); _syncTypeControls(al.text); _openTextEditor(al); }
+    // Double-click a fill layer to re-apply the current colours to its spec.
+    else if (al && al.fill && !al.text) { e.preventDefault(); _editFillLayer(al); }
   });
 
   editorBody.appendChild(canvasArea);
@@ -5363,6 +5427,19 @@ function _buildEditor(container) {
       openDialog: () => _openNewLayerDialog(),
       create: (o) => _addLayerFromDialog(o),
     };
+    window.__geFillLayer = { add: (kind) => _addFillLayer(kind), edit: (l) => _editFillLayer(l) };
+  }
+
+  // Fill-layer creation. Hidden buttons exist only so the Layer menu can relay-
+  // click them by id (same pattern as New Layer); the menu items are the real UI.
+  for (const [id, kind] of [['ge-fill-solid', 'solid'], ['ge-fill-gradient', 'gradient']]) {
+    let btn = document.getElementById(id);
+    if (!btn) {
+      btn = document.createElement('button');
+      btn.id = id; btn.type = 'button'; btn.style.display = 'none';
+      (document.getElementById('gallery-editor-container') || document.body).appendChild(btn);
+    }
+    btn.addEventListener('click', () => _addFillLayer(kind));
   }
 
   // Lasso + Magic Wand panel controls — full implementation in
@@ -5841,6 +5918,7 @@ function _saveProject() {
         maskEnabled: l.maskEnabled === false ? false : undefined,
         fx: l.fx || null,
         text: l.text || null,
+        fill: l.fill || null,
         // Smart Object: pristine source + applied transform (+ optional link).
         isSmart: !!l.isSmart,
         smartXf: l.isSmart ? l.smartXf : null,
