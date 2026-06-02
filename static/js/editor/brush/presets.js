@@ -5,6 +5,7 @@
  * (size/opacity/flow/color) come from editor state and are modulated here.
  */
 import { CURVES } from './curve.js';
+import { DEFAULT_TIP_DATA } from './default-tips.js';
 
 // Pressure drives SIZE and/or FLOW (per-dab build-up). Opacity is the
 // stroke-level cap from the Opacity slider, applied once per stroke by the
@@ -154,6 +155,121 @@ export const BRUSH_PRESETS = [
     },
   },
 ];
+
+// ── Sampled (bitmap-tip) default presets ──
+// These use baked grayscale coverage maps from default-tips.js as image tips —
+// the SAME tipType:'image' path the .abr/.gbr import uses, so they render
+// identically to an imported sampled brush. The bitmap is the brush shape; the
+// engine tints it with the active colour via makeTip's luminance mask. `tipKey`
+// names the entry in DEFAULT_TIP_DATA; `tipImage` is filled in at load below.
+const SAMPLED_PRESETS = [
+  {
+    id: 'sketch-tangle', name: 'Sketch Tangle', tipKey: 'sketch-tangle',
+    tipType: 'image', spacing: 0.12,
+    dynamics: { size: { sensor: 'pressure', curve: CURVES.linear, min: 0.4, max: 1 }, flow: { sensor: 'pressure', curve: CURVES.soft, min: 0.4, max: 1 } },
+  },
+  {
+    id: 'rough-cloud', name: 'Rough Cloud', tipKey: 'rough-cloud',
+    tipType: 'image', spacing: 0.18, scatter: 0.15,
+    dynamics: { size: { sensor: 'pressure', curve: CURVES.soft, min: 0.5, max: 1 }, flow: { sensor: 'pressure', curve: CURVES.soft, min: 0.3, max: 1 } },
+  },
+  {
+    id: 'soft-cloud', name: 'Soft Cloud', tipKey: 'soft-cloud',
+    tipType: 'image', spacing: 0.14,
+    dynamics: { size: { sensor: 'pressure', curve: CURVES.soft, min: 0.5, max: 1 }, flow: { sensor: 'pressure', curve: CURVES.soft, min: 0.25, max: 0.9 } },
+  },
+  {
+    id: 'splatter-burst', name: 'Splatter Burst', tipKey: 'splatter-burst',
+    tipType: 'image', spacing: 0.45, scatter: 0.5,
+    dynamics: { size: { sensor: 'pressure', curve: CURVES.linear, min: 0.5, max: 1 }, flow: { sensor: 'none' }, rotation: { sensor: 'random', base: 180, min: -1, max: 1 } },
+  },
+  {
+    id: 'fine-specks', name: 'Fine Specks', tipKey: 'fine-specks',
+    tipType: 'image', spacing: 0.08,
+    dynamics: { size: { sensor: 'pressure', curve: CURVES.soft, min: 0.4, max: 1 }, flow: { sensor: 'pressure', curve: CURVES.soft, min: 0.4, max: 1 } },
+  },
+  {
+    id: 'coarse-grain', name: 'Coarse Grain', tipKey: 'coarse-grain',
+    tipType: 'image', spacing: 0.1,
+    dynamics: { size: { sensor: 'pressure', curve: CURVES.linear, min: 0.4, max: 1 }, flow: { sensor: 'pressure', curve: CURVES.soft, min: 0.4, max: 1 } },
+  },
+  {
+    id: 'stone-texture', name: 'Stone Texture', tipKey: 'stone-texture',
+    tipType: 'image', spacing: 0.08,
+    dynamics: { size: { sensor: 'pressure', curve: CURVES.linear, min: 0.5, max: 1 }, flow: { sensor: 'pressure', curve: CURVES.soft, min: 0.5, max: 1 } },
+  },
+  {
+    id: 'wood-grain', name: 'Wood Grain', tipKey: 'wood-grain',
+    tipType: 'image', spacing: 0.06,
+    dynamics: { size: { sensor: 'pressure', curve: CURVES.linear, min: 0.5, max: 1 }, flow: { sensor: 'pressure', curve: CURVES.soft, min: 0.4, max: 1 } },
+  },
+  {
+    id: 'rocky-ridge', name: 'Rocky Ridge', tipKey: 'rocky-ridge',
+    tipType: 'image', spacing: 0.1, angleFollow: true,
+    dynamics: { size: { sensor: 'pressure', curve: CURVES.linear, min: 0.5, max: 1 }, flow: { sensor: 'pressure', curve: CURVES.soft, min: 0.4, max: 1 } },
+  },
+  {
+    id: 'soft-oval-fade', name: 'Soft Oval Fade', tipKey: 'soft-oval-fade',
+    tipType: 'image', spacing: 0.07, angleFollow: true,
+    dynamics: { size: { sensor: 'pressure', curve: CURVES.soft, min: 0.4, max: 1 }, flow: { sensor: 'pressure', curve: CURVES.soft, min: 0.2, max: 0.9 } },
+  },
+  {
+    id: 'star-field', name: 'Star Field', tipKey: 'star-field',
+    tipType: 'image', spacing: 0.4, scatter: 0.4,
+    dynamics: { size: { sensor: 'pressure', curve: CURVES.linear, min: 0.5, max: 1 }, flow: { sensor: 'none' } },
+  },
+  {
+    id: 'bokeh-dots', name: 'Bokeh Dots', tipKey: 'bokeh-dots',
+    tipType: 'image', spacing: 0.3, scatter: 0.45,
+    dynamics: { size: { sensor: 'pressure', curve: CURVES.soft, min: 0.4, max: 1 }, flow: { sensor: 'pressure', curve: CURVES.soft, min: 0.3, max: 0.9 } },
+  },
+  {
+    id: 'vertical-scratch', name: 'Vertical Scratch', tipKey: 'vertical-scratch',
+    tipType: 'image', spacing: 0.1, angleFollow: true,
+    dynamics: { size: { sensor: 'pressure', curve: CURVES.linear, min: 0.4, max: 1 }, flow: { sensor: 'pressure', curve: CURVES.soft, min: 0.4, max: 1 } },
+  },
+  {
+    id: 'debris-scatter', name: 'Debris Scatter', tipKey: 'debris-scatter',
+    tipType: 'image', spacing: 0.35, scatter: 0.55,
+    dynamics: { size: { sensor: 'pressure', curve: CURVES.linear, min: 0.5, max: 1 }, flow: { sensor: 'none' }, rotation: { sensor: 'random', base: 180, min: -1, max: 1 } },
+  },
+  {
+    id: 'flecks-field', name: 'Flecks Field', tipKey: 'flecks-field',
+    tipType: 'image', spacing: 0.12, scatter: 0.2,
+    dynamics: { size: { sensor: 'pressure', curve: CURVES.soft, min: 0.5, max: 1 }, flow: { sensor: 'pressure', curve: CURVES.soft, min: 0.4, max: 1 } },
+  },
+  {
+    id: 'rough-sphere', name: 'Rough Sphere', tipKey: 'rough-sphere',
+    tipType: 'image', spacing: 0.1,
+    dynamics: { size: { sensor: 'pressure', curve: CURVES.soft, min: 0.5, max: 1 }, flow: { sensor: 'pressure', curve: CURVES.soft, min: 0.4, max: 1 } },
+  },
+  {
+    id: 'textured-leaf', name: 'Textured Leaf', tipKey: 'textured-leaf',
+    tipType: 'image', spacing: 0.16, scatter: 0.2, angleFollow: true,
+    dynamics: { size: { sensor: 'pressure', curve: CURVES.linear, min: 0.5, max: 1 }, flow: { sensor: 'pressure', curve: CURVES.soft, min: 0.4, max: 1 }, rotation: { sensor: 'random', base: 180, min: -1, max: 1 } },
+  },
+  {
+    id: 'floral-splatter', name: 'Floral Splatter', tipKey: 'floral-splatter',
+    tipType: 'image', spacing: 0.4, scatter: 0.45,
+    dynamics: { size: { sensor: 'pressure', curve: CURVES.linear, min: 0.5, max: 1 }, flow: { sensor: 'none' }, rotation: { sensor: 'random', base: 180, min: -1, max: 1 } },
+  },
+];
+
+// Build an Image per baked tip and attach it as `tipImage` (the engine/makeTip
+// image path consumes an Image/canvas, exactly like the import flow). Guarded
+// for non-browser contexts (static module-graph checks) where Image is absent;
+// there the presets still load with tipImage null and simply render as a plain
+// round dab until a browser builds the tips.
+if (typeof Image !== 'undefined') {
+  for (const p of SAMPLED_PRESETS) {
+    const url = DEFAULT_TIP_DATA[p.tipKey];
+    if (!url) continue;
+    const img = new Image();
+    img.src = url;
+    p.tipImage = img;
+  }
+}
+BRUSH_PRESETS.push(...SAMPLED_PRESETS);
 
 export const DEFAULT_PRESET_ID = 'hard-round';
 
