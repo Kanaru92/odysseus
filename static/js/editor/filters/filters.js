@@ -9,6 +9,9 @@
  */
 const clamp = (v) => (v < 0 ? 0 : v > 255 ? 255 : v);
 
+import { unsharpMask } from '../fx/unsharp.js';
+import { medianFilter } from '../fx/median.js';
+
 export const FILTERS = [
   { id: 'grayscale', name: 'Grayscale', amount: false },
   { id: 'invert', name: 'Invert', amount: false },
@@ -21,6 +24,8 @@ export const FILTERS = [
   { id: 'gaussian', name: 'Gaussian Blur', amount: true },
   { id: 'vignette', name: 'Vignette', amount: true },
   { id: 'sharpen', name: 'Sharpen', amount: true },
+  { id: 'unsharp', name: 'Unsharp Mask', amount: true },
+  { id: 'median', name: 'Median', amount: true },
   { id: 'noise', name: 'Add Noise', amount: true },
   { id: 'posterize', name: 'Posterize', amount: true },
   { id: 'threshold', name: 'Threshold', amount: true },
@@ -258,6 +263,8 @@ export function applyFilter(img, type, amount = 50, opts) {
     case 'gaussian': for (let k = 0; k < 3; k++) boxBlur(d, w, h, Math.max(1, Math.round(amount / 12))); break;
     case 'vignette': vignette(d, w, h, amount / 100); break;
     case 'sharpen': sharpen(d, w, h, amount); break;
+    case 'unsharp': unsharpMask(d, w, h, { amount: amount * 3, radius: 2, threshold: 0 }); break;
+    case 'median': medianFilter(d, w, h, { radius: Math.max(1, Math.round(amount / 20)) }); break;
     case 'noise': noise(d, amount); break;
     case 'posterize': posterize(d, amount); break;
     case 'threshold': threshold(d, amount); break;
