@@ -24794,6 +24794,13 @@ button .spinner-whirlpool {
    anchors to it instead of the viewport. */
 .ge-right-panel { position: relative; }
 
+/* Window-menu panel toggle. A docked section the user has hidden via the
+   Window menu collapses to nothing so the flex split reflows cleanly — the
+   surviving sibling region (e.g. Layers when Controls is hidden, or Controls
+   when Layers is hidden) flex-grows to fill the freed space. !important so it
+   wins over the per-section inline `display` styles set elsewhere. */
+.ge-hidden { display: none !important; }
+
 /* Floating value bubble that pops above the slider thumb while
    dragging. Solves the "I can't see the number" problem when the
    slider's opaque plate covers the row's right-edge value chip. */

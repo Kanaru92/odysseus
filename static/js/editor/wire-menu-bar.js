@@ -44,6 +44,8 @@ export function wireMenuBar(bar) {
     else if (d.relayFilter) document.querySelector(`[data-filter-action="${d.relayFilter}"]`)?.click();
     else if (d.relayTool) document.querySelector(`.ge-tool-btn[data-tool="${d.relayTool}"]`)?.click();
     else if (d.relayKey) dispatchKey(d.relayKey);
+    // data-relay-panel items (the Window menu's panel toggles) are owned by
+    // wire-window-menu.js, which attaches its own click handler — skip here.
   };
 
   menus.forEach((m) => {
@@ -51,10 +53,12 @@ export function wireMenuBar(bar) {
     title?.addEventListener('click', (e) => {
       e.stopPropagation();
       if (m.classList.contains('open')) closeAll();
-      else open(m);
+      // Let panels refresh their checkmarks from live visibility before the
+      // drop is revealed (wire-window-menu.js listens for this event).
+      else { m.dispatchEvent(new CustomEvent('ge:menu-open', { bubbles: true })); open(m); }
     });
     // Once a menu is open, hovering another title switches to it.
-    title?.addEventListener('mouseenter', () => { if (anyOpen() && !m.classList.contains('open')) open(m); });
+    title?.addEventListener('mouseenter', () => { if (anyOpen() && !m.classList.contains('open')) { m.dispatchEvent(new CustomEvent('ge:menu-open', { bubbles: true })); open(m); } });
     m.querySelectorAll('.ge-menu-item').forEach((item) => {
       item.addEventListener('click', (e) => {
         e.stopPropagation();

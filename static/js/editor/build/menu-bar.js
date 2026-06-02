@@ -101,6 +101,24 @@ const MENUS = [
     { sep: true },
     { label: 'Fullscreen', click: '#ge-fullscreen-btn', sc: 'F' },
   ] },
+  // Window — show / hide each app panel. Every item is a CHECKBOX whose
+  // marker reflects the panel's LIVE visibility; wire-window-menu.js owns the
+  // toggle + checkmark-refresh logic and reads the data-relay-panel key. Only
+  // panels that ACTUALLY exist in this build are listed (verified by selector).
+  { title: 'Window', items: [
+    { label: 'Color', panel: 'color', sc: 'F6' },
+    { label: 'OK Color Picker', panel: 'ok' },
+    { label: 'Swatches', panel: 'swatches' },
+    { label: 'Layers', panel: 'layers', sc: 'F7' },
+    { label: 'Brush Settings', panel: 'brush', sc: 'F5' },
+    { label: 'History', panel: 'history' },
+    { label: 'Histogram', panel: 'histogram' },
+    { label: 'Actions', panel: 'actions' },
+    { label: 'Timeline', panel: 'timeline' },
+    { sep: true },
+    { label: 'Toolbar', panel: 'toolbar' },
+    { label: 'Options', panel: 'options' },
+  ] },
 ];
 
 const STYLE = `
@@ -114,6 +132,11 @@ const STYLE = `
 .ge-menu-item:hover{background:rgba(120,150,255,0.25);}
 .ge-menu-item .ge-menu-sc{opacity:0.45;font-size:11px;}
 .ge-menu-sep{height:1px;background:rgba(255,255,255,0.1);margin:4px 2px;}
+/* Window-menu checkbox items: a fixed-width leading marker column so the
+   labels align whether or not the panel is currently shown. The marker glyph
+   is injected by wire-window-menu.js when the panel is visible. */
+.ge-menu-item[data-relay-panel]{padding-left:6px;}
+.ge-menu-item .ge-menu-check{display:inline-block;width:14px;flex:0 0 14px;text-align:center;opacity:0.95;}
 `;
 
 function relayAttr(it) {
@@ -122,6 +145,7 @@ function relayAttr(it) {
   if (it.filter) return `data-relay-filter="${it.filter}"`;
   if (it.tool) return `data-relay-tool="${it.tool}"`;
   if (it.key) return `data-relay-key="${it.key}"`;
+  if (it.panel) return `data-relay-panel="${it.panel}"`;
   return '';
 }
 
@@ -134,7 +158,7 @@ export function buildMenuBar() {
       <div class="ge-menu-drop" hidden>
         ${m.items.map((it) => it.sep
           ? '<div class="ge-menu-sep"></div>'
-          : `<button type="button" class="ge-menu-item" ${relayAttr(it)}><span>${it.label}</span>${it.sc ? `<span class="ge-menu-sc">${it.sc}</span>` : ''}</button>`
+          : `<button type="button" class="ge-menu-item" ${relayAttr(it)} role="${it.panel ? 'menuitemcheckbox' : 'menuitem'}" aria-checked="false"><span>${it.panel ? '<span class="ge-menu-check" aria-hidden="true"></span>' : ''}${it.label}</span>${it.sc ? `<span class="ge-menu-sc">${it.sc}</span>` : ''}</button>`
         ).join('')}
       </div>
     </div>

@@ -65,6 +65,7 @@ import { buildOptionsBar as _buildOptionsBar } from './editor/build/options-bar.
 import { createOptionsBar } from './editor/wire-options-bar.js';
 import { buildMenuBar as _buildMenuBar } from './editor/build/menu-bar.js';
 import { wireMenuBar } from './editor/wire-menu-bar.js';
+import { wireWindowMenu } from './editor/wire-window-menu.js';
 import { wireSwatches } from './editor/wire-swatches.js';
 import { wireOkPicker } from './editor/ok-picker.js';
 import { wireHsvPane } from './editor/hsv-pane.js';
@@ -4373,6 +4374,10 @@ function _buildEditor(container) {
   wireReference();
   // Histogram panel (read-only, live tonal feedback).
   wireHistogram({ activeLayer });
+  // Window menu (show/hide panels) — wired last so every panel it lists
+  // (toolbar, options bar, right-panel sections, layers dock, and the
+  // floating History/Actions/Timeline panels) already exists in the DOM.
+  wireWindowMenu(menuBar);
   // Hide brush controls initially (default tool is Move)
   const initBrushCtrl = document.getElementById('ge-brush-controls');
   if (initBrushCtrl) initBrushCtrl.style.display = 'none';
