@@ -19,7 +19,8 @@ export const TOOL_KEYS = {
   crop: 'C',
   brush: 'B',
   eraser: 'E',
-  clone: 'S',      // clone-stamp
+  clone: 'K',      // clone-stamp — moved off S (a deliberate liberty vs PS) so the
+                   // far-higher-use Smudge tool can own S; K is free + mnemonic.
   lasso: 'L',
   wand: 'W',       // magic wand
   quickselect: '', // quick-selection drag-flood (shares W in PS — left unbound)
@@ -39,7 +40,8 @@ export const TOOL_KEYS = {
   liquify: '', // forward-warp deform — bound to Ctrl+Shift+X in keyboard-shortcuts.js (no single key)
   distort: '', // free 4-corner warp (part of free transform — no single key)
   pcrop: '',   // perspective crop (de-skew a quad — no standard single key)
-  smudge: '',  // smear / finger-paint (grouped with blur/sharpen — no single key)
+  smudge: 'S', // smear / finger-paint — very high use, so it owns S (PS puts S on
+               // the clone-stamp; we take the liberty since smudge is used far more).
   mixer: '',   // mixer brush (wet-paint blending; shares B in PS — left unbound)
   dodgeburn: 'O', // dodge / burn / sponge (standard tonal-brush key)
   heal: 'J',      // spot healing brush (PS healing-tool key)

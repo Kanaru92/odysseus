@@ -32,6 +32,8 @@ const MENUS = [
     { label: 'Fill (Content-Aware)', click: '#ge-content-fill' },
     { sep: true },
     { label: 'History…', click: '#ge-history-btn' },
+    { sep: true },
+    { label: 'Connect Drawing Tablet (Ink-off pressure)…', click: '#ge-pen-hid-trigger' },
   ] },
   { title: 'Image', items: [
     { label: 'Image size… (resample)', click: '#ge-image-size-trigger' },

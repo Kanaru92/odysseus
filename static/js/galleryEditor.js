@@ -105,6 +105,7 @@ import { downloadImage, EXPORT_FORMATS } from './editor/export-image.js';
 import { createAnimation } from './editor/anim/animation.js';
 import { createTimeline } from './editor/anim/timeline.js';
 import { exportAnimation, downloadAnim, ANIM_FORMATS } from './editor/anim/export-anim.js';
+import { createPenHid } from './editor/pen-hid.js';
 import { createWandTool } from './editor/tools/wand.js';
 import { createCloneTool } from './editor/tools/clone.js';
 import { createTransformDragTool } from './editor/tools/transform-drag.js';
@@ -184,6 +185,8 @@ let _activePromptClose = null;
 // container/createLayer/composite), referenced module-scope so composite() can
 // draw the onion-skin overlay.
 let _anim = null, _timeline = null;
+// WebHID pen-pressure bridge (Windows-Ink-off pressure) — assigned in openEditor.
+let _penHid = null;
 
 if (!window.__galleryEditEscHardGuardInstalled) {
   window.__galleryEditEscHardGuardInstalled = true;
@@ -4016,6 +4019,7 @@ function _buildEditor(container) {
     ['ge-anim-toggle', () => { if (_anim) _anim.toggle(); }],
     ['ge-checker-trigger', () => _promptCheckerboard()],
     ['ge-export-anim-trigger', () => _promptExportAnim()],
+    ['ge-pen-hid-trigger', () => { if (_penHid) _penHid.connect(); }],
   ]) {
     const b = document.createElement('button');
     b.id = id; b.hidden = true; b.addEventListener('click', fn);
@@ -4215,6 +4219,9 @@ function _buildEditor(container) {
     onChange: () => { if (_timeline) _timeline.render(); },
   });
   _timeline = createTimeline(_anim, container);
+  // WebHID tablet bridge — real stylus pressure with Windows Ink off. Connect is
+  // user-gesture-gated (Edit ▸ Connect Drawing Tablet → #ge-pen-hid-trigger).
+  _penHid = createPenHid({ onStatus: (s) => { try { uiModule.showToast(s); } catch {} } });
   // ── Command registry: one path for undo + scripting + Actions ──
   initCommands({ saveState: _saveState, composite });
   registerCommand('fill', { label: 'Fill', run: (a) => { const l = activeLayer(); if (!l) return; l.ctx.save(); l.ctx.fillStyle = (a && a.color) || state.color; l.ctx.fillRect(0, 0, l.canvas.width, l.canvas.height); l.ctx.restore(); } });
