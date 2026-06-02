@@ -678,27 +678,31 @@ export function controlsHTML({ color, brushSize, wandTolerance }) {
  * @returns {string}
  */
 export function layerPanelHTML() {
+  // Single uniform action bar acting on the ACTIVE layer, on its own row UNDER
+  // the title (PS layers-panel footer parity). One consistent icon size (24px
+  // button / 14px glyph); wraps to a second line rather than clipping at 280px.
+  // IDs are preserved where existing wiring depends on them
+  // (ge-add-layer / ge-layer-mask / ge-layer-fx / ge-group-layer / ge-del-layer /
+  // ge-merge-down / ge-merge-all / ge-flatten); duplicate/clip/lock-alpha get
+  // new IDs wired in layer-panel.js (wireHeaderProps) onto the active layer.
+  const ICON = (id, title, danger, svg) =>
+    `<button type="button" class="ge-action-btn${danger ? ' danger' : ''}" id="${id}" title="${title}" aria-label="${title}">${svg}</button>`;
   return `<div class="ge-layers-header">
       <span class="ge-layers-grab"></span>
       <span class="ge-layers-title">Layers</span>
-      <button class="ge-btn ge-btn-sm ge-icon-btn" id="ge-merge-down" title="Merge down" aria-label="Merge down">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="6 13 12 19 18 13"/></svg>
-      </button>
-      <button class="ge-btn ge-btn-sm ge-icon-btn" id="ge-merge-all" title="Merge all" aria-label="Merge all">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v6M9 6l3-3 3 3M3 14h18M12 14v7M9 18l3 3 3-3"/></svg>
-      </button>
-      <button class="ge-btn ge-btn-sm ge-icon-btn" id="ge-flatten" title="Flatten copy (keeps originals)" aria-label="Flatten copy">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 L4 6 L4 18 L12 22 L20 18 L20 6 Z"/><path d="M12 2 L12 22"/><path d="M4 6 L20 6"/><path d="M4 18 L20 18"/></svg>
-      </button>
-      <button class="ge-btn ge-btn-sm ge-icon-btn" id="ge-layer-mask" title="Add / edit layer mask (paint to reveal, erase to hide)" aria-label="Layer mask">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="12" cy="12" r="4" fill="currentColor" stroke="none"/></svg>
-      </button>
-      <button class="ge-btn ge-btn-sm ge-icon-btn" id="ge-layer-fx" title="Blending Options — layer effects (stroke / drop shadow / glow / overlay)" aria-label="Layer effects">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/></svg>
-      </button>
-      <button class="ge-btn ge-btn-sm ge-icon-btn" id="ge-add-layer" title="New layer (Ctrl+Alt+J)" aria-label="New layer"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg></button>
-      <button class="ge-btn ge-btn-sm ge-icon-btn" id="ge-group-layer" title="Group into folder (Ctrl+G)" aria-label="Group layer"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></button>
-      <button class="ge-btn ge-btn-sm ge-icon-btn danger" id="ge-del-layer" title="Delete layer" aria-label="Delete layer"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg></button>
+    </div>
+    <div class="ge-layers-actions-row" role="toolbar" aria-label="Layer actions" title="Actions on the active layer">
+      ${ICON('ge-add-layer', 'New layer (Ctrl+Alt+J)', false, '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>')}
+      ${ICON('ge-dup-layer', 'Duplicate layer', false, '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>')}
+      ${ICON('ge-group-layer', 'Group into folder (Ctrl+G)', false, '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>')}
+      ${ICON('ge-layer-mask', 'Add / edit layer mask (paint to reveal, erase to hide)', false, '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="12" cy="12" r="4" fill="currentColor" stroke="none"/></svg>')}
+      ${ICON('ge-layer-fx', 'Blending Options — layer effects (stroke / drop shadow / glow / overlay)', false, '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/></svg>')}
+      ${ICON('ge-clip-layer', 'Clip to layer below (Ctrl+Alt+G)', false, '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4v11a3 3 0 0 0 3 3h7"/><path d="M4 7h11a3 3 0 0 1 3 3v7"/></svg>')}
+      ${ICON('ge-lockalpha-layer', 'Lock transparency — paint existing pixels only (/)', false, '<svg width="14" height="14" viewBox="0 0 12 12"><rect x="0.5" y="0.5" width="11" height="11" rx="1" fill="none" stroke="currentColor"/><rect x="1" y="1" width="5" height="5" fill="currentColor"/><rect x="6" y="6" width="5" height="5" fill="currentColor"/></svg>')}
+      ${ICON('ge-merge-down', 'Merge down', false, '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="6 13 12 19 18 13"/></svg>')}
+      ${ICON('ge-merge-all', 'Merge all', false, '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v6M9 6l3-3 3 3M3 14h18M12 14v7M9 18l3 3 3-3"/></svg>')}
+      ${ICON('ge-flatten', 'Flatten copy (keeps originals)', false, '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 L4 6 L4 18 L12 22 L20 18 L20 6 Z"/><path d="M12 2 L12 22"/><path d="M4 6 L20 6"/><path d="M4 18 L20 18"/></svg>')}
+      ${ICON('ge-del-layer', 'Delete layer', true, '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>')}
     </div>
     <div class="ge-layers-props" title="Blend mode + opacity of the active layer">
       <select id="ge-active-blend" class="ge-active-blend" title="Blend mode"></select>

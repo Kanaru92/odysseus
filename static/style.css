@@ -24461,9 +24461,6 @@ input.settings-select::placeholder { color: color-mix(in srgb, var(--fg) 35%, tr
   top: 4px;
   left: 1px;
 }
-/* + Add sits 1 px below the title baseline to match the surrounding
-   header buttons after the recent header restructure. */
-.ge-layers-header #ge-add-layer { position: relative; top: 1px; }
 /* Layer-row buttons in the right panel — the unicode glyphs (◉, ⤢) have
    irregular baseline metrics so the box reads as too low; shift up 2 px. */
 .ge-layer-vis,
@@ -24867,6 +24864,44 @@ button .spinner-whirlpool {
 }
 .ge-layers-title { flex: 1; }
 .ge-layers-grab { display: none; } /* mobile only */
+/* ── Single active-layer action bar — its own full-width row UNDER the title.
+   One uniform icon-button size (24px box / 14px glyph); wraps to a second line
+   rather than clipping so all 11 actions fit the 280px panel. ── */
+.ge-layers-actions-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 2px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+  box-sizing: border-box;
+  width: 100%;
+}
+.ge-action-btn {
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--fg);
+  opacity: 0.62;
+  cursor: pointer;
+  transition: opacity 0.1s, background 0.1s, color 0.1s;
+}
+.ge-action-btn svg { width: 14px; height: 14px; display: block; }
+.ge-action-btn:hover { opacity: 1; background: color-mix(in srgb, var(--fg) 10%, transparent); }
+.ge-action-btn.active {
+  opacity: 1;
+  color: var(--red);
+  background: color-mix(in srgb, var(--red) 14%, transparent);
+}
+.ge-action-btn.danger:hover { color: var(--red); background: color-mix(in srgb, var(--red) 12%, transparent); }
 /* Active-layer blend + opacity (PS-style, in the header). */
 .ge-layers-props {
   display: flex;
@@ -25269,28 +25304,15 @@ button .spinner-whirlpool {
 .ge-layer-opacity.dragging::-moz-range-thumb {
   transition: width 0.12s ease 0s, height 0.12s ease 0s;
 }
+/* Parent-row action controls were removed (now in the panel-header action bar).
+   `.ge-layer-controls` survives only on adjustment / mask SUB-rows, where it
+   stays a simple inline flex cluster (eye + name + sub-actions), always visible
+   — no absolute-positioning / hover-reveal. */
 .ge-layer-controls {
   display: flex;
   gap: 2px;
   flex-shrink: 0;
 }
-/* PS-style declutter: per-row action buttons stay hidden so the row reads as
-   eye + thumbnail + full name; they slide in (over the row's right edge) on
-   hover or when the layer is active. Keeps every existing per-row handler. */
-.ge-layer-item > .ge-layer-controls {
-  position: absolute;
-  right: 6px;
-  top: 50%;
-  transform: translateY(-50%);
-  display: none;
-  background: var(--panel);
-  padding-left: 8px;
-  box-shadow: -10px 0 10px -5px var(--panel);
-  z-index: 2;
-}
-.ge-layer-item:hover > .ge-layer-controls,
-.ge-layer-item.active > .ge-layer-controls,
-.ge-layer-item.active-parent > .ge-layer-controls { display: flex; }
 .ge-layer-item .ge-layer-name { flex: 1; }
 /* Left-edge drag handle on each layer row. */
 .ge-layer-drag {
@@ -25634,11 +25656,12 @@ button .spinner-whirlpool {
     max-height: calc(var(--peek-height, 110px) - 52px);
     -webkit-overflow-scrolling: touch;
   }
-  /* Mobile layer-row buttons — bump hit targets up so fingers can
-     reliably tap visibility / fx / delete. */
+  /* Mobile layer buttons — bump hit targets up so fingers can reliably tap
+     visibility / sub-row actions / the active-layer action bar. */
   .ge-layer-vis,
   .ge-layer-btn,
-  .ge-layer-fx-btn {
+  .ge-layer-fx-btn,
+  .ge-action-btn {
     width: 40px !important;
     height: 40px !important;
     font-size: 18px !important;
@@ -25647,10 +25670,13 @@ button .spinner-whirlpool {
     justify-content: center;
   }
   .ge-layer-btn svg,
-  .ge-layer-fx-btn svg {
+  .ge-layer-fx-btn svg,
+  .ge-action-btn svg {
     width: 18px;
     height: 18px;
   }
+  /* Action bar wraps comfortably and centers on the wider mobile sheet. */
+  .ge-layers-actions-row { justify-content: center; gap: 2px; }
   /* Layer opacity slider stays at its expanded size at all times on
      mobile — there's room for it and the resize-on-hover felt jittery
      when scrolling. */

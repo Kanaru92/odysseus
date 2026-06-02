@@ -36,14 +36,12 @@
  */
 import { state } from './state.js';
 import {
-  layerHasAdjustments,
   isLayerEmpty,
   isMaskCanvasEmpty,
   adjLayerLabel,
   ADJ_ICONS,
 } from './layer-helpers.js';
 import { applyAdjustment } from './fx/pixel-pass.js';
-import { mergeLayerDownAtIndex } from './wire-merge-buttons.js';
 import { BLEND_MODES } from './blend-modes.js';
 
 const EYE_OPEN = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
@@ -169,6 +167,90 @@ export function createLayerPanelRenderer(deps) {
       composite();
       render();
     });
+
+    // Duplicate — clones pixels + offset + opacity + visibility + masks +
+    // adjLayers (+ smart-object source) of the ACTIVE layer; inserts the copy
+    // above the original and makes it active. Ported from the old per-row
+    // button so behaviour is identical.
+    const dupBtn = document.getElementById('ge-dup-layer');
+    dupBtn?.addEventListener('click', () => {
+      const layer = _activeLayerOrGroup();
+      if (!layer) { uiModule?.showToast?.('Select a layer first'); return; }
+      if (layer.isGroup) { uiModule?.showToast?.('Can’t duplicate a group'); return; }
+      saveState(`Duplicate "${layer.name}"`);
+      const copy = createLayer(layer.name + ' copy', layer.canvas.width, layer.canvas.height);
+      copy.ctx.drawImage(layer.canvas, 0, 0);
+      copy.opacity = layer.opacity;
+      copy.visible = layer.visible;
+      const srcOff = state.layerOffsets.get(layer.id) || { x: 0, y: 0 };
+      state.layerOffsets.set(copy.id, { x: srcOff.x, y: srcOff.y });
+      if (Array.isArray(layer.masks) && layer.masks.length) {
+        copy.masks = layer.masks.map((m) => {
+          const c = document.createElement('canvas');
+          c.width = m.canvas.width; c.height = m.canvas.height;
+          c.getContext('2d').drawImage(m.canvas, 0, 0);
+          return {
+            id: 'mask-' + (state.nextLayerId++),
+            name: m.name,
+            canvas: c,
+            ctx: c.getContext('2d'),
+            visible: m.visible !== false,
+          };
+        });
+      }
+      if (Array.isArray(layer.adjLayers) && layer.adjLayers.length) {
+        copy.adjLayers = layer.adjLayers.map((a) => ({
+          id: 'adj-' + Math.random().toString(36).slice(2, 9),
+          type: a.type,
+          name: a.name,
+          visible: a.visible !== false,
+          opacity: a.opacity != null ? a.opacity : 1,
+          params: JSON.parse(JSON.stringify(a.params || {})),
+        }));
+      }
+      if (layer.isSmart && layer.sourceCanvas) {
+        const sc = document.createElement('canvas');
+        sc.width = layer.sourceCanvas.width; sc.height = layer.sourceCanvas.height;
+        sc.getContext('2d').drawImage(layer.sourceCanvas, 0, 0);
+        copy.isSmart = true;
+        copy.sourceCanvas = sc;
+        copy.sourceW = sc.width; copy.sourceH = sc.height;
+        copy.smartXf = layer.smartXf ? { ...layer.smartXf } : null;
+        copy.linked = layer.linked ? { ...layer.linked } : null;
+      }
+      const idx = state.layers.findIndex((l) => l.id === layer.id);
+      if (idx >= 0) state.layers.splice(idx + 1, 0, copy);
+      else state.layers.push(copy);
+      state.activeLayerId = copy.id;
+      composite();
+      render();
+      uiModule?.showToast?.('Layer duplicated');
+    });
+
+    // Clip to layer below — clipping mask (Ctrl+Alt+G). Toggles on the ACTIVE
+    // layer; the bottom layer has nothing to clip to.
+    const clipBtn = document.getElementById('ge-clip-layer');
+    clipBtn?.addEventListener('click', () => {
+      const layer = _activeLayerOrGroup();
+      if (!layer || layer.isGroup) { uiModule?.showToast?.('Select a layer first'); return; }
+      const idx = state.layers.findIndex((l) => l.id === layer.id);
+      if (idx <= 0) { uiModule?.showToast?.('No layer below to clip to'); return; }
+      saveState(layer.clipped ? `Release clip "${layer.name}"` : `Clip "${layer.name}" to below`);
+      layer.clipped = !layer.clipped;
+      composite();
+      render();
+    });
+
+    // Lock transparency — paint recolours existing pixels only, never spilling
+    // into transparent areas ("/"). Toggles on the ACTIVE layer.
+    const lockAlphaBtn = document.getElementById('ge-lockalpha-layer');
+    lockAlphaBtn?.addEventListener('click', () => {
+      const layer = _activeLayerOrGroup();
+      if (!layer || layer.isGroup) { uiModule?.showToast?.('Select a layer first'); return; }
+      layer.lockAlpha = !layer.lockAlpha;
+      render();
+      uiModule?.showToast?.(layer.lockAlpha ? 'Transparency locked' : 'Transparency unlocked');
+    });
   }
   function syncHeaderProps() {
     wireHeaderProps();
@@ -184,6 +266,11 @@ export function createLayerPanelRenderer(deps) {
     const pct = l ? Math.round((l.opacity == null ? 1 : l.opacity) * 100) : 100;
     if (op) { op.value = String(pct); op.disabled = !l; }
     if (v) v.textContent = pct + '%';
+    // Reflect toggle state of clip / lock-alpha on the action-row buttons.
+    const clipBtn = document.getElementById('ge-clip-layer');
+    if (clipBtn) clipBtn.classList.toggle('active', !!(l && !isGroup && l.clipped));
+    const lockBtn = document.getElementById('ge-lockalpha-layer');
+    if (lockBtn) lockBtn.classList.toggle('active', !!(l && !isGroup && l.lockAlpha));
   }
 
   function render() {
@@ -413,247 +500,17 @@ export function createLayerPanelRenderer(deps) {
         input.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') save(); });
       });
 
-      // Blend mode + opacity moved to the panel HEADER (PS layout) — they act
-      // on the active layer there (syncHeaderProps), freeing ~160px so the row
-      // shows thumbnail + name without truncation.
-
-      const controls = document.createElement('div');
-      controls.className = 'ge-layer-controls';
-
-      // FX (adjustments) — opens a floating popup bound to this layer.
-      const fxBtn = document.createElement('button');
-      fxBtn.className = 'ge-layer-btn ge-layer-fx-btn' + (layerHasAdjustments(layer) ? ' active' : '');
-      fxBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18Z" fill="currentColor"/></svg>';
-      fxBtn.title = 'Adjust layer (Brightness, Contrast, Saturation, Hue, Levels, Color Balance)';
-      fxBtn.style.touchAction = 'manipulation';
-      let lastFxPointerOpenAt = 0;
-      let fxOpenTimer = null;
-      const openLayerFx = (e, delay = 0) => {
-        e.preventDefault?.();
-        e.stopPropagation();
-        window.__geSuppressLayerTapUntil = 0;
-        if (fxOpenTimer) clearTimeout(fxOpenTimer);
-        fxOpenTimer = setTimeout(() => {
-          fxOpenTimer = null;
-          openFxPopup(layer, fxBtn);
-        }, delay);
-      };
-      fxBtn.addEventListener('pointerdown', (e) => {
-        e.stopPropagation();
-      });
-      fxBtn.addEventListener('pointerup', (e) => {
-        lastFxPointerOpenAt = Date.now();
-        const delay = e.pointerType === 'touch' || e.pointerType === 'pen' ? 120 : 0;
-        openLayerFx(e, delay);
-      });
-      fxBtn.addEventListener('click', (e) => {
-        if (Date.now() - lastFxPointerOpenAt < 500) {
-          e.preventDefault();
-          e.stopPropagation();
-          return;
-        }
-        openLayerFx(e);
-      });
-      controls.appendChild(fxBtn);
-
-      // Duplicate — clones pixels + offset + opacity + masks + adjLayers
-      // + visibility; inserts above the original; new copy becomes
-      // active.
-      const dupBtn = document.createElement('button');
-      dupBtn.className = 'ge-layer-btn';
-      dupBtn.title = 'Duplicate layer';
-      dupBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
-      dupBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        saveState(`Duplicate "${layer.name}"`);
-        const copy = createLayer(layer.name + ' copy', layer.canvas.width, layer.canvas.height);
-        copy.ctx.drawImage(layer.canvas, 0, 0);
-        copy.opacity = layer.opacity;
-        copy.visible = layer.visible;
-        const srcOff = state.layerOffsets.get(layer.id) || { x: 0, y: 0 };
-        state.layerOffsets.set(copy.id, { x: srcOff.x, y: srcOff.y });
-        if (Array.isArray(layer.masks) && layer.masks.length) {
-          copy.masks = layer.masks.map(m => {
-            const c = document.createElement('canvas');
-            c.width = m.canvas.width; c.height = m.canvas.height;
-            c.getContext('2d').drawImage(m.canvas, 0, 0);
-            return {
-              id: 'mask-' + (state.nextLayerId++),
-              name: m.name,
-              canvas: c,
-              ctx: c.getContext('2d'),
-              visible: m.visible !== false,
-            };
-          });
-        }
-        if (Array.isArray(layer.adjLayers) && layer.adjLayers.length) {
-          copy.adjLayers = layer.adjLayers.map(a => ({
-            id: 'adj-' + Math.random().toString(36).slice(2, 9),
-            type: a.type,
-            name: a.name,
-            visible: a.visible !== false,
-            opacity: a.opacity != null ? a.opacity : 1,
-            params: JSON.parse(JSON.stringify(a.params || {})),
-          }));
-        }
-        // Smart Object: carry the pristine source + applied transform so a
-        // duplicate stays smart (otherwise it silently downgrades to a raster).
-        if (layer.isSmart && layer.sourceCanvas) {
-          const sc = document.createElement('canvas');
-          sc.width = layer.sourceCanvas.width; sc.height = layer.sourceCanvas.height;
-          sc.getContext('2d').drawImage(layer.sourceCanvas, 0, 0);
-          copy.isSmart = true;
-          copy.sourceCanvas = sc;
-          copy.sourceW = sc.width; copy.sourceH = sc.height;
-          copy.smartXf = layer.smartXf ? { ...layer.smartXf } : null;
-          copy.linked = layer.linked ? { ...layer.linked } : null;
-        }
-        const idx = state.layers.findIndex(l => l.id === layer.id);
-        if (idx >= 0) state.layers.splice(idx + 1, 0, copy);
-        else state.layers.push(copy);
-        state.activeLayerId = copy.id;
-        composite();
-        render();
-        if (uiModule) uiModule.showToast('Layer duplicated');
-      });
-      controls.appendChild(dupBtn);
-
-      // Clip to layer below — clipping mask (PS Ctrl+Alt+G). The layer renders
-      // only where the layer beneath it has pixels. Disabled for the bottom layer.
-      const clipBtn = document.createElement('button');
-      clipBtn.className = 'ge-layer-btn' + (layer.clipped ? ' active' : '');
-      clipBtn.title = 'Clip to layer below (Ctrl+Alt+G)';
-      clipBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4v11a3 3 0 0 0 3 3h7"/><path d="M4 7h11a3 3 0 0 1 3 3v7"/></svg>';
-      clipBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const idx = state.layers.findIndex((l) => l.id === layer.id);
-        if (idx <= 0) { if (uiModule) uiModule.showToast('No layer below to clip to'); return; }
-        saveState(layer.clipped ? `Release clip "${layer.name}"` : `Clip "${layer.name}" to below`);
-        layer.clipped = !layer.clipped;
-        composite();
-        render();
-      });
-      controls.appendChild(clipBtn);
-
-      // Lock transparency — paint recolours/shades existing pixels only, never
-      // spilling into transparent areas (PS "Lock transparent pixels" / "/").
-      const lockAlphaBtn = document.createElement('button');
-      lockAlphaBtn.className = 'ge-layer-btn' + (layer.lockAlpha ? ' active' : '');
-      lockAlphaBtn.title = 'Lock transparency — paint existing pixels only (/)';
-      lockAlphaBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 12 12"><rect x="0.5" y="0.5" width="11" height="11" rx="1" fill="none" stroke="currentColor"/><rect x="1" y="1" width="5" height="5" fill="currentColor"/><rect x="6" y="6" width="5" height="5" fill="currentColor"/></svg>';
-      lockAlphaBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        layer.lockAlpha = !layer.lockAlpha;
-        render();
-      });
-      controls.appendChild(lockAlphaBtn);
-
-      // Add-mask — if a lasso/wand selection is active, bake it into a
-      // mask sub-layer on this layer; otherwise create an empty mask
-      // for the user to paint with the Brush tool.
-      const hasLassoSelInitial = state.lassoPoints.length >= 3 && !state.lassoActive;
-      const hasWandSelInitial = !!state.wandMask;
-      const maskBtn = document.createElement('button');
-      maskBtn.className = 'ge-layer-btn ge-layer-mask-btn' +
-        ((hasLassoSelInitial || hasWandSelInitial) ? ' from-selection' : '');
-      maskBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 12c4 0 4-4 8-4s4 4 8 4-4 4-8 4-4-4-8-4z" fill="currentColor"/></svg>';
-      maskBtn.title = (hasLassoSelInitial || hasWandSelInitial)
-        ? 'Make mask from current selection'
-        : 'Add empty mask (paint with Brush)';
-      maskBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        // Activate this layer first so the new mask attaches here.
-        state.activeLayerId = layer.id;
-        // Re-check selection state AT CLICK TIME — captured vars may
-        // be stale if a selection was drawn after the panel paint.
-        const hasLassoSel = state.lassoPoints.length >= 3 && !state.lassoActive;
-        const hasWandSel = !!state.wandMask;
-        if (hasLassoSel) {
-          saveState(`Mask from lasso on "${layer.name}"`);
-          // Force a fresh mask sub-layer for this conversion so each
-          // selection becomes its own mask instead of merging into the
-          // previously active one.
-          layer.activeMaskId = null;
-          lassoToMask();
-        } else if (hasWandSel) {
-          saveState(`Mask from wand on "${layer.name}"`);
-          layer.activeMaskId = null;
-          wandToMask();
-        } else {
-          saveState(`Add mask to "${layer.name}"`);
-          const c = document.createElement('canvas');
-          c.width = state.imgWidth;
-          c.height = state.imgHeight;
-          if (!layer.masks) layer.masks = [];
-          const mask = {
-            id: 'mask-' + (state.nextLayerId++),
-            name: 'Mask ' + (layer.masks.length + 1),
-            canvas: c,
-            ctx: c.getContext('2d'),
-            visible: true,
-          };
-          layer.masks.push(mask);
-          layer.activeMaskId = mask.id;
-          state.maskCanvas = mask.canvas;
-          state.maskCtx = mask.ctx;
-          composite();
-          render();
-        }
-      });
-      controls.appendChild(maskBtn);
-
-      // Per-row Merge Down — bakes this layer into the one beneath.
-      // Hidden on the bottom layer in the visual stack (idx 0 forward).
-      if (i > 0) {
-        const mergeDownBtn = document.createElement('button');
-        mergeDownBtn.className = 'ge-layer-btn';
-        mergeDownBtn.title = 'Merge down into layer below';
-        mergeDownBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="6 13 12 19 18 13"/></svg>';
-        mergeDownBtn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          saveState(`Merge "${layer.name}" down`);
-          mergeLayerDownAtIndex(i);
-          composite();
-          render();
-          uiModule.showToast('Layer merged down');
-        });
-        controls.appendChild(mergeDownBtn);
-      }
-
-      // Delete — shown for every layer except when this is the last
-      // remaining one. Base photo is deletable too; Ctrl+Z brings it
-      // back from history. Extra confirm for the base layer.
-      if (state.layers.length > 1) {
-        const delBtn = document.createElement('button');
-        delBtn.className = 'ge-layer-btn danger';
-        delBtn.textContent = '×';
-        delBtn.title = layer.isBase ? 'Delete original layer (Ctrl+Z to undo)' : 'Delete layer';
-        delBtn.addEventListener('click', async (e) => {
-          e.stopPropagation();
-          if (layer.isBase && uiModule?.styledConfirm) {
-            const ok = await uiModule.styledConfirm(
-              'Delete the original photo layer? Ctrl+Z brings it back.',
-              { confirmText: 'Delete', cancelText: 'Cancel', danger: true }
-            );
-            if (!ok) return;
-          }
-          // Snapshot BEFORE removing so Ctrl+Z can bring it back.
-          saveState(`Delete layer "${layer.name}"`);
-          state.layers.splice(i, 1);
-          state.layerOffsets.delete(layer.id);
-          if (state.activeLayerId === layer.id) {
-            state.activeLayerId = state.layers[Math.min(i, state.layers.length - 1)].id;
-          }
-          composite();
-          render();
-        });
-        controls.appendChild(delBtn);
-      }
+      // Per-row actions removed — the active-layer action bar in the panel
+      // header (controls.js `.ge-layers-actions-row`, wired in wireHeaderProps)
+      // now owns add / duplicate / group / mask / fx / clip / lock-alpha /
+      // merge-down / merge-all / flatten / delete. The parent row is just
+      // drag-handle + eye + thumbnail + name so it reads cleanly and never
+      // overflows the 280px panel. (Adjustment + mask SUB-rows keep their own
+      // controls below — those manage individual sub-layers, not the parent.)
 
       item.appendChild(visBtn);
       item.appendChild(layerThumb(layer));
       item.appendChild(nameEl);
-      item.appendChild(controls);
 
       item.addEventListener('click', () => {
         if (shouldIgnoreLayerTap()) return;
