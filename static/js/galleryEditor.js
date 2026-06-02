@@ -1668,13 +1668,14 @@ const _refreshHistoryPanelIfOpen = _historyPanel.refreshHistoryPanelIfOpen;
 
 function _beginDraw(e) {
   // Right mouse button: Alt+right-drag = on-canvas brush HUD (horizontal = size,
-  // vertical = hardness); a plain right-press never paints. Left / touch fall
+  // vertical = opacity); a plain right-press never paints. Left / touch fall
   // through to normal drawing.
   if (e.button === 2) {
     if (e.altKey && (state.tool === 'brush' || state.tool === 'eraser')) {
       e.preventDefault();
+      const opField = state.tool === 'eraser' ? 'eraserOpacity' : 'brushOpacity';
       state.brushHudActive = true;
-      state.brushHudStart = { x: e.clientX, y: e.clientY, size: state.brushSize, soft: state.brushSoftness };
+      state.brushHudStart = { x: e.clientX, y: e.clientY, size: state.brushSize, opacity: state[opField], opField };
     }
     return;
   }
@@ -1943,6 +1944,29 @@ function _updateBrushCursor(e) {
     state.cursorEl.style.background = 'transparent';
     state.cursorEl.style.borderStyle = 'solid';
   }
+}
+
+// Live readout shown while Alt+right-dragging the brush HUD: diameter + opacity.
+// Appended inside the editor container so it renders in element-fullscreen.
+function _showBrushHudReadout(e, size, opacity) {
+  if (!state.brushHudReadoutEl || !state.brushHudReadoutEl.isConnected) {
+    const el = document.createElement('div');
+    el.className = 'ge-brush-hud-readout';
+    el.style.cssText = 'position:fixed;z-index:10010;pointer-events:none;padding:3px 7px;border-radius:4px;' +
+      'font:600 11px/1.2 system-ui,sans-serif;color:#fff;background:rgba(0,0,0,0.78);white-space:nowrap;';
+    (state.container || document.body).appendChild(el);
+    state.brushHudReadoutEl = el;
+  }
+  const el = state.brushHudReadoutEl;
+  el.textContent = '⌀ ' + size + ' px  ·  ' + opacity + '%';
+  const cx = e.touches ? e.touches[0].clientX : e.clientX;
+  const cy = e.touches ? e.touches[0].clientY : e.clientY;
+  el.style.left = (cx + 18) + 'px';
+  el.style.top = (cy + 18) + 'px';
+  el.style.display = '';
+}
+function _hideBrushHudReadout() {
+  if (state.brushHudReadoutEl) state.brushHudReadoutEl.style.display = 'none';
 }
 
 // ── Move tool ──
@@ -4380,17 +4404,25 @@ function _buildEditor(container) {
   _wireBrushSlider(controls.querySelector('.ge-size-slider'));
   _wireBrushSlider(document.getElementById('ge-inpaint-brush-slider'));
 
-  // On-canvas brush HUD — Alt+right-drag adjusts Size (horizontal) and Hardness
-  // (vertical) live, so the artist never leaves the canvas. Started in _beginDraw.
+  // On-canvas brush HUD — Alt+right-drag adjusts Size (horizontal) and Opacity
+  // (vertical; drag UP = more opaque) live with a readout, so the artist never
+  // leaves the canvas. Started in _beginDraw.
   window.addEventListener('mousemove', (e) => {
     if (!state.brushHudActive || !state.brushHudStart) return;
     const s = state.brushHudStart;
     state.brushSize = Math.max(1, Math.min(800, Math.round(s.size + (e.clientX - s.x))));
-    state.brushSoftness = Math.max(0, Math.min(300, Math.round(s.soft + (e.clientY - s.y))));
+    // Vertical → opacity 0-100; up (negative dy) increases. ~200px = full range.
+    const opField = s.opField || 'brushOpacity';
+    const newOp = Math.max(0, Math.min(100, Math.round(s.opacity - (e.clientY - s.y) * 0.5)));
+    state[opField] = newOp;
+    const opTool = opField === 'eraserOpacity' ? 'eraser' : 'brush';
+    const opEl = document.getElementById('ge-' + opTool + '-opacity');
+    if (opEl) { opEl.value = String(newOp); opEl.dispatchEvent(new Event('input', { bubbles: true })); }
     _brushSizeSync(null);
     try { _updateBrushCursor(e); } catch {}
+    _showBrushHudReadout(e, state.brushSize, newOp);
   });
-  window.addEventListener('mouseup', () => { state.brushHudActive = false; });
+  window.addEventListener('mouseup', () => { state.brushHudActive = false; _hideBrushHudReadout(); });
   // Right-click on the canvas with Brush/Eraser → the brush quick-pick popup
   // (Size / Hardness / preset grid, PS parity). Otherwise: suppress the browser
   // menu only while Alt+right-dragging the size HUD; any other right-click falls
