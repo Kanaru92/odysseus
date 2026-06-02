@@ -291,6 +291,18 @@ export function wireCanvasEvents({ canvasArea, beginDraw, continueDraw, endDraw:
     e.preventDefault();
     e.stopPropagation(); // don't let beginDraw fire
   }, true);
+  // Middle-mouse drag pans too (industry-standard navigation) — reuses the same
+  // spacePanning offset path. Capture-phase so it pre-empts beginDraw on the canvas.
+  state.mainCanvas.addEventListener('mousedown', (e) => {
+    if (e.button !== 1) return; // middle button only
+    const off = getOffset();
+    spacePanning = true;
+    spStartX = e.clientX - off.x;
+    spStartY = e.clientY - off.y;
+    canvasArea.style.cursor = 'grabbing';
+    e.preventDefault();
+    e.stopPropagation(); // don't let beginDraw fire
+  }, true);
   on(window, 'mousemove', (e) => { if (spacePanning) applyOffset(e.clientX - spStartX, e.clientY - spStartY); });
   on(window, 'mouseup', () => { if (spacePanning) { spacePanning = false; canvasArea.style.cursor = state.spaceDown ? 'grab' : ''; } });
   on(document, 'keydown', (e) => {
