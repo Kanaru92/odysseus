@@ -26,15 +26,21 @@ export function wireMenuBar(bar) {
   const dispatchKey = (combo) => {
     const parts = combo.toLowerCase().split('+');
     const k = parts[parts.length - 1];
-    document.dispatchEvent(new KeyboardEvent('keydown', {
+    // `code` is physical-key based and only meaningful for letters/digits.
+    // Several downstream handlers match on e.code (e.g. 'KeyI') so Alt/Shift-
+    // modified key values don't break them, so emit it for a–z; for non-letter
+    // keys (e.g. "'", ";") a "Key<x>" code is invalid, so omit code and let the
+    // handler match on e.key instead.
+    const init = {
       bubbles: true,
       key: k,
-      code: 'Key' + k.toUpperCase(),
       ctrlKey: parts.includes('ctrl'),
       shiftKey: parts.includes('shift'),
       altKey: parts.includes('alt'),
       metaKey: false,
-    }));
+    };
+    if (/^[a-z]$/.test(k)) init.code = 'Key' + k.toUpperCase();
+    document.dispatchEvent(new KeyboardEvent('keydown', init));
   };
 
   const runItem = (item) => {
@@ -68,7 +74,26 @@ export function wireMenuBar(bar) {
     });
   });
 
-  // Click-away + Esc close.
-  document.addEventListener('pointerdown', (e) => { if (!bar.contains(e.target)) closeAll(); }, true);
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && anyOpen()) closeAll(); }, true);
+  // Click-away + Esc close. These are document-level capture listeners, so they
+  // must be torn down when this menu bar is removed from the DOM — wireMenuBar
+  // runs on every editor (re)open with a fresh `bar`, and untracked document
+  // listeners otherwise accumulate one set per reopen (each pinning the stale
+  // `bar`). Self-remove via a MutationObserver tied to the bar's lifecycle.
+  const onDocDown = (e) => { if (!bar.contains(e.target)) closeAll(); };
+  const onDocKey = (e) => { if (e.key === 'Escape' && anyOpen()) closeAll(); };
+  document.addEventListener('pointerdown', onDocDown, true);
+  document.addEventListener('keydown', onDocKey, true);
+
+  const teardown = () => {
+    document.removeEventListener('pointerdown', onDocDown, true);
+    document.removeEventListener('keydown', onDocKey, true);
+  };
+  // Watch for `bar` (or an ancestor) being detached; when it is, remove the
+  // document listeners and stop observing.
+  if (typeof MutationObserver !== 'undefined') {
+    const observer = new MutationObserver(() => {
+      if (!bar.isConnected) { teardown(); observer.disconnect(); }
+    });
+    observer.observe(document, { childList: true, subtree: true });
+  }
 }

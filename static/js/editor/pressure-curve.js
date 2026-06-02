@@ -30,6 +30,11 @@ export function mountPressureCurve() {
     Math.max(0, Math.min(1, (px - PAD) / W)),
     Math.max(0, Math.min(1, 1 - (py - PAD) / W)),
   ];
+  // A newly added point clamped exactly to x=0 or x=1 would be treated as an
+  // endpoint: x-locked while dragging and undeletable. Keep added points strictly
+  // interior so they stay movable/removable.
+  const EPS = 1e-4;
+  const interiorX = (x) => Math.max(EPS, Math.min(1 - EPS, x));
 
   function draw() {
     ctx.clearRect(0, 0, SIZE, SIZE);
@@ -41,8 +46,9 @@ export function mountPressureCurve() {
       ctx.beginPath(); ctx.moveTo(g, PAD); ctx.lineTo(g, PAD + W); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(PAD, g); ctx.lineTo(PAD + W, g); ctx.stroke();
     }
-    // curve (sampled through the same LUT shape — straight segments between pts)
-    const sorted = pts.slice().sort((a, b) => a[0] - b[0]);
+    // curve (sampled through the same LUT shape — straight segments between pts).
+    // pts is kept sorted by commit() before every draw(), so no re-sort here.
+    const sorted = pts;
     ctx.strokeStyle = '#e06c75';
     ctx.lineWidth = 2;
     ctx.beginPath();
@@ -63,7 +69,10 @@ export function mountPressureCurve() {
     draw();
   }
 
-  let dragIdx = -1;
+  // Track the point being dragged by object reference, not by index: commit()
+  // sorts pts in place, so an interior point dragged past a neighbor's x would
+  // reorder the array and a numeric index would silently jump to a different point.
+  let dragPt = null;
   const localXY = (e) => {
     const r = cv.getBoundingClientRect();
     return [(e.clientX - r.left) * (SIZE / r.width), (e.clientY - r.top) * (SIZE / r.height)];
@@ -76,24 +85,28 @@ export function mountPressureCurve() {
 
   cv.addEventListener('pointerdown', (e) => {
     const [px, py] = localXY(e);
-    let i = nearest(px, py);
-    if (i < 0) { // add a new point
-      const n = toNorm(px, py);
-      pts.push(n); commit();
-      i = pts.findIndex((p) => p[0] === n[0] && p[1] === n[1]);
+    const i = nearest(px, py);
+    if (i >= 0) {
+      dragPt = pts[i];
+    } else { // add a new point (kept strictly interior so it stays movable/removable)
+      const [nx, ny] = toNorm(px, py);
+      dragPt = [interiorX(nx), ny];
+      pts.push(dragPt); commit();
     }
-    dragIdx = i;
     cv.setPointerCapture(e.pointerId);
   });
   cv.addEventListener('pointermove', (e) => {
-    if (dragIdx < 0) return;
+    if (!dragPt) return;
     const [px, py] = localXY(e);
     const [nx, ny] = toNorm(px, py);
-    const isEnd = pts[dragIdx][0] === 0 || pts[dragIdx][0] === 1;
-    pts[dragIdx] = [isEnd ? pts[dragIdx][0] : nx, ny]; // endpoints keep their x
+    const isEnd = dragPt[0] === 0 || dragPt[0] === 1;
+    // Mutate the tracked point in place so its identity survives commit()'s sort;
+    // endpoints keep their x.
+    if (!isEnd) dragPt[0] = nx;
+    dragPt[1] = ny;
     commit();
   });
-  const endDrag = () => { dragIdx = -1; };
+  const endDrag = () => { dragPt = null; };
   cv.addEventListener('pointerup', endDrag);
   cv.addEventListener('pointercancel', endDrag);
   cv.addEventListener('dblclick', (e) => {

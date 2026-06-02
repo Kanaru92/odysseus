@@ -24,12 +24,22 @@ export function wirePasteboard(area, state) {
 
   const apply = (c) => { area.style.background = c; if (state) state.pasteboardColor = c; };
   const save = (c) => { try { localStorage.setItem(KEY, c); } catch {} };
+  // Coalesce the rapid 'input' events fired while dragging the colour picker
+  // so localStorage is written once the value settles, not on every tick.
+  let saveTimer = null;
+  const saveDebounced = (c) => { clearTimeout(saveTimer); saveTimer = setTimeout(() => save(c), 200); };
 
   let saved = null;
   try { saved = localStorage.getItem(KEY); } catch {}
   apply(saved || (state && state.pasteboardColor) || '#232323');
 
-  const close = () => { if (menu) { menu.remove(); menu = null; } };
+  const away = (ev) => { if (menu && !menu.contains(ev.target)) close(); };
+  const esc = (ev) => { if (ev.key === 'Escape') close(); };
+  const close = () => {
+    if (menu) { menu.remove(); menu = null; }
+    document.removeEventListener('pointerdown', away, true);
+    document.removeEventListener('keydown', esc, true);
+  };
 
   area.addEventListener('contextmenu', (e) => {
     e.preventDefault();
@@ -65,14 +75,12 @@ export function wirePasteboard(area, state) {
     inp.type = 'color'; inp.className = 'ge-pasteboard-custom';
     inp.value = (state && /^#[0-9a-f]{6}$/i.test(state.pasteboardColor || '')) ? state.pasteboardColor : '#232323';
     inp.style.cssText = 'position:absolute;width:0;height:0;opacity:0;pointer-events:none;';
-    inp.addEventListener('input', () => { apply(inp.value); save(inp.value); });
+    inp.addEventListener('input', () => { apply(inp.value); saveDebounced(inp.value); });
     cust.appendChild(inp);
     cust.addEventListener('click', (ev) => { if (ev.target !== inp) inp.click(); });
     menu.appendChild(cust);
 
     document.body.appendChild(menu);
-    const away = (ev) => { if (menu && !menu.contains(ev.target)) { close(); document.removeEventListener('pointerdown', away, true); } };
-    const esc = (ev) => { if (ev.key === 'Escape') { close(); document.removeEventListener('keydown', esc, true); } };
     setTimeout(() => { document.addEventListener('pointerdown', away, true); document.addEventListener('keydown', esc, true); }, 0);
   });
 }

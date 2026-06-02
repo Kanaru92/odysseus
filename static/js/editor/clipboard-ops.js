@@ -80,16 +80,26 @@ function _renderVisibleTo(ctx, canvas) {
     if (isCustomBlend(mode)) {
       // Per-pixel custom blend against the current (opaque-ish) backdrop. Read
       // the backdrop, blend the layer's pixels in at its offset, write back.
+      // Bound all work to the layer's destination rect (its doc-space bbox
+      // intersected with the document) instead of the whole document, so a
+      // large canvas with several custom-blend layers doesn't pay a full-frame
+      // sync readback per layer.
       try {
         const W = canvas.width, H = canvas.height;
-        const back = ctx.getImageData(0, 0, W, H);
-        // Realise the source layer at document position so indices line up.
+        const rx = Math.max(0, Math.floor(off.x));
+        const ry = Math.max(0, Math.floor(off.y));
+        const rRight = Math.min(W, Math.ceil(off.x + layer.canvas.width));
+        const rBottom = Math.min(H, Math.ceil(off.y + layer.canvas.height));
+        const rw = rRight - rx, rh = rBottom - ry;
+        if (rw <= 0 || rh <= 0) continue; // layer fully offscreen
+        const back = ctx.getImageData(rx, ry, rw, rh);
+        // Realise the source layer at rect-local position so indices line up.
         const tmp = document.createElement('canvas');
-        tmp.width = W; tmp.height = H;
-        tmp.getContext('2d').drawImage(layer.canvas, off.x, off.y);
-        const src = tmp.getContext('2d').getImageData(0, 0, W, H);
+        tmp.width = rw; tmp.height = rh;
+        tmp.getContext('2d').drawImage(layer.canvas, off.x - rx, off.y - ry);
+        const src = tmp.getContext('2d').getImageData(0, 0, rw, rh);
         blendInto(mode, back.data, src.data, opacity);
-        ctx.putImageData(back, 0, 0);
+        ctx.putImageData(back, rx, ry);
         continue;
       } catch {
         fellBack = true; // fall through to native source-over below
@@ -297,7 +307,14 @@ function _pasteSourceAt(source, srcW, srcH, docX, docY, deps) {
  * document position it was copied from. Falls back to the system clipboard
  * (pasted at 0,0) when the module clipboard is empty.
  *
+ * Always returns a Promise that resolves to the REAL outcome (true on a
+ * successful paste, false on empty/error). The module-clipboard path resolves
+ * synchronously-true; the system-clipboard fallback is async, so the promise
+ * only settles once the image has actually decoded + been placed (or failed).
+ * Callers that gate UI/toasts/undo on the result should await it.
+ *
  * @param {object} deps  needs { composite, saveState, renderLayerPanel, uiModule }
+ * @returns {Promise<boolean>}
  */
 export function pasteInPlace(deps = {}) {
   const { uiModule } = deps;
@@ -305,34 +322,39 @@ export function pasteInPlace(deps = {}) {
   if (_clipboard && _clipboard.canvas) {
     _pasteSourceAt(_clipboard.canvas, _clipboard.canvas.width, _clipboard.canvas.height,
       _clipboard.x, _clipboard.y, deps);
-    return true;
+    return Promise.resolve(true);
   }
 
   // Fall back to the system clipboard — best-effort, async. Paste at 0,0.
-  try {
-    if (navigator.clipboard && navigator.clipboard.read) {
-      navigator.clipboard.read().then(async (items) => {
-        for (const item of items) {
-          const type = (item.types || []).find((t) => t.startsWith('image/'));
-          if (!type) continue;
-          const blob = await item.getType(type);
-          const url = URL.createObjectURL(blob);
-          const img = new Image();
-          img.onload = () => {
-            try { _pasteSourceAt(img, img.width, img.height, 0, 0, deps); }
-            finally { URL.revokeObjectURL(url); }
-          };
-          img.onerror = () => URL.revokeObjectURL(url);
-          img.src = url;
-          return;
-        }
+  // Resolve with the real result so the async success isn't reported as false.
+  return new Promise((resolve) => {
+    try {
+      if (navigator.clipboard && navigator.clipboard.read) {
+        navigator.clipboard.read().then(async (items) => {
+          for (const item of items) {
+            const type = (item.types || []).find((t) => t.startsWith('image/'));
+            if (!type) continue;
+            const blob = await item.getType(type);
+            const url = URL.createObjectURL(blob);
+            const img = new Image();
+            img.onload = () => {
+              try { _pasteSourceAt(img, img.width, img.height, 0, 0, deps); resolve(true); }
+              finally { URL.revokeObjectURL(url); }
+            };
+            img.onerror = () => { URL.revokeObjectURL(url); resolve(false); };
+            img.src = url;
+            return;
+          }
+          _toast(uiModule, 'Clipboard is empty');
+          resolve(false);
+        }).catch(() => { _toast(uiModule, 'Clipboard is empty'); resolve(false); });
+      } else {
         _toast(uiModule, 'Clipboard is empty');
-      }).catch(() => _toast(uiModule, 'Clipboard is empty'));
-    } else {
+        resolve(false);
+      }
+    } catch {
       _toast(uiModule, 'Clipboard is empty');
+      resolve(false);
     }
-  } catch {
-    _toast(uiModule, 'Clipboard is empty');
-  }
-  return false;
+  });
 }

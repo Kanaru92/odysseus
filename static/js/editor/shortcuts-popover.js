@@ -6,9 +6,9 @@
  * localStorage so re-opening restores where the user left it.
  *
  * Public API: `toggleShortcuts(show?)` — true/false to force a state,
- * undefined to toggle.
+ * undefined to toggle; `isOpen()` — whether the popover is visible.
  *
- * @returns {{ toggleShortcuts: (show?: boolean) => void }}
+ * @returns {{ toggleShortcuts: (show?: boolean) => void, isOpen: () => boolean }}
  */
 import { shortcutsPopupHTML } from './build/popups.js';
 
@@ -101,6 +101,10 @@ export function createShortcutsPopover() {
   function toggleShortcuts(show) {
     const el = ensurePopover();
     const open = show === undefined ? el.style.display === 'none' : show;
+    // No-op if already in the requested state: re-running the open branch
+    // would register a second mousedown-capture listener (the close branch
+    // only removes the latest `outside`), leaking the previous one forever.
+    if (open === isOpen()) return;
     if (open) {
       // Restore the user's last-dragged position if any; otherwise
       // anchor above the button.

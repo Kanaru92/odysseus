@@ -49,13 +49,25 @@ export function wireSwatches() {
     }
     return b;
   };
+  function renderRecent() {
+    recentGrid.innerHTML = '';
+    recent.forEach((h) => recentGrid.appendChild(cell(h, false)));
+    if (recentWrap) recentWrap.style.display = recent.length ? '' : 'none';
+  }
   function render() {
     grid.innerHTML = '';
     DEFAULT_PALETTE.forEach((h) => grid.appendChild(cell(h, false)));
     saved.forEach((e) => grid.appendChild(cell(e, true)));
-    recentGrid.innerHTML = '';
-    recent.forEach((h) => recentGrid.appendChild(cell(h, false)));
-    if (recentWrap) recentWrap.style.display = recent.length ? '' : 'none';
+    renderRecent();
+  }
+  // Accept #rgb shorthand and #rrggbbaa (alpha dropped — the colour input is
+  // opaque #rrggbb); normalise everything to #rrggbb. Returns '' if invalid.
+  function normalizeHex(raw) {
+    const m = /^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/.exec(raw);
+    if (!m) return '';
+    const d = m[1];
+    if (d.length === 3) return '#' + d[0] + d[0] + d[1] + d[1] + d[2] + d[2];
+    return '#' + d.slice(0, 6);
   }
   function persist() { try { localStorage.setItem(LS_KEY, JSON.stringify(saved)); } catch {} }
   function load() {
@@ -77,8 +89,9 @@ export function wireSwatches() {
     const blob = new Blob([JSON.stringify({ type: 'ge-swatches', v: 1, swatches: saved }, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = 'palette.json'; a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    a.href = url; a.download = 'palette.json';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => { try { URL.revokeObjectURL(url); } catch {} }, 2000);
   });
   importBtn?.addEventListener('click', () => {
     const inp = document.createElement('input');
@@ -90,8 +103,9 @@ export function wireSwatches() {
         const data = JSON.parse(await f.text());
         const arr = Array.isArray(data) ? data : (data && Array.isArray(data.swatches) ? data.swatches : []);
         for (const x of arr) {
-          const hex = (typeof x === 'string' ? x : (x && x.hex) || '').toLowerCase();
-          if (!/^#[0-9a-f]{6}$/.test(hex)) continue;
+          const raw = (typeof x === 'string' ? x : (x && x.hex) || '').toLowerCase();
+          const hex = normalizeHex(raw);
+          if (!hex) continue;
           if (!saved.some((c) => c.hex === hex)) saved.push({ hex, name: (x && x.name) ? x.name : hex });
         }
         persist(); render();
@@ -104,11 +118,12 @@ export function wireSwatches() {
   fg.addEventListener('input', () => {
     const hex = (fg.value || '').toLowerCase();
     if (!hex) return;
+    if (recent[0] === hex) return; // already most-recent, no reorder needed
     const i = recent.indexOf(hex);
     if (i >= 0) recent.splice(i, 1);
     recent.unshift(hex);
     if (recent.length > 14) recent.pop();
-    render();
+    renderRecent();
   });
 
   render();

@@ -46,9 +46,17 @@ export function encodeGIF(frames, opts = {}) {
 
   // ---- collect representative opaque samples for quantization ---------------
   // Sample (cap total samples) so a 60-frame few-hundred-px doc stays fast.
+  // Base the stride on the OPAQUE population (which is what we actually sample),
+  // not the total pixel count — otherwise a large but mostly-transparent doc
+  // gets a huge stride over a tiny opaque set and barely samples any colours.
   const MAX_SAMPLES = 24000;
-  const totalOpaqueEstimate = framePixels.length * W * H;
-  const sampleStride = Math.max(1, Math.floor(totalOpaqueEstimate / MAX_SAMPLES));
+  let opaqueCount = 0;
+  for (const data of framePixels) {
+    for (let i = 3; i < data.length; i += 4) {
+      if (data[i] >= ALPHA_CUTOFF) opaqueCount++;
+    }
+  }
+  const sampleStride = Math.max(1, Math.floor(opaqueCount / MAX_SAMPLES));
   const samples = []; // flat [r,g,b, r,g,b, ...]
   {
     let counter = 0;

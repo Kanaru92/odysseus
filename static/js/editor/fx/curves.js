@@ -17,7 +17,8 @@ const clamp255 = (v) => (v < 0 ? 0 : v > 255 ? 255 : v);
 export function buildCurveLUT(points) {
   const lut = new Uint8ClampedArray(256);
   const pts = (points || [])
-    .filter((p) => Array.isArray(p) && p.length === 2)
+    .filter((p) => Array.isArray(p) && p.length === 2
+      && Number.isFinite(p[0]) && Number.isFinite(p[1]))
     .slice()
     .sort((a, b) => a[0] - b[0]);
   if (pts.length < 2) { for (let v = 0; v < 256; v++) lut[v] = v; return lut; }
@@ -96,8 +97,19 @@ export function curvesIsIdentity(params) {
   for (const ch of ['rgb', 'r', 'g', 'b']) {
     const pts = params[ch];
     if (!pts) continue;
-    if (pts.length !== 2) return false;
-    if (pts[0][0] !== 0 || pts[0][1] !== 0 || pts[1][0] !== 255 || pts[1][1] !== 255) return false;
+    if (!Array.isArray(pts) || pts.length < 2) return false;
+    // Identity = every control point lies on the input===output diagonal AND
+    // the curve spans the full range (first input 0, last input 255). This
+    // also matches collinear identities expressed with extra midpoints, e.g.
+    // [[0,0],[128,128],[255,255]], which the strict 2-point check missed.
+    let prevX = -Infinity;
+    for (let i = 0; i < pts.length; i++) {
+      const pt = pts[i];
+      if (!Array.isArray(pt) || pt.length !== 2 || pt[0] !== pt[1]) return false;
+      if (pt[0] < prevX) return false; // points must be ascending by input
+      prevX = pt[0];
+    }
+    if (pts[0][0] !== 0 || pts[pts.length - 1][0] !== 255) return false;
   }
   return true;
 }

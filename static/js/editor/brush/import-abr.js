@@ -12,7 +12,7 @@ export function unpackBits(src, expected) {
   while (o < expected && i < src.length) {
     let n = src[i++];
     if (n < 128) { n += 1; for (let k = 0; k < n && o < expected && i < src.length; k++) out[o++] = src[i++]; }
-    else if (n > 128) { n = 257 - n; const v = src[i++]; for (let k = 0; k < n && o < expected; k++) out[o++] = v; }
+    else if (n > 128) { if (i >= src.length) break; n = 257 - n; const v = src[i++]; for (let k = 0; k < n && o < expected; k++) out[o++] = v; }
     // n === 128 → no-op
   }
   return out;
@@ -117,7 +117,7 @@ function parseV6(dv) {
       let pos = dataStart;
       while (pos + 4 <= end) {
         const brushLen = u32(pos);
-        if (brushLen <= 0 || pos + 4 + brushLen > end + 4) break;
+        if (brushLen <= 0 || pos + 4 + brushLen > end) break;
         const recEnd = pos + 4 + brushLen;
         const rectOff = pos + 4 + 301; // fixed v6 header
         if (rectOff + 19 <= recEnd) {
@@ -128,7 +128,7 @@ function parseV6(dv) {
             const pix = new Uint8Array(width * height);
             const ds = rectOff + 19;
             if (comp === 0) {
-              for (let i = 0; i < width * height && ds + i < recEnd; i++) pix[i] = dv.getUint8(ds + i);
+              for (let i = 0; i < width * height && ds + i < recEnd && ds + i < len; i++) pix[i] = dv.getUint8(ds + i);
             } else {
               const rowLens = [];
               for (let y = 0; y < height; y++) rowLens.push(u16(ds + y * 2));

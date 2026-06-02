@@ -42,8 +42,9 @@ export function adjustmentsKey(adj) {
   const l = adj.levels || {};
   const cb = adj.colorBalance || {};
   const s = cb.shadows || {}, m = cb.midtones || {}, h = cb.highlights || {};
+  const g = (l.gamma == null ? 1 : l.gamma);
   return [
-    l.inBlack|0, l.inWhite|0, l.gamma || 1, l.outBlack|0, l.outWhite|0,
+    l.inBlack|0, l.inWhite|0, Math.round(g * 100), l.outBlack|0, l.outWhite|0,
     s.r|0, s.g|0, s.b|0, m.r|0, m.g|0, m.b|0, h.r|0, h.g|0, h.b|0,
   ].join('|');
 }
@@ -157,11 +158,12 @@ export function isMaskCanvasEmpty(canvas) {
     const sw = Math.min(200, w), sh = Math.min(200, h);
     const tmp = document.createElement('canvas');
     tmp.width = sw; tmp.height = sh;
-    tmp.getContext('2d').drawImage(canvas, 0, 0, sw, sh);
-    const d = tmp.getContext('2d').getImageData(0, 0, sw, sh).data;
+    const tctx = tmp.getContext('2d');
+    tctx.drawImage(canvas, 0, 0, sw, sh);
+    const d = tctx.getImageData(0, 0, sw, sh).data;
     for (let i = 3; i < d.length; i += 4) if (d[i] > 0) return false;
     return true;
-  } catch { return false; }
+  } catch { return true; }
 }
 
 

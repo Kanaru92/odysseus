@@ -249,10 +249,18 @@ export function createWebGLCompositor() {
 
   // Reused upload texture for each layer.
   let layerTex = null;
+  // Allocated dimensions of the reusable layer texture, so we can texSubImage2D
+  // (update in place) when the next layer matches and only reallocate storage
+  // via texImage2D when the size actually changes.
+  let layerTexW = 0;
+  let layerTexH = 0;
 
   // Allocated dimensions of the ping-pong textures.
   let allocW = 0;
   let allocH = 0;
+
+  // Cached MAX_TEXTURE_SIZE (queried lazily; 0 = unknown/unavailable).
+  let maxTexSize = 0;
 
   // Cached uniform locations for the blend program.
   let bu = null; // { uBackdrop, uLayer, uCompSize, uLayerOrigin, uLayerSize, uOpacity, uMode }
@@ -311,8 +319,16 @@ export function createWebGLCompositor() {
 
   function createColorTexture(w, h) {
     const tex = gl.createTexture();
+    if (!tex) return null;
     gl.bindTexture(gl.TEXTURE_2D, tex);
+    // Detect a real allocation failure (e.g. out of memory / size too large):
+    // clear pending errors, then check whether texStorage2D produced one.
+    while (gl.getError() !== gl.NO_ERROR) { /* drain stale errors */ }
     gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA8, w, h);
+    if (gl.getError() !== gl.NO_ERROR) {
+      gl.deleteTexture(tex);
+      return null;
+    }
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
@@ -324,7 +340,14 @@ export function createWebGLCompositor() {
   function initPrograms() {
     blendProgram = linkProgram(VERT_SRC, BLEND_FRAG_SRC);
     presentProgram = linkProgram(VERT_SRC, PRESENT_FRAG_SRC);
-    if (!blendProgram || !presentProgram) return false;
+    if (!blendProgram || !presentProgram) {
+      // Partial init: one program may have linked. Delete it so a successfully
+      // linked program isn't leaked when the other failed.
+      if (blendProgram) gl.deleteProgram(blendProgram);
+      if (presentProgram) gl.deleteProgram(presentProgram);
+      blendProgram = presentProgram = null;
+      return false;
+    }
 
     bu = {
       uBackdrop: gl.getUniformLocation(blendProgram, 'uBackdrop'),
@@ -361,7 +384,15 @@ export function createWebGLCompositor() {
     if (texB) gl.deleteTexture(texB);
     texA = createColorTexture(W, H);
     texB = createColorTexture(W, H);
-    if (!texA || !texB) return false;
+    if (!texA || !texB) {
+      // Allocation failed (e.g. OOM); drop any partial texture so we don't leak
+      // it and don't leave a broken half-allocated state.
+      if (texA) gl.deleteTexture(texA);
+      if (texB) gl.deleteTexture(texB);
+      texA = texB = null;
+      allocW = allocH = 0;
+      return false;
+    }
     allocW = W;
     allocH = H;
     return true;
@@ -379,7 +410,9 @@ export function createWebGLCompositor() {
     texA = texB = null;
     fbo = null;
     layerTex = null;
+    layerTexW = layerTexH = 0;
     allocW = allocH = 0;
+    maxTexSize = 0;
     bu = pu = null;
   }
 
@@ -443,6 +476,12 @@ export function createWebGLCompositor() {
       const needW = Math.max(1, W | 0);
       const needH = Math.max(1, H | 0);
 
+      // A composite bigger than the GPU's MAX_TEXTURE_SIZE can't be allocated;
+      // bail to CPU cleanly instead of letting texStorage2D fail and rendering
+      // garbage. (Callers may also pre-check via maxTextureSize().)
+      const max = maxTextureSize();
+      if (max && (needW > max || needH > max)) return false;
+
       // EXACT-size the GL canvas so the present viewport == canvas == composite
       // (vUV 0..1 maps to the whole composite; no grow-only stale regions).
       if (canvas.width !== needW) canvas.width = needW;
@@ -461,11 +500,13 @@ export function createWebGLCompositor() {
 
   function maxTextureSize() {
     if (!gl || gl.isContextLost()) return 0;
+    if (maxTexSize > 0) return maxTexSize;
     try {
-      return gl.getParameter(gl.MAX_TEXTURE_SIZE) || 0;
+      maxTexSize = gl.getParameter(gl.MAX_TEXTURE_SIZE) || 0;
     } catch (_) {
-      return 0;
+      maxTexSize = 0;
     }
+    return maxTexSize;
   }
 
   // True if this blend mode string is GPU-supported.
@@ -489,6 +530,7 @@ export function createWebGLCompositor() {
     try {
       const compW = Math.max(1, W | 0);
       const compH = Math.max(1, H | 0);
+      const maxTex = maxTextureSize();
 
       gl.bindVertexArray(vao);
       gl.disable(gl.BLEND);     // all blending happens in-shader
@@ -528,6 +570,10 @@ export function createWebGLCompositor() {
         const lw = src.width | 0;
         const lh = src.height | 0;
         if (lw <= 0 || lh <= 0) continue;
+        // A layer larger than MAX_TEXTURE_SIZE can't be uploaded; skip it rather
+        // than let texImage2D fail. (The caller should bail the whole frame to
+        // CPU when this happens — see _glRenderTo — but guard here too.)
+        if (maxTex && (lw > maxTex || lh > maxTex)) continue;
 
         const mode = isSupported(layer.mode) ? MODE_INDEX[layer.mode]
                                              : MODE_INDEX['source-over'];
@@ -537,13 +583,23 @@ export function createWebGLCompositor() {
         const ox = (typeof layer.x === 'number') ? layer.x : 0;
         const oy = (typeof layer.y === 'number') ? layer.y : 0;
 
-        // Upload this layer into the reusable layer texture.
+        // Upload this layer into the reusable layer texture. Reallocate storage
+        // (texImage2D) only when the size changed; otherwise update in place
+        // (texSubImage2D) to avoid reallocating texture storage every layer.
         gl.activeTexture(gl.TEXTURE1);
         gl.bindTexture(gl.TEXTURE_2D, layerTex);
         try {
-          gl.texImage2D(
-            gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, src
-          );
+          if (lw === layerTexW && lh === layerTexH) {
+            gl.texSubImage2D(
+              gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, src
+            );
+          } else {
+            gl.texImage2D(
+              gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, src
+            );
+            layerTexW = lw;
+            layerTexH = lh;
+          }
         } catch (uploadErr) {
           // A bad / tainted source canvas: skip this layer rather than abort.
           console.warn('webgl-compositor: layer upload failed, skipping:', uploadErr);
@@ -596,11 +652,46 @@ export function createWebGLCompositor() {
     }
   }
 
+  // Release the GL context, GPU resources and the canvas event listeners added
+  // in createContext(). Idempotent. After this the compositor is permanently
+  // disabled (available()/composite() return false / null). Call when the owning
+  // component is torn down so the listeners + GPU memory don't outlive it.
+  function dispose() {
+    initFailed = true;
+    if (gl) {
+      try {
+        if (blendProgram) gl.deleteProgram(blendProgram);
+        if (presentProgram) gl.deleteProgram(presentProgram);
+        if (vao) gl.deleteVertexArray(vao);
+        if (texA) gl.deleteTexture(texA);
+        if (texB) gl.deleteTexture(texB);
+        if (layerTex) gl.deleteTexture(layerTex);
+        if (fbo) gl.deleteFramebuffer(fbo);
+      } catch (_) { /* context may already be lost; nothing to free */ }
+    }
+    if (canvas) {
+      canvas.removeEventListener('webglcontextlost', handleContextLost, false);
+      canvas.removeEventListener('webglcontextrestored', handleContextRestored, false);
+    }
+    blendProgram = presentProgram = null;
+    vao = null;
+    texA = texB = null;
+    layerTex = null;
+    layerTexW = layerTexH = 0;
+    fbo = null;
+    allocW = allocH = 0;
+    maxTexSize = 0;
+    bu = pu = null;
+    gl = null;
+    canvas = null;
+  }
+
   return {
     available,
     maxTextureSize,
     isSupported,
     composite,
     getCanvas,
+    dispose,
   };
 }

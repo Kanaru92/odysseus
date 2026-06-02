@@ -297,14 +297,21 @@ export function createLayerPanelRenderer(deps) {
     const r = menu.getBoundingClientRect();
     if (r.right > window.innerWidth) menu.style.left = (window.innerWidth - r.width - 6) + 'px';
     if (r.bottom > window.innerHeight) menu.style.top = (window.innerHeight - r.height - 6) + 'px';
+    let armTimer = 0;
     function close() {
+      if (armTimer) { clearTimeout(armTimer); armTimer = 0; }
       menu.remove();
       document.removeEventListener('mousedown', onDoc, true);
       document.removeEventListener('keydown', onKey, true);
     }
     function onDoc(e) { if (!menu.contains(e.target)) close(); }
     function onKey(e) { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); } }
-    setTimeout(() => {
+    // Defer arming so the right-click that opened the menu doesn't immediately
+    // dismiss it. Track the timer id so close() can cancel a still-pending arm
+    // — otherwise a menu closed/replaced before the timeout fires would leak
+    // capture-phase document listeners (a stuck Escape-swallowing keydown).
+    armTimer = setTimeout(() => {
+      armTimer = 0;
       document.addEventListener('mousedown', onDoc, true);
       document.addEventListener('keydown', onKey, true);
     }, 0);
@@ -752,6 +759,11 @@ export function createLayerPanelRenderer(deps) {
       // Hover thumbnail.
       item.addEventListener('mouseenter', () => showLayerThumb(item, layer));
       item.addEventListener('mouseleave', () => hideLayerThumb());
+      // Single click handler for the parent row. Branches are mutually
+      // exclusive (each returns) so e.g. shift+click loads the alpha
+      // selection WITHOUT a fall-through that re-activates the layer and
+      // wipes the just-loaded selection. (Previously two separate 'click'
+      // listeners both fired and clobbered each other.)
       item.addEventListener('click', (e) => {
         if (shouldIgnoreLayerTap()) {
           e.preventDefault();
@@ -764,15 +776,29 @@ export function createLayerPanelRenderer(deps) {
           loadLayerAlphaAsSelection(layer);
           return;
         }
+        // Ctrl/Cmd+click → toggle this layer in the multi-selection (for Ctrl+G
+        // grouping of several layers at once). Doesn't change the mask target.
+        if ((e.ctrlKey || e.metaKey) && !layer.isGroup) {
+          const sel = new Set((state.selectedLayerIds && state.selectedLayerIds.length)
+            ? state.selectedLayerIds : (state.activeLayerId ? [state.activeLayerId] : []));
+          if (sel.has(layer.id) && sel.size > 1) sel.delete(layer.id); else sel.add(layer.id);
+          state.selectedLayerIds = [...sel];
+          state.activeLayerId = layer.id;
+          render();
+          return;
+        }
         if (state.activeLayerId === layer.id) return;
         state.activeLayerId = layer.id;
-        // Toggle the active class inline (avoid full re-render so the
-        // dblclick listener on the name element stays alive between
-        // clicks — a re-render destroys the element after the first
-        // click and the second lands on a different node).
-        document.querySelectorAll('.ge-layers-list .ge-layer-item').forEach(el => {
-          el.classList.toggle('active', el.dataset.layerId === state.activeLayerId);
-        });
+        state.selectedLayerIds = [layer.id]; // plain click resets the multi-selection
+        // Clicking the PARENT row makes layer pixels the paint target
+        // (mask is no longer the target). Mask sub-rows stay in the
+        // panel; clicking one re-targets it.
+        layer.activeMaskId = null;
+        state.maskCanvas = null;
+        state.maskCtx = null;
+        state.layerMaskEdit = false; // don't leak mask-edit mode across layers
+        render();
+        composite();
       });
 
       // Drag handle — grip dots; dragSortModule.enable() below scopes
@@ -841,32 +867,6 @@ export function createLayerPanelRenderer(deps) {
       }
       item.appendChild(nameEl);
 
-      item.addEventListener('click', (e) => {
-        if (shouldIgnoreLayerTap()) return;
-        // Ctrl/Cmd+click → toggle this layer in the multi-selection (for Ctrl+G
-        // grouping of several layers at once). Doesn't change the mask target.
-        if ((e.ctrlKey || e.metaKey) && !layer.isGroup) {
-          const sel = new Set((state.selectedLayerIds && state.selectedLayerIds.length)
-            ? state.selectedLayerIds : (state.activeLayerId ? [state.activeLayerId] : []));
-          if (sel.has(layer.id) && sel.size > 1) sel.delete(layer.id); else sel.add(layer.id);
-          state.selectedLayerIds = [...sel];
-          state.activeLayerId = layer.id;
-          render();
-          return;
-        }
-        state.activeLayerId = layer.id;
-        state.selectedLayerIds = [layer.id]; // plain click resets the multi-selection
-        // Clicking the PARENT row makes layer pixels the paint target
-        // (mask is no longer the target). Mask sub-rows stay in the
-        // panel; clicking one re-targets it.
-        layer.activeMaskId = null;
-        state.maskCanvas = null;
-        state.maskCtx = null;
-        state.layerMaskEdit = false; // don't leak mask-edit mode across layers
-        render();
-        composite();
-      });
-
       list.appendChild(item);
       prevParentLayer = layer; // anchor the next row's clip hit-zone
 
@@ -893,7 +893,7 @@ export function createLayerPanelRenderer(deps) {
           const sOp = document.createElement('input');
           sOp.type = 'range';
           sOp.min = '0'; sOp.max = '100';
-          sOp.value = Math.round(adj.opacity * 100);
+          sOp.value = Math.round((adj.opacity == null ? 1 : adj.opacity) * 100);
           sOp.className = 'ge-layer-opacity';
           sOp.title = 'Adjustment opacity';
           sOp.addEventListener('input', () => {

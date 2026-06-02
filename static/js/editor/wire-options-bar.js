@@ -46,7 +46,7 @@ const PROXIES = {
     { label: 'Size', sel: '.ge-size-slider', kind: 'size' },
     { label: 'Opacity', id: 'ge-clone-opacity', suffix: '%' },
     { label: 'Flow', id: 'ge-clone-flow', suffix: '%' },
-    { label: 'Hardness', id: 'ge-clone-softness' },
+    { label: 'Hardness', id: 'ge-clone-softness', suffix: '%' },
   ],
   wand: [
     { label: 'Tolerance', id: 'ge-wand-tolerance' },
@@ -195,10 +195,37 @@ export function createOptionsBar() {
           o.value = val; o.textContent = name;
           sel.appendChild(o);
         }
-        sel.value = state.gradientType || 'linear';
-        // Keep state in sync (and seed it the first time the bar is built).
-        state.gradientType = sel.value;
-        sel.addEventListener('change', () => { state.gradientType = sel.value; });
+        // Seed state only when unset so a rebuild can't clobber a value the
+        // side-panel buttons (below) may have set. state.gradientType is the
+        // single source of truth read by tools/gradient.js.
+        state.gradientType ??= 'linear';
+        sel.value = state.gradientType;
+        // Reflect the matching side-panel Linear/Radial button as active so the
+        // two surfaces stay coherent (the panel only exposes those two types).
+        const syncPanelButtons = (v) => {
+          document.querySelectorAll('.ge-grad-type').forEach((b) => {
+            b.classList.toggle('active', b.dataset.gradType === v);
+          });
+        };
+        sel.addEventListener('change', () => {
+          state.gradientType = sel.value;
+          syncPanelButtons(sel.value);
+        });
+        // Side-panel Linear/Radial buttons must drive the same state (they only
+        // toggle .active on their own, which gradient.js ignores once state wins).
+        // Wire each canonical button once to write state + mirror into this select.
+        document.querySelectorAll('.ge-grad-type').forEach((cb) => {
+          if (mirrored.has(cb)) return;
+          mirrored.add(cb);
+          cb.addEventListener('click', () => {
+            const v = cb.dataset.gradType;
+            if (!v) return;
+            state.gradientType = v;
+            const liveSel = document.querySelector('.ge-grad-type-select');
+            if (liveSel) liveSel.value = v;
+          });
+        });
+        syncPanelButtons(sel.value);
         field.appendChild(lbl); field.appendChild(sel);
         host.appendChild(field);
         continue;
@@ -271,7 +298,9 @@ export function createOptionsBar() {
           seic.dataset.val = val;
           seic.textContent = cb.textContent.trim();
           seic.style.cssText = 'background:transparent;border:none;color:inherit;font:inherit;padding:2px 8px;cursor:pointer;';
-          seic.addEventListener('click', () => { cb.click(); sync(); });
+          // Clicking the canonical button (below) runs its `sync()` mirror, so
+          // the segment only needs to forward the click — no second sync() here.
+          seic.addEventListener('click', () => { cb.click(); });
           seg.appendChild(seic);
           if (!mirrored.has(cb)) { mirrored.add(cb); cb.addEventListener('click', () => { const b = document.querySelector('.ge-options-bar'); if (b) sync(); }); }
         });

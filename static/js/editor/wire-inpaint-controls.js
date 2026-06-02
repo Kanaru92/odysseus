@@ -72,7 +72,8 @@ export function wireInpaintControls({
   }
   document.getElementById('ge-feather-slider')?.addEventListener('input', (e) => {
     const v = parseInt(e.target.value, 10);
-    document.getElementById('ge-feather-label').textContent = v + 'px';
+    const fl = document.getElementById('ge-feather-label');
+    if (fl) fl.textContent = v + 'px';
     syncFeatherPreview(v);
     scheduleInpaintEdgeRefresh();
   });
@@ -90,7 +91,8 @@ export function wireInpaintControls({
     scheduleInpaintEdgeRefresh();
   });
   document.getElementById('ge-strength-slider')?.addEventListener('input', (e) => {
-    document.getElementById('ge-strength-label').textContent = (e.target.value / 100).toFixed(2);
+    const sl = document.getElementById('ge-strength-label');
+    if (sl) sl.textContent = (e.target.value / 100).toFixed(2);
     syncStrengthPreview(parseInt(e.target.value, 10));
   });
   syncFeatherPreview(0);
@@ -111,12 +113,10 @@ export function wireInpaintControls({
     const imgData = state.maskCtx.getImageData(0, 0, state.maskCanvas.width, state.maskCanvas.height);
     const d = imgData.data;
     for (let i = 0; i < d.length; i += 4) {
-      const alpha = d[i + 3];
-      if (alpha > 0) {
-        d[i] = 0; d[i+1] = 0; d[i+2] = 0; d[i+3] = 0;
-      } else {
-        d[i] = 255; d[i+1] = 255; d[i+2] = 255; d[i+3] = 255;
-      }
+      // Invert the mask alpha while preserving partial-alpha (soft /
+      // feathered / anti-aliased) edges instead of binarising them.
+      const inv = 255 - d[i + 3];
+      d[i] = 255; d[i+1] = 255; d[i+2] = 255; d[i+3] = inv;
     }
     state.maskCtx.putImageData(imgData, 0, 0);
     composite();

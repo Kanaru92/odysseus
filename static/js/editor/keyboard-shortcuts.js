@@ -159,7 +159,7 @@ export function wireKeyboardShortcuts(deps) {
         pasteInPlace({ composite, saveState, renderLayerPanel, uiModule });
         return;
       }
-      if (e.key === 'z') { e.preventDefault(); if (e.shiftKey) redo(); else undo(); }
+      if (e.code === 'KeyZ' || e.key === 'z' || e.key === 'Z') { e.preventDefault(); if (e.shiftKey) redo(); else undo(); }
       // Ctrl+D / Ctrl+Shift+D = Deselect (PS uses Ctrl+D): clears the wand
       // selection (and lasso if active) without affecting layers.
       if (!e.altKey && (e.key === 'D' || e.key === 'd')) {
@@ -257,6 +257,7 @@ export function wireKeyboardShortcuts(deps) {
           if (renderLayerPanel) renderLayerPanel();
           if (uiModule) uiModule.showToast(lyr.clipped ? 'Clipped to layer below' : 'Clip released');
         } else if (uiModule) { uiModule.showToast('No layer below to clip to'); }
+        return;
       }
       // Ctrl+G — group the active layer into a new folder. Ctrl+Shift+G —
       // ungroup (dissolve the folder, or remove the active layer from its
@@ -311,9 +312,9 @@ export function wireKeyboardShortcuts(deps) {
           wandDeleteSelection();
           return;
         }
-        if ((e.ctrlKey || e.metaKey) && (e.key === 'x' || e.key === 'c')) {
+        if ((e.ctrlKey || e.metaKey) && (e.code === 'KeyX' || e.code === 'KeyC' || e.key === 'x' || e.key === 'X' || e.key === 'c' || e.key === 'C')) {
           e.preventDefault();
-          const isCut = e.key === 'x';
+          const isCut = e.code === 'KeyX' || e.key === 'x' || e.key === 'X';
           const src = state.layers.find(l => l.id === state.wandLayerId);
           if (!src) return;
           // Clip source by wand mask into a temp canvas.
@@ -340,7 +341,7 @@ export function wireKeyboardShortcuts(deps) {
           return;
         }
       }
-      if ((e.key === 'x' || e.key === 'c') && state.lassoPoints.length >= 3) {
+      if ((e.code === 'KeyX' || e.code === 'KeyC' || e.key === 'x' || e.key === 'X' || e.key === 'c' || e.key === 'C') && state.lassoPoints.length >= 3) {
         e.preventDefault();
         const layer = activeLayer();
         if (!layer) return;
@@ -351,7 +352,10 @@ export function wireKeyboardShortcuts(deps) {
         const mask = buildLassoMask(w, h, off.x, off.y, feather, grow);
         const srcData = layer.ctx.getImageData(0, 0, w, h);
         const maskData = mask.getContext('2d').getImageData(0, 0, w, h);
-        // Build clipped image.
+        // Build clipped image. NOTE: buildLassoMask stores selection strength
+        // in the RED channel (alpha is pinned to 255 in its feather branch), so
+        // the per-pixel multiply below reads maskData R — a GPU
+        // destination-in (alpha-based) would silently drop the feather falloff.
         const tmp = document.createElement('canvas');
         tmp.width = w; tmp.height = h;
         const tCtx = tmp.getContext('2d');
@@ -367,7 +371,7 @@ export function wireKeyboardShortcuts(deps) {
         }
         tCtx.putImageData(outData, 0, 0);
         state.internalClipboard = tmp;
-        const isCut = e.key === 'x';
+        const isCut = e.code === 'KeyX' || e.key === 'x' || e.key === 'X';
         tmp.toBlob(blob => {
           if (blob && navigator.clipboard?.write) {
             navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]).then(() => {
@@ -375,9 +379,9 @@ export function wireKeyboardShortcuts(deps) {
             }).catch(() => uiModule.showToast(isCut ? 'Cut (editor only)' : 'Copied (editor only)'));
           }
         }, 'image/png');
-        if (e.key === 'x') {
-          const savedPts = [...state.lassoPoints];
-          state.lassoPoints = savedPts;
+        if (isCut) {
+          // Cut keeps the lasso points so lassoDeleteSelection() can erase the
+          // selected region; clearing happens inside that call.
           lassoDeleteSelection();
         } else {
           state.lassoPoints = [];
@@ -390,7 +394,7 @@ export function wireKeyboardShortcuts(deps) {
       // shortcut without having to lasso-select-all first. The
       // selection-aware Ctrl+C paths above run first (wand + lasso),
       // so this only fires when neither is active.
-      if (e.key === 'c' && !e.shiftKey && !state.wandMask && state.lassoPoints.length < 3) {
+      if ((e.code === 'KeyC' || e.key === 'c' || e.key === 'C') && !e.shiftKey && !state.wandMask && state.lassoPoints.length < 3) {
         const layer = activeLayer();
         if (layer && layer.canvas && layer.canvas.width > 0) {
           e.preventDefault();
