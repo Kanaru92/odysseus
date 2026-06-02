@@ -678,6 +678,10 @@ export function controlsHTML({ color, brushSize, wandTolerance }) {
       <canvas id="ge-histogram-canvas" width="256" height="80" style="display:block;width:100%;height:64px;border-radius:4px;background:rgba(0,0,0,0.25);margin-top:4px;"></canvas>
       <p style="font-size:10px;opacity:0.5;margin:4px 0 0;">Luminance distribution of the active layer (live).</p>
     </details>
+    <details class="ge-navigator-section" id="ge-navigator-section">
+      <summary class="ge-section-title" style="cursor:pointer;list-style:revert;">Navigator</summary>
+      <div id="ge-navigator-host" style="margin-top:4px;"></div>
+    </details>
     <details class="ge-reference-section" id="ge-reference-section">
       <summary class="ge-section-title" style="cursor:pointer;list-style:revert;">Reference image</summary>
       <div class="ge-control-row ge-actions" style="margin-top:4px;gap:4px;">

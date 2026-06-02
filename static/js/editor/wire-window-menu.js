@@ -76,6 +76,7 @@ const REGISTRY = {
   brush:     sectionPanel('#ge-brush-section'),
   history:   relayPanel('#ge-history-panel', '#ge-history-btn'),
   histogram: sectionPanel('#ge-histogram-section'),
+  navigator: sectionPanel('#ge-navigator-section'),
   actions:   relayPanel('#ge-actions-panel', '#ge-actions-toggle'),
   timeline:  relayPanel('.ge-timeline', '#ge-anim-toggle'),
   toolbar:   sectionPanel('.ge-toolbar'),

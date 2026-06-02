@@ -116,6 +116,7 @@ const MENUS = [
     { label: 'Brush Settings', panel: 'brush', sc: 'F5' },
     { label: 'History', panel: 'history' },
     { label: 'Histogram', panel: 'histogram' },
+    { label: 'Navigator', panel: 'navigator' },
     { label: 'Actions', panel: 'actions' },
     { label: 'Timeline', panel: 'timeline' },
     { sep: true },

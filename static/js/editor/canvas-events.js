@@ -355,6 +355,7 @@ export function wireCanvasEvents({ canvasArea, beginDraw, continueDraw, endDraw:
 
   // Reset offset whenever zoom/fit changes the canvas size.
   canvasArea._resetPan = () => applyOffset(0, 0);
+  canvasArea._applyOffset = (x, y) => applyOffset(x, y); // absolute set, for the Navigator mini-map
   // Re-apply the current pan + view rotation (called when viewRotation changes).
   canvasArea._reapplyView = () => { const o = getOffset(); applyOffset(o.x, o.y); };
 

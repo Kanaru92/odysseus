@@ -74,6 +74,7 @@ import { wireWindowMenu } from './editor/wire-window-menu.js';
 import { wireSwatches } from './editor/wire-swatches.js';
 import { wireOkPicker } from './editor/ok-picker.js';
 import { wireLabPicker } from './editor/lab-picker.js';
+import { createNavigator } from './editor/navigator-panel.js';
 import { wireHsvPane } from './editor/hsv-pane.js';
 import { mountPressureCurve } from './editor/pressure-curve.js';
 import { mountBrushPreview } from './editor/brush-preview.js';
@@ -5052,6 +5053,25 @@ function _buildEditor(container) {
   // OK Color Picker (OKhsl perceptual H/S/L) + Color-panel tabs.
   wireOkPicker();
   wireLabPicker();
+  // Navigator mini-map (docked section). Pans the canvas by setting the same
+  // offset the canvas-events pan path uses; refreshes (rAF-coalesced) each composite.
+  const _navigator = createNavigator({
+    rootEl: document.getElementById('ge-navigator-host'),
+    state,
+    getComposite: () => state.mainCanvas,
+    onPan: (dx, dy) => {
+      const area = state.container && state.container.querySelector('.ge-canvas-area');
+      if (!area || !area._applyOffset) return;
+      const cx = parseFloat(area.dataset.panX || '0') || 0;
+      const cy = parseFloat(area.dataset.panY || '0') || 0;
+      area._applyOffset(cx + dx, cy + dy);
+    },
+  });
+  let _navRaf = 0;
+  window.addEventListener('ge:composited', () => {
+    if (_navRaf) return;
+    _navRaf = requestAnimationFrame(() => { _navRaf = 0; try { _navigator && _navigator.refresh(); } catch {} });
+  });
   // Pressure-response curve editor (drives pressure-response.js).
   mountPressureCurve();
   // Brush Settings live preview + test-paint strip.
