@@ -1,3 +1,8 @@
+// Module-level guard: the F-key accelerator is a document-level listener that
+// must be installed ONCE for the page, not re-added on every openEditor() (which
+// previously leaked a listener per open and multi-toggled panels).
+let _accelWired = false;
+
 /**
  * Wire the "Window" menu (build/menu-bar.js) — the panel show/hide list.
  *
@@ -122,16 +127,21 @@ export function wireWindowMenu(bar) {
   // untouched. Only fire when not typing into a field, and let the registry's
   // toggle do the work so behaviour matches the menu exactly.
   const ACCEL = { F5: 'brush', F6: 'color', F7: 'layers' };
-  document.addEventListener('keydown', (e) => {
-    const key = ACCEL[e.key];
-    if (!key) return;
-    const t = e.target;
-    if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
-    const def = REGISTRY[key];
-    if (!def || !def.exists()) return;
-    e.preventDefault();
-    def.toggle();
-    const item = live.find((it) => it.dataset.relayPanel === key);
-    if (item) setMark(item, def.isVisible());
-  });
+  if (!_accelWired) {
+    _accelWired = true; // install once for the page (no per-open leak)
+    document.addEventListener('keydown', (e) => {
+      const key = ACCEL[e.key];
+      if (!key) return;
+      const t = e.target;
+      if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+      const def = REGISTRY[key];
+      if (!def || !def.exists()) return;
+      e.preventDefault();
+      def.toggle();
+      // Resolve the item from the CURRENT DOM (not a captured `live` array that
+      // goes stale when the menu bar is rebuilt on the next open).
+      const item = document.querySelector(`[data-relay-panel="${key}"]`);
+      if (item) setMark(item, def.isVisible());
+    });
+  }
 }

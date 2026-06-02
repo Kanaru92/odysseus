@@ -1,3 +1,5 @@
+import { isCustomBlend, blendInto } from './blend-modes.js';
+
 /**
  * Layer merge / flatten buttons in the layer-panel footer:
  *
@@ -55,14 +57,35 @@ export function mergeLayerDownAtIndex(idx) {
     lower.layerMask = null; lower.fx = null; lower.adjLayers = [];
     lower._adjFinal = null; lower._adjCache = null; delete lower.maskEnabled;
   }
-  lower.ctx.save();
-  lower.ctx.globalAlpha = upper.opacity;
-  lower.ctx.drawImage(
-    _effectiveCanvas(upper), // honour the upper layer's mask / fx / adjustments
-    upperOff.x - lowerOff.x,
-    upperOff.y - lowerOff.y,
-  );
-  lower.ctx.restore();
+  // Composite the upper layer down honouring its BLEND MODE (was source-over
+  // only, which silently lost Multiply/Screen/etc. and dropped custom blends) —
+  // mirror the shared renderer: native modes via globalCompositeOperation, custom
+  // (per-pixel) modes via blendInto against the lower layer's pixels.
+  const upperSrc = _effectiveCanvas(upper);
+  const dx = upperOff.x - lowerOff.x, dy = upperOff.y - lowerOff.y;
+  const bm = upper.blendMode || 'source-over';
+  const opacity = upper.opacity == null ? 1 : upper.opacity;
+  let merged = false;
+  if (isCustomBlend(bm)) {
+    try {
+      const LW = lower.canvas.width, LH = lower.canvas.height;
+      const back = lower.ctx.getImageData(0, 0, LW, LH);
+      const tmp = document.createElement('canvas');
+      tmp.width = LW; tmp.height = LH;
+      tmp.getContext('2d').drawImage(upperSrc, dx, dy);
+      const src = tmp.getContext('2d').getImageData(0, 0, LW, LH);
+      blendInto(bm, back.data, src.data, opacity);
+      lower.ctx.putImageData(back, 0, 0);
+      merged = true;
+    } catch { /* fall through to native source-over */ }
+  }
+  if (!merged) {
+    lower.ctx.save();
+    lower.ctx.globalAlpha = opacity;
+    lower.ctx.globalCompositeOperation = isCustomBlend(bm) ? 'source-over' : bm;
+    lower.ctx.drawImage(upperSrc, dx, dy);
+    lower.ctx.restore();
+  }
   state.layers.splice(idx, 1);
   state.layerOffsets.delete(upper.id);
   state.activeLayerId = lower.id;

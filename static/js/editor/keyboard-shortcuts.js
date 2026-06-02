@@ -383,6 +383,7 @@ export function wireKeyboardShortcuts(deps) {
           state.lassoPoints = [];
           composite();
         }
+        return; // handled lasso copy/cut — don't fall through to the full-layer copy
       }
       // Ctrl+C with no active selection → copy the entire active layer
       // to the system clipboard as a PNG. Gives a "just copy this image"
