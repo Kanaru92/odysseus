@@ -43,6 +43,18 @@ export function mergeLayerDownAtIndex(idx) {
   const lower = state.layers[li];
   const upperOff = state.layerOffsets.get(upper.id) || { x: 0, y: 0 };
   const lowerOff = state.layerOffsets.get(lower.id) || { x: 0, y: 0 };
+  // Bake the LOWER layer's own mask/fx/adjustments into its pixels first, then
+  // clear them — otherwise they'd re-apply to the merged-in upper pixels (mirrors
+  // the Merge All base-baking).
+  if (lower.layerMask || lower.fx || (lower.adjLayers && lower.adjLayers.length)) {
+    lower.ctx.save();
+    lower.ctx.globalCompositeOperation = 'copy';
+    lower.ctx.globalAlpha = 1;
+    lower.ctx.drawImage(_effectiveCanvas(lower), 0, 0);
+    lower.ctx.restore();
+    lower.layerMask = null; lower.fx = null; lower.adjLayers = [];
+    lower._adjFinal = null; lower._adjCache = null; delete lower.maskEnabled;
+  }
   lower.ctx.save();
   lower.ctx.globalAlpha = upper.opacity;
   lower.ctx.drawImage(

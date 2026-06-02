@@ -237,6 +237,7 @@ export function createLayerPanelRenderer(deps) {
       const wasActive = state.activeLayerId === layer.id;
       state.activeLayerId = layer.id;
       if (e.shiftKey) {
+        saveState(layer.maskEnabled === false ? 'Enable layer mask' : 'Disable layer mask');
         layer.maskEnabled = layer.maskEnabled === false; // false→true (enable), else→false (disable)
       } else if (e.altKey) {
         state.maskOverlay = (state.maskOverlay === layer.id) ? null : layer.id;

@@ -753,7 +753,14 @@ function _invertLayerMask() {
   const m = layer.layerMask, mc = m.getContext('2d');
   let img; try { img = mc.getImageData(0, 0, m.width, m.height); } catch { return; }
   const d = img.data;
-  for (let i = 0; i < d.length; i += 4) { d[i] = 255 - d[i]; d[i + 1] = 255 - d[i + 1]; d[i + 2] = 255 - d[i + 2]; }
+  // Invert against the SAME coverage model the matte uses (luma x alpha), then
+  // store as opaque gray — so it works for eraser-authored (alpha-carved) masks
+  // too, not just opaque black/white ones.
+  for (let i = 0; i < d.length; i += 4) {
+    const cov = (0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]) * d[i + 3] / 255;
+    const inv = 255 - cov;
+    d[i] = d[i + 1] = d[i + 2] = inv; d[i + 3] = 255;
+  }
   mc.putImageData(img, 0, 0);
   composite();
   _renderLayerPanel();
@@ -770,11 +777,11 @@ function _maskFromSelection() {
   m.width = layer.canvas.width; m.height = layer.canvas.height;
   const mc = m.getContext('2d');
   mc.fillStyle = '#000'; mc.fillRect(0, 0, m.width, m.height); // hide everything
-  const off = state.layerOffsets.get(layer.id) || { x: 0, y: 0 };
   const sel = document.createElement('canvas');
   sel.width = m.width; sel.height = m.height;
   const sc = sel.getContext('2d');
-  sc.drawImage(state.wandMask, -off.x, -off.y);              // selection coverage in alpha
+  // wandMask shares the layer-local space the fill-into-mask path uses (0,0).
+  sc.drawImage(state.wandMask, 0, 0);                        // selection coverage in alpha
   sc.globalCompositeOperation = 'source-in';
   sc.fillStyle = '#fff'; sc.fillRect(0, 0, sel.width, sel.height); // white where selected
   mc.drawImage(sel, 0, 0);
@@ -798,7 +805,7 @@ function _openMaskMenu(x, y) {
   menu.style.cssText = `position:fixed;left:${x}px;top:${y}px;z-index:300;background:#2a2a2e;border:1px solid rgba(255,255,255,0.16);border-radius:6px;padding:4px;box-shadow:0 10px 28px rgba(0,0,0,0.5);font-size:12px;color:#eee;min-width:172px;`;
   const items = has ? [
     [state.layerMaskEdit ? 'Edit Pixels' : 'Edit Mask', () => { state.layerMaskEdit = !state.layerMaskEdit; _syncLayerMaskBtn(); composite(); _renderLayerPanel(); }],
-    [disabled ? 'Enable Mask' : 'Disable Mask', () => { layer.maskEnabled = disabled; composite(); _renderLayerPanel(); }],
+    [disabled ? 'Enable Mask' : 'Disable Mask', () => { _saveState(disabled ? 'Enable layer mask' : 'Disable layer mask'); layer.maskEnabled = disabled; composite(); _renderLayerPanel(); }],
     [state.maskOverlay === layer.id ? 'Hide Mask Overlay' : 'View Mask  \\', () => _toggleMaskView()],
     ['Invert Mask', () => _invertLayerMask()],
     ['Apply Mask', () => _bakeLayerMask()],
@@ -814,7 +821,7 @@ function _openMaskMenu(x, y) {
     b.style.cssText = 'padding:5px 10px;border-radius:4px;cursor:pointer;white-space:nowrap;';
     b.addEventListener('mouseenter', () => { b.style.background = 'rgba(255,255,255,0.10)'; });
     b.addEventListener('mouseleave', () => { b.style.background = 'none'; });
-    b.addEventListener('click', () => { menu.remove(); fn(); });
+    b.addEventListener('click', () => { destroy(); fn(); });
     menu.appendChild(b);
   }
   document.body.appendChild(menu);
@@ -822,8 +829,14 @@ function _openMaskMenu(x, y) {
   const r = menu.getBoundingClientRect();
   if (r.right > window.innerWidth) menu.style.left = Math.max(4, window.innerWidth - r.width - 4) + 'px';
   if (r.bottom > window.innerHeight) menu.style.top = Math.max(4, window.innerHeight - r.height - 4) + 'px';
-  const close = (ev) => { if (!menu.contains(ev.target)) { menu.remove(); document.removeEventListener('pointerdown', close, true); } };
-  setTimeout(() => document.addEventListener('pointerdown', close, true), 0);
+  const destroy = () => {
+    menu.remove();
+    document.removeEventListener('pointerdown', onAway, true);
+    if (_activePromptClose === destroy) _activePromptClose = null;
+  };
+  const onAway = (ev) => { if (!menu.contains(ev.target)) destroy(); };
+  setTimeout(() => document.addEventListener('pointerdown', onAway, true), 0);
+  _activePromptClose = destroy; // let the Escape hard guard dismiss the menu
 }
 // Reflect mask-edit state on the header button (active = currently painting the mask).
 function _syncLayerMaskBtn() {
@@ -1022,7 +1035,9 @@ function _renderLayersTo(ctx, canvas) {
 // false → fall back to the full redraw so output stays pixel-identical.
 function _canDirtyComposite() {
   if (state.cmykProof || state.maskVisible) return false;
-  if (state.maskOverlay) return false;
+  // Only the active layer's rubylith is drawn, so a stale id (left over after a
+  // layer switch / reopen) must not permanently disable the dirty-rect path.
+  if (state.maskOverlay && state.maskOverlay === state.activeLayerId) return false;
   if (state.transformActive || state.pcropActive) return false;
   if (state.cropRect || state.cropping) return false;
   if (state.lassoPoints && state.lassoPoints.length) return false;
@@ -1342,6 +1357,7 @@ function _snapshotState() {
           canvasH: l.layerMask.height,
           tiles: tileFor(l.id + ':layerMask', l.layerMask.getContext('2d'), l.layerMask.width, l.layerMask.height),
         } : null,
+        maskEnabled: l.maskEnabled === false ? false : undefined, // disabled-mask state
         activeMaskId: l.activeMaskId || null,
         isBase: !!l.isBase,
         groupId: l.groupId || null,
@@ -1429,6 +1445,7 @@ function _buildDraftPayload() {
         // Non-destructive extras (so they survive reload): PS visibility mask,
         // layer effects (Blending Options), and editable text.
         layerMask: l.layerMask ? l.layerMask.toDataURL('image/png') : null,
+        maskEnabled: l.maskEnabled === false ? false : undefined,
         fx: l.fx || null,
         text: l.text || null,
         // Smart Object: pristine source + applied transform (+ optional link).
@@ -1641,6 +1658,7 @@ function _restoreDraft(draft) {
         mimg.onload = () => { mc.getContext('2d').drawImage(mimg, 0, 0); layer.layerMask = mc; if (--pending === 0) resolve(); };
         mimg.onerror = () => { if (--pending === 0) resolve(); };
         mimg.src = s.layerMask;
+        if (s.maskEnabled === false) layer.maskEnabled = false; // restore disabled state
       }
     });
     state.nextLayerId = data.nextLayerId || (state.layers.reduce((m, l) => Math.max(m, l.id || 0), 0) + 1);
@@ -1776,6 +1794,9 @@ function _restoreState(snap) {
     } else {
       layer.layerMask = null;
     }
+    // Round-trip the disabled-mask flag (set unconditionally so a stale live
+    // value can't leak across undo on the reused layer object).
+    if (s.maskEnabled === false) layer.maskEnabled = false; else delete layer.maskEnabled;
     layer.activeMaskId = s.activeMaskId || (layer.masks[0]?.id ?? null);
     layer._adjFinal = null;
     layer._adjFinalKey = null;
@@ -5570,6 +5591,7 @@ function _saveProject() {
         offset: { ...(state.layerOffsets.get(l.id) || { x: 0, y: 0 }) },
         dataUrl: l.canvas.toDataURL('image/png'),
         layerMask: l.layerMask ? l.layerMask.toDataURL('image/png') : null,
+        maskEnabled: l.maskEnabled === false ? false : undefined,
         fx: l.fx || null,
         text: l.text || null,
         // Smart Object: pristine source + applied transform (+ optional link).
@@ -5992,6 +6014,8 @@ export function openEditor(imageUrl, imageId, presetSize, displayName, draftId) 
   state.cropRect = null;
   state.lassoPoints = [];
   state.lassoActive = false;
+  state.layerMaskEdit = false; // don't leak mask-edit / rubylith across documents
+  state.maskOverlay = null;
   window.__galleryEditLive = true;
   if (state.persistTimer) { clearTimeout(state.persistTimer); state.persistTimer = null; }
   state.persistDirty = false;

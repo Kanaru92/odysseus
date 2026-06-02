@@ -387,20 +387,30 @@ export function createTransformSession({
     layer.ctx.clearRect(0, 0, finalW, finalH);
     layer.ctx.drawImage(tmp, 0, 0);
     // Transform the layer mask the same way (scaled into the same W×H box, then
-    // rotated/flipped) so it stays aligned to the pixels at the new size.
-    if (state.transformOrigMask) {
-      const mtmp = document.createElement('canvas');
-      mtmp.width = finalW; mtmp.height = finalH;
-      const mC = mtmp.getContext('2d');
-      mC.imageSmoothingEnabled = true;
-      mC.imageSmoothingQuality = 'high';
-      mC.save();
-      mC.translate(finalW / 2, finalH / 2);
-      if (rotDeg) mC.rotate(rotRad);
-      mC.scale(state.transformPendingFlipH ? -1 : 1, state.transformPendingFlipV ? -1 : 1);
-      mC.drawImage(state.transformOrigMask, -w / 2, -h / 2, w, h);
-      mC.restore();
-      layer.layerMask = mtmp;
+    // rotated/flipped) so it stays aligned to the pixels at the new size. Guarded
+    // on layer.layerMask so a mask deleted mid-session isn't resurrected.
+    if (state.transformOrigMask && layer.layerMask) {
+      if (layer.isSmart) {
+        // Smart Objects re-derive pixels from their SOURCE each session; the mask
+        // was aligned to the baked result, not the source, so it can't be
+        // re-derived here without misalignment — drop it (consistent with the
+        // geometry-change mask drop on perspective-crop/canvas-resize).
+        layer.layerMask = null;
+        state.transformOrigMask = null;
+      } else {
+        const mtmp = document.createElement('canvas');
+        mtmp.width = finalW; mtmp.height = finalH;
+        const mC = mtmp.getContext('2d');
+        mC.imageSmoothingEnabled = true;
+        mC.imageSmoothingQuality = 'high';
+        mC.save();
+        mC.translate(finalW / 2, finalH / 2);
+        if (rotDeg) mC.rotate(rotRad);
+        mC.scale(state.transformPendingFlipH ? -1 : 1, state.transformPendingFlipV ? -1 : 1);
+        mC.drawImage(state.transformOrigMask, -w / 2, -h / 2, w, h);
+        mC.restore();
+        layer.layerMask = mtmp;
+      }
     }
     // Recenter the layer so the rotation pivot stays put visually.
     const origCenterX = state.transformOrigOffset.x + state.transformOrigW / 2;

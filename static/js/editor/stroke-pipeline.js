@@ -472,12 +472,13 @@ export function createStrokePipeline({ activeLayer, getActiveMaskLayer, composit
       ctx.strokeStyle = state.color;
     }
 
-    // Mask canvases are always full-image (no per-layer offset), so
-    // painting onto a mask uses canvas-coord origin too — same as
-    // inpaint.
-    const onMaskOrInpaint = paintingMask || state.tool === 'inpaint';
-    const drawX = onMaskOrInpaint ? 0 : off.x;
-    const drawY = onMaskOrInpaint ? 0 : off.y;
+    // Inpaint / region masks are full-image (no per-layer offset). But the PS
+    // layer mask (editingLayerMask) is LAYER-LOCAL — its offset is applied at
+    // composite — so painting it must subtract the layer offset like pixel paint,
+    // else strokes land shifted on any moved/pasted/cropped layer.
+    const onFullImageMask = (paintingMask && !editingLayerMask) || state.tool === 'inpaint';
+    const drawX = onFullImageMask ? 0 : off.x;
+    const drawY = onFullImageMask ? 0 : off.y;
 
     ctx.beginPath();
     ctx.moveTo(state.lastX - drawX, state.lastY - drawY);
