@@ -71,6 +71,28 @@ export function wireKeyboardShortcuts(deps) {
 
   document.addEventListener('keydown', (e) => {
     if (!state.editorOpen) return;
+    // Arrow keys nudge the active layer when the Move tool is active: 1px, or
+    // 10px with Shift (PS-style nudge). Skips text fields and active
+    // transform/crop interactions (arrows belong to those then). Holding a key
+    // moves every repeat but only records ONE undo step for the whole nudge.
+    if ((e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === 'ArrowRight')
+        && state.tool === 'move'
+        && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA'
+        && !state.transformActive && !state.distortActive && !state.pcropActive && !state.cropRect) {
+      const layer = activeLayer && activeLayer();
+      if (layer) {
+        e.preventDefault();
+        const step = e.shiftKey ? 10 : 1;
+        const dx = e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0;
+        const dy = e.key === 'ArrowUp' ? -step : e.key === 'ArrowDown' ? step : 0;
+        if (!e.repeat && saveState) saveState('Nudge layer');
+        const off = state.layerOffsets.get(layer.id) || { x: 0, y: 0 };
+        state.layerOffsets.set(layer.id, { x: off.x + dx, y: off.y + dy });
+        if (composite) composite();
+        if (renderLayerPanel) renderLayerPanel();
+      }
+      return;
+    }
     // `?` toggles the cheatsheet. Don't fire while typing in a text
     // field — the user might be typing a prompt with a `?`.
     if (e.key === '?' && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
