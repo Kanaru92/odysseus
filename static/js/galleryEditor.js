@@ -5,7 +5,7 @@
 import uiModule from './ui.js';
 import dragSortModule from './dragSort.js';
 import spinnerModule from './spinner.js';
-import { attachColorPicker } from './colorPicker.js';
+import { attachColorPicker, isColorPickerOpen, closeColorPicker } from './colorPicker.js';
 import modalManager from './modalManager.js';
 import { canvasCoords as _canvasCoords } from './editor/canvas-coords.js';
 import { drawCheckerboard as _drawCheckerboard, setChecker, checkerConfig, CHECKER_SIZES, CHECKER_PRESETS } from './editor/checkerboard.js';
@@ -210,6 +210,9 @@ if (!window.__galleryEditEscHardGuardInstalled) {
       // state.editorEscClosers while open (and splicing it on close).
       const _escClosers = state.editorEscClosers;
       if (_escClosers && _escClosers.length) { try { _escClosers[_escClosers.length - 1](); } catch {} }
+      // The shared colour picker installs its OWN document-capture Esc handler,
+      // but this window-capture guard (an ancestor) preempts it, so close it here.
+      else if (isColorPickerOpen()) { try { closeColorPicker(); } catch {} }
       else if (state.textEditingLayerId) {
         const _tl = state.layers.find((l) => l.id === state.textEditingLayerId);
         const _inp = document.getElementById('ge-text-input');

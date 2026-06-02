@@ -388,6 +388,12 @@ function close() {
   _destroyPopover();
 }
 
+// Imperative close + open-state query, for hosts whose own capture-phase key
+// guard preempts this picker's document-level Escape handler (e.g. the gallery
+// editor's window-capture Esc hard-guard). Lets the host close us explicitly.
+export function isColorPickerOpen() { return !!_popover; }
+export function closeColorPicker() { if (_popover) { close(); return true; } return false; }
+
 // ── Attach to inputs ──────────────────────────────────────────────────
 // Standard setter we need to call after wrapping .value with a custom setter.
 const _NATIVE_VALUE_DESC = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
