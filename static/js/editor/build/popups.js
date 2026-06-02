@@ -100,25 +100,80 @@ export function historyPanelHTML(historyIcon) {
  * hide and wires the Cancel / Create buttons).
  */
 export function canvasSizePromptHTML() {
+  // Presets carry a neutral category label so the grid reads as
+  // Screen / Photo / Print / Mobile groups without naming any product.
   const presets = [
-    ['Square', 2048, 2048], ['1080p', 1920, 1080], ['4K UHD', 3840, 2160],
-    ['HD 720', 1280, 720], ['Portrait', 1080, 1920], ['Insta', 1080, 1080],
-    ['A4 300dpi', 2480, 3508], ['Web', 1280, 800],
+    ['Square', 2048, 2048, 'Screen'], ['1080p', 1920, 1080, 'Screen'],
+    ['4K UHD', 3840, 2160, 'Screen'], ['HD 720', 1280, 720, 'Screen'],
+    ['Portrait', 1080, 1920, 'Mobile'], ['Photo', 1080, 1080, 'Mobile'],
+    ['A4 300dpi', 2480, 3508, 'Print'], ['Web', 1280, 800, 'Screen'],
   ];
   const ratios = [
     ['Free', 'free'], ['1:1', '1:1'], ['16:9', '16:9'], ['9:16', '9:16'],
     ['4:3', '4:3'], ['3:2', '3:2'], ['2:3', '2:3'], ['A4', '210:297'],
   ];
-  const presetBtns = presets.map(([n, w, h]) =>
-    `<button type="button" class="ge-cp-preset" data-w="${w}" data-h="${h}">${n}<small>${w}×${h}</small></button>`).join('');
+  const presetBtns = presets.map(([n, w, h, cat]) =>
+    `<button type="button" class="ge-cp-preset" data-w="${w}" data-h="${h}" title="${cat} · ${w}×${h}">${n}<small>${w}×${h}</small></button>`).join('');
+  // First ratio (Free) gets an explicit "(Freeform)" sub-label so the user
+  // realises it means "type both dimensions yourself".
   const ratioBtns = ratios.map(([n, r], i) =>
-    `<button type="button" class="ge-cp-ratio${i === 0 ? ' active' : ''}" data-ratio="${r}">${n}</button>`).join('');
+    `<button type="button" class="ge-cp-ratio${i === 0 ? ' active' : ''}" data-ratio="${r}">${n}${r === 'free' ? '<span class="ge-cp-ratio-sub">Freeform</span>' : ''}</button>`).join('');
+  // Scoped styles for the elements that don't already exist in style.css
+  // (name field, prominent ratio band + helper line, background-contents
+  // segmented control). Kept inline here on purpose — style.css is owned
+  // elsewhere. Existing .ge-cp-preset / .ge-cp-ratio rules still apply.
+  const scopedCss = `
+    <style>
+      .ge-canvas-prompt .ge-cp-namefield { margin-bottom: 12px; }
+      .ge-canvas-prompt .ge-cp-namefield > span { display:block; font-size:11px; opacity:0.65; margin-bottom:4px; }
+      .ge-canvas-prompt #ge-canvas-prompt-name {
+        width:100%; box-sizing:border-box; padding:8px 10px;
+        background:var(--bg); color:var(--fg); border:1px solid var(--border);
+        border-radius:6px; font:inherit; font-size:14px;
+      }
+      .ge-canvas-prompt #ge-canvas-prompt-name:focus { outline:none; border-color:var(--red); }
+      .ge-canvas-prompt .ge-cp-section-lbl {
+        display:block; font-size:10px; letter-spacing:0.4px; text-transform:uppercase;
+        opacity:0.5; margin:0 0 5px;
+      }
+      /* Make the ratio band stand out — the user kept missing it. */
+      .ge-canvas-prompt .ge-cp-ratio-band {
+        border:1px solid var(--border); border-radius:8px; padding:9px 10px;
+        background:color-mix(in srgb, var(--fg) 3%, transparent); margin-bottom:12px;
+      }
+      .ge-canvas-prompt .ge-cp-ratio-band .ge-cp-ratios { margin-bottom:0; }
+      .ge-canvas-prompt .ge-cp-ratio-hint { margin:7px 0 0; font-size:11px; opacity:0.6; line-height:1.35; }
+      .ge-canvas-prompt .ge-cp-ratio-sub { display:block; font-size:8px; line-height:1; opacity:0.6; margin-top:1px; }
+      .ge-canvas-prompt .ge-cp-bgs { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+      .ge-canvas-prompt .ge-cp-bg {
+        flex:1; min-width:64px; padding:6px 8px; font-size:11px; cursor:pointer;
+        background:color-mix(in srgb, var(--fg) 5%, transparent);
+        color:var(--fg); border:1px solid var(--border); border-radius:6px; opacity:0.8;
+      }
+      .ge-canvas-prompt .ge-cp-bg:hover { opacity:1; }
+      .ge-canvas-prompt .ge-cp-bg.active { opacity:1; background:color-mix(in srgb, var(--red) 18%, transparent); border-color:var(--red); }
+      .ge-canvas-prompt #ge-canvas-prompt-bgcolor {
+        width:34px; height:30px; padding:0; border:1px solid var(--border);
+        border-radius:6px; background:var(--bg); cursor:pointer; flex:0 0 auto;
+      }
+      .ge-canvas-prompt .ge-cp-bgrow { margin-bottom:12px; }
+    </style>`;
   return `
         <div class="modal-content ge-canvas-prompt">
+          ${scopedCss}
           <div class="modal-header"><h4 id="ge-canvas-prompt-title">New canvas</h4></div>
           <div class="modal-body">
+            <label class="ge-cp-namefield">
+              <span>Name</span>
+              <input type="text" id="ge-canvas-prompt-name" maxlength="80" placeholder="Untitled" value="Untitled">
+            </label>
+            <span class="ge-cp-section-lbl">Presets</span>
             <div class="ge-cp-presets">${presetBtns}</div>
-            <div class="ge-cp-ratios"><span class="ge-cp-ratios-lbl">Ratio</span>${ratioBtns}</div>
+            <span class="ge-cp-section-lbl">Aspect ratio</span>
+            <div class="ge-cp-ratio-band">
+              <div class="ge-cp-ratios"><span class="ge-cp-ratios-lbl">Ratio</span>${ratioBtns}</div>
+              <p class="ge-cp-ratio-hint">Pick a ratio, type one dimension — the other follows. Choose Free to enter both.</p>
+            </div>
             <div class="ge-canvas-prompt-row">
               <label class="ge-canvas-prompt-field">
                 <span>Width</span>
@@ -130,7 +185,15 @@ export function canvasSizePromptHTML() {
                 <input type="text" id="ge-canvas-prompt-h" inputmode="numeric" value="1080">
               </label>
             </div>
-            <p class="ge-canvas-prompt-hint">Pick a ratio to constrain W×H (type one, the other follows). "Free" = independent.</p>
+            <div class="ge-cp-bgrow">
+              <span class="ge-cp-section-lbl">Background contents</span>
+              <div class="ge-cp-bgs">
+                <button type="button" class="ge-cp-bg active" data-bg="white">White</button>
+                <button type="button" class="ge-cp-bg" data-bg="transparent">Transparent</button>
+                <button type="button" class="ge-cp-bg" data-bg="color">Color</button>
+                <input type="color" id="ge-canvas-prompt-bgcolor" value="#ffffff" style="display:none;">
+              </div>
+            </div>
           </div>
           <div class="modal-footer">
             <button class="confirm-btn confirm-btn-secondary" id="ge-canvas-prompt-cancel">Cancel</button>

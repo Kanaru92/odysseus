@@ -4261,7 +4261,18 @@ function _buildEditor(container) {
   // Actions — record/replay the command stream (Filter ▸ Actions…).
   wireActions({ saveState: _saveState, composite });
   // Tabbed documents — work between multiple open files.
-  wireDocTabs({ composite, renderLayerPanel: _renderLayerPanel, createLayer, fitZoom: _fitZoom, promptNewSize: () => _promptCanvasSize() });
+  let _newDocSeq = 1;
+  wireDocTabs({
+    composite, renderLayerPanel: _renderLayerPanel, createLayer, fitZoom: _fitZoom,
+    promptNewSize: () => _promptCanvasSize({ initialName: 'Untitled ' + (++_newDocSeq) }),
+    // Renaming the ACTIVE document keeps the editor's draft name + Edit-tab
+    // label in sync and re-persists so the new title survives reload.
+    onRenameActive: (name) => {
+      state.draftName = name;
+      try { _setEditTabLabel(name); } catch {}
+      try { _schedulePersist(); } catch {}
+    },
+  });
   // Reference image panel (display-only docker).
   wireReference();
   // Histogram panel (read-only, live tonal feedback).
@@ -5229,14 +5240,15 @@ function _loadProjectPrompt() {
 
 // Styled in-app prompt for canvas size — replaces the browser's
 // native prompt() which doesn't follow the app theme. Returns a Promise
-// resolving to {w, h} on submit, or null on cancel. Optional opts:
-//   title, okLabel, initialW, initialH.
+// resolving to { w, h, name, bg:{type,color} } on submit, or null on
+// cancel. Optional opts: title, okLabel, initialW, initialH, initialName.
 function _promptCanvasSize(opts) {
   opts = opts || {};
   const title    = opts.title    || 'New canvas';
   const okLabel  = opts.okLabel  || 'Create';
   const initialW = opts.initialW || 1024;
   const initialH = opts.initialH || 1024;
+  const initialName = opts.initialName || 'Untitled';
   return new Promise(resolve => {
     let overlay = document.getElementById('ge-canvas-size-overlay');
     if (!overlay) {
@@ -5248,6 +5260,7 @@ function _promptCanvasSize(opts) {
     }
     overlay.style.display = '';
     overlay.classList.remove('hidden');
+    const nameInput = document.getElementById('ge-canvas-prompt-name');
     const wInput = document.getElementById('ge-canvas-prompt-w');
     const hInput = document.getElementById('ge-canvas-prompt-h');
     const okBtn = document.getElementById('ge-canvas-prompt-ok');
@@ -5255,10 +5268,26 @@ function _promptCanvasSize(opts) {
     const titleEl = document.getElementById('ge-canvas-prompt-title');
     const ratioBtns = Array.from(overlay.querySelectorAll('.ge-cp-ratio'));
     const presetBtns = Array.from(overlay.querySelectorAll('.ge-cp-preset'));
+    const bgBtns = Array.from(overlay.querySelectorAll('.ge-cp-bg'));
+    const bgColorInput = document.getElementById('ge-canvas-prompt-bgcolor');
     if (titleEl) titleEl.textContent = title;
     if (okBtn) okBtn.textContent = okLabel;
+    if (nameInput) nameInput.value = initialName;
     wInput.value = String(initialW);
     hInput.value = String(initialH);
+
+    // Background contents — segmented White / Transparent / Color. The
+    // color swatch is only shown while "Color" is selected.
+    let bgType = 'white';
+    function setActiveBg(btn) {
+      bgType = btn.dataset.bg;
+      bgBtns.forEach((b) => b.classList.toggle('active', b === btn));
+      if (bgColorInput) bgColorInput.style.display = (bgType === 'color') ? '' : 'none';
+    }
+    const onBgClick = (e) => setActiveBg(e.currentTarget);
+    // Reset to White each open.
+    bgBtns.forEach((b) => { b.classList.toggle('active', b.dataset.bg === 'white'); b.addEventListener('click', onBgClick); });
+    if (bgColorInput) bgColorInput.style.display = 'none';
 
     // Aspect-ratio constraint: with a ratio selected (not "free"), editing one
     // dimension auto-fills the other. Default to "free".
@@ -5288,7 +5317,8 @@ function _promptCanvasSize(opts) {
     wInput.addEventListener('input', onWidthIn);
     hInput.addEventListener('input', onHeightIn);
 
-    setTimeout(() => { wInput.focus(); wInput.select(); }, 0);
+    // Focus the NAME field on open (most users want to title the doc first).
+    setTimeout(() => { if (nameInput) { nameInput.focus(); nameInput.select(); } else { wInput.focus(); wInput.select(); } }, 0);
     function cleanup(result) {
       overlay.style.display = 'none';
       okBtn.removeEventListener('click', onOk);
@@ -5297,6 +5327,7 @@ function _promptCanvasSize(opts) {
       document.removeEventListener('keydown', onKey);
       ratioBtns.forEach((b) => b.removeEventListener('click', onRatioClick));
       presetBtns.forEach((b) => b.removeEventListener('click', onPresetClick));
+      bgBtns.forEach((b) => b.removeEventListener('click', onBgClick));
       wInput.removeEventListener('input', onWidthIn);
       hInput.removeEventListener('input', onHeightIn);
       resolve(result);
@@ -5304,7 +5335,9 @@ function _promptCanvasSize(opts) {
     function onOk() {
       const dims = _parseCanvasSizePrompt(wInput.value, hInput.value, initialW, initialH);
       if (!dims) { uiModule.showToast('Invalid size'); return; }
-      cleanup(dims);
+      const name = (nameInput && nameInput.value.trim()) || initialName;
+      const bg = { type: bgType, color: (bgColorInput && bgColorInput.value) || '#ffffff' };
+      cleanup({ w: dims.w, h: dims.h, name, bg });
     }
     function onCancel() { cleanup(null); }
     function onBackdrop(e) { if (e.target === overlay) cleanup(null); }
@@ -5501,18 +5534,27 @@ export function openEditor(imageUrl, imageId, presetSize, displayName, draftId) 
     // Empty canvas — use preset size if supplied, otherwise show the
     // styled prompt. Asynchronous: we promise-chain so callers can await
     // openEditor() and still rely on isEditorOpen() afterwards.
-    const _finishBlank = (w, h) => {
+    const _finishBlank = (w, h, name, bg) => {
       _initCanvas(w, h);
-      // White-filled Background so the canvas is visible, then a separate
-      // transparent Edit layer on top — keeps user's work isolated from
-      // the underlying canvas, the standard editor pattern.
+      // Background filled per chosen contents (white / solid colour /
+      // transparent-skip), then a separate transparent Edit layer on top —
+      // keeps user's work isolated from the underlying canvas, the
+      // standard editor pattern.
       const bgLayer = createLayer('Background', w, h);
-      bgLayer.ctx.fillStyle = '#ffffff';
-      bgLayer.ctx.fillRect(0, 0, w, h);
+      const bgType = (bg && bg.type) || 'white';
+      if (bgType === 'transparent') {
+        // leave the Background layer cleared (alpha 0)
+      } else {
+        bgLayer.ctx.fillStyle = (bgType === 'color' && bg && bg.color) ? bg.color : '#ffffff';
+        bgLayer.ctx.fillRect(0, 0, w, h);
+      }
       const editLayer = createLayer('Edit', w, h);
       state.layers.push(bgLayer);
       state.layers.push(editLayer);
       state.activeLayerId = editLayer.id;
+      // Title the document from the dialog before the first persist.
+      state.draftName = name || 'Untitled';
+      _setEditTabLabel(state.draftName);
       composite();
       _renderLayerPanel();
       _fitZoom();
@@ -5520,12 +5562,12 @@ export function openEditor(imageUrl, imageId, presetSize, displayName, draftId) 
       _schedulePersist();
     };
     if (presetSize && presetSize.w > 0 && presetSize.h > 0) {
-      _finishBlank(presetSize.w, presetSize.h);
+      _finishBlank(presetSize.w, presetSize.h, presetSize.name || displayName || 'Untitled', presetSize.bg);
       return;
     }
-    return _promptCanvasSize().then(size => {
+    return _promptCanvasSize({ initialName: displayName || 'Untitled' }).then(size => {
       if (!size) { closeEditor(); return; }
-      _finishBlank(size.w, size.h);
+      _finishBlank(size.w, size.h, size.name, size.bg);
     });
   }
 
