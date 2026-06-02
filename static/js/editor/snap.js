@@ -56,12 +56,11 @@ export function computeSnap(layer, nx, ny, ctx) {
       else hTargets.push({ y: g.pos, label: 'guide-h' });
     }
   }
-  // Grid lines (when the grid is shown) act as snap targets.
-  if (ctx.showGrid && ctx.gridSize > 0) {
-    const gs = ctx.gridSize;
-    for (let x = 0; x <= cw; x += gs) vTargets.push({ x, label: 'grid-v' });
-    for (let y = 0; y <= ch; y += gs) hTargets.push({ y, label: 'grid-h' });
-  }
+  // Grid lines (when the grid is shown) act as snap targets. Rather than
+  // enumerate every line (unbounded on a hot path), the single nearest grid
+  // line to each moving edge is computed directly in the loops below.
+  const gridOn = ctx.showGrid && ctx.gridSize > 0;
+  const gs = ctx.gridSize;
 
   const myEdgesX = { l: nx, cx: nx + w / 2, r: nx + w };
   const myEdgesY = { t: ny, cy: ny + h / 2, b: ny + h };
@@ -75,6 +74,18 @@ export function computeSnap(layer, nx, ny, ctx) {
         bestX = { snapTo: t.x, src, target: t };
       }
     }
+    if (gridOn) {
+      // Snap to the nearest grid line that actually exists in [0, cw]
+      // (lines run 0, gs, 2gs, ... up to and including cw, matching the
+      // former enumeration `x <= cw`).
+      const maxX = Math.floor(cw / gs) * gs;
+      const gx = Math.min(maxX, Math.max(0, Math.round(val / gs) * gs));
+      const d = Math.abs(gx - val);
+      if (d < SNAP_PX && d < bestDx) {
+        bestDx = d;
+        bestX = { snapTo: gx, src, target: { x: gx, label: 'grid-v' } };
+      }
+    }
   }
   for (const [src, val] of Object.entries(myEdgesY)) {
     for (const t of hTargets) {
@@ -82,6 +93,15 @@ export function computeSnap(layer, nx, ny, ctx) {
       if (d < SNAP_PX && d < bestDy) {
         bestDy = d;
         bestY = { snapTo: t.y, src, target: t };
+      }
+    }
+    if (gridOn) {
+      const maxY = Math.floor(ch / gs) * gs;
+      const gy = Math.min(maxY, Math.max(0, Math.round(val / gs) * gs));
+      const d = Math.abs(gy - val);
+      if (d < SNAP_PX && d < bestDy) {
+        bestDy = d;
+        bestY = { snapTo: gy, src, target: { y: gy, label: 'grid-h' } };
       }
     }
   }

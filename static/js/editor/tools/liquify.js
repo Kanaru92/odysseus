@@ -71,6 +71,10 @@ export function createLiquifyTool({ activeLayer, saveState, composite }) {
     const warped = warpRegion(region.data, w, h, cx - x0, cy - y0, dx, dy, radius, strength);
     region.data.set(warped);
     ctx.putImageData(region, x0, y0);
+    // Dirty-rect composite hint: convert the bounded layer-local region to
+    // document space (the layer is drawn at its offset). The compositor clamps
+    // to canvas bounds and falls back to a full redraw when unsafe.
+    return { x: x0 + off.x, y: y0 + off.y, w, h };
   }
   return {
     begin(e) {
@@ -88,9 +92,9 @@ export function createLiquifyTool({ activeLayer, saveState, composite }) {
       const c = canvasCoords(e, state.mainCanvas);
       const last = state.liquifyLast || c;
       const dx = c.x - last.x, dy = c.y - last.y;
-      if (dx !== 0 || dy !== 0) applyWarp(layer, c.x, c.y, dx, dy);
+      const dirty = (dx !== 0 || dy !== 0) ? applyWarp(layer, c.x, c.y, dx, dy) : null;
       state.liquifyLast = { x: c.x, y: c.y };
-      composite();
+      if (dirty) composite(dirty);
     },
     end() {
       state.liquifyActive = false;

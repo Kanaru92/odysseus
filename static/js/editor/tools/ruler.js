@@ -6,9 +6,11 @@
  * composite is repainted and the line + small end caps + a midpoint text label
  * are overlaid in document space (1/zoom line widths so they stay crisp at any
  * zoom). On release the measurement persists (state.rulerStart/End/rulerInfo
- * stay populated) so an options-bar read-out can display it; only rulerActive
- * is cleared. Purely non-destructive — the overlay lives on state.mainCtx and is
- * wiped by the next composite(); no layer pixels are ever touched.
+ * stay populated) and is re-overlaid after every composite() via the
+ * 'ge:composited' hook, so zoom/pan/redraws keep the line visible until the
+ * user switches tools (which drops it on the next composite). Purely
+ * non-destructive — the overlay lives on state.mainCtx and no layer pixels are
+ * ever touched.
  *
  * Angle convention follows the conventional measure read-out: right = 0°, up =
  * +90°, normalized to (-180, 180] via atan2(-dy, dx) (canvas y grows downward,
@@ -30,14 +32,14 @@ function updateInfo() {
 }
 
 export function createRulerTool({ composite }) {
-  // Repaint the composite, then overlay the measure line + caps + label in
-  // document coords. Mirrors the gradient tool's preview approach (1/zoom
-  // widths, drawn straight onto state.mainCtx after composite()).
-  function drawOverlay() {
+  // Paint the measure line + caps + label in document coords onto the live
+  // composite (state.mainCtx). Mirrors the gradient tool's preview approach
+  // (1/zoom widths). This does NOT repaint the base — callers either composite()
+  // first (drawOverlay) or run from the post-composite 'ge:composited' hook.
+  function paintOverlay() {
     const ctx = state.mainCtx;
     const s = state.rulerStart, en = state.rulerEnd;
     if (!ctx || !s || !en) return;
-    composite(); // repaint base, then overlay in doc space
     const z = state.zoom || 1;
     ctx.save();
     ctx.lineWidth = 1 / z;
@@ -78,6 +80,40 @@ export function createRulerTool({ composite }) {
     }
     ctx.restore();
   }
+
+  // Repaint the base composite, then overlay. Used during the live drag.
+  // Guarded so the 'ge:composited' hook (below) doesn't re-enter while our own
+  // composite() call is in flight.
+  let painting = false;
+  function drawOverlay() {
+    painting = true;
+    try {
+      composite(); // repaint base, then overlay in doc space
+      paintOverlay();
+    } finally {
+      painting = false;
+    }
+  }
+
+  // Persistence: composite() (zoom, pan, mask toggle, any other tool action)
+  // wipes mainCtx with no ruler pass, so without this the line/label vanish on
+  // the next redraw. Re-overlay after every composite while a measurement is
+  // present. Skip the self-triggered composite from drawOverlay (already
+  // painted) to avoid double work / re-entrancy.
+  window.addEventListener('ge:composited', () => {
+    if (painting) return;
+    if (!state.rulerStart || !state.rulerEnd) return;
+    // Switching away from the ruler tool drops the measurement so a stale line
+    // doesn't linger over an unrelated tool. The composite that already ran has
+    // wiped the overlay, so just clear state — no extra repaint needed.
+    if (state.tool !== 'ruler') {
+      state.rulerStart = null;
+      state.rulerEnd = null;
+      state.rulerInfo = null;
+      return;
+    }
+    paintOverlay();
+  });
 
   return {
     begin(e) {

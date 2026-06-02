@@ -259,6 +259,20 @@ export function createGradientTool({ activeLayer, saveState, composite }) {
     for (const p of [s, en]) { ctx.beginPath(); ctx.arc(p.x, p.y, 3 / z, 0, Math.PI * 2); ctx.fill(); }
     ctx.restore();
   }
+  // Coalesce preview repaints behind a single requestAnimationFrame so a burst
+  // of pointermove events produces at most one (full-document) raster per frame
+  // instead of one per event — see brush-preview.js for the same pattern.
+  let previewRaf = 0;
+  function schedulePreview() {
+    if (previewRaf) return;
+    previewRaf = requestAnimationFrame(() => {
+      previewRaf = 0;
+      if (state.gradActive) drawPreview();
+    });
+  }
+  function cancelPreview() {
+    if (previewRaf) { cancelAnimationFrame(previewRaf); previewRaf = 0; }
+  }
   return {
     begin(e) {
       const layer = activeLayer();
@@ -272,9 +286,10 @@ export function createGradientTool({ activeLayer, saveState, composite }) {
       if (!state.gradActive) return;
       const c = canvasCoords(e, state.mainCanvas);
       state.gradEnd = { x: c.x, y: c.y };
-      drawPreview();
+      schedulePreview();
     },
     end() {
+      cancelPreview();
       if (!state.gradActive) return;
       state.gradActive = false;
       const layer = activeLayer();

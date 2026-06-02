@@ -83,6 +83,7 @@ export function createSmartObject({ activeLayer, saveState, composite, renderLay
     layer.sourceW = layer.sourceH = null;
     layer.smartXf = null; layer.isSmart = false; layer.linked = null;
     renderLayerPanel?.();
+    composite();
     uiModule?.showToast?.('Rasterized');
   }
 
@@ -104,6 +105,7 @@ export function createSmartObject({ activeLayer, saveState, composite, renderLay
           sc.width = img.naturalWidth || img.width; sc.height = img.naturalHeight || img.height;
           sc.getContext('2d').drawImage(img, 0, 0);
           layer.sourceCanvas = sc; layer.sourceW = sc.width; layer.sourceH = sc.height;
+          layer.linked = null; // a file-replaced source is no longer link-backed
           rebakeSmart(layer);
           composite(); renderLayerPanel?.();
           uiModule?.showToast?.('Contents replaced');
@@ -126,6 +128,7 @@ export function createSmartObject({ activeLayer, saveState, composite, renderLay
     const img = new Image();
     try { img.crossOrigin = 'anonymous'; } catch {}
     img.onload = () => {
+      if (!state.layers.includes(layer)) return; // layer removed while loading
       saveState(label);
       if (!layer.isSmart) {
         layer.isSmart = true;

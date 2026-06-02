@@ -83,7 +83,21 @@ export function healDab(data, w, h, px, py, radius, srcDx, srcDy) {
   const tr = ring[0] - src[0], tg = ring[1] - src[1], tb = ring[2] - src[2]; // tone shift
   const x0 = Math.max(0, Math.floor(px - r)), y0 = Math.max(0, Math.floor(py - r));
   const x1 = Math.min(w, Math.ceil(px + r)), y1 = Math.min(h, Math.ceil(py + r));
-  // Snapshot the source rows we read so we don't read already-healed pixels.
+  // Snapshot the source region we read so we don't read already-healed pixels.
+  // The write region overlaps the source patch (offset ~1.6r < 2r), so reading
+  // live `data` would feed just-written pixels back in, smearing the patch.
+  // Cover the full clamped extent the read loop can touch (sx/sy are edge-clamped
+  // into [0,w-1]×[0,h-1], so the snapshot uses the same clamp).
+  const sxMin = Math.max(0, Math.min(w - 1, x0 + srcDx));
+  const sxMax = Math.max(0, Math.min(w - 1, (x1 - 1) + srcDx));
+  const syMin = Math.max(0, Math.min(h - 1, y0 + srcDy));
+  const syMax = Math.max(0, Math.min(h - 1, (y1 - 1) + srcDy));
+  const sw = sxMax - sxMin + 1, sh = syMax - syMin + 1;
+  const snap = new Uint8ClampedArray(sw * sh * 4);
+  for (let y = 0; y < sh; y++) {
+    const rowSrc = ((syMin + y) * w + sxMin) * 4;
+    snap.set(data.subarray(rowSrc, rowSrc + sw * 4), y * sw * 4);
+  }
   for (let y = y0; y < y1; y++) {
     for (let x = x0; x < x1; x++) {
       const dx = x - px, dy = y - py;
@@ -93,8 +107,8 @@ export function healDab(data, w, h, px, py, radius, srcDx, srcDy) {
       let sx = x + srcDx, sy = y + srcDy;
       if (sx < 0) sx = 0; else if (sx >= w) sx = w - 1;
       if (sy < 0) sy = 0; else if (sy >= h) sy = h - 1;
-      const si = (sy * w + sx) * 4, di = (y * w + x) * 4;
-      const hr = clamp8(data[si] + tr), hg = clamp8(data[si + 1] + tg), hb = clamp8(data[si + 2] + tb);
+      const si = ((sy - syMin) * sw + (sx - sxMin)) * 4, di = (y * w + x) * 4;
+      const hr = clamp8(snap[si] + tr), hg = clamp8(snap[si + 1] + tg), hb = clamp8(snap[si + 2] + tb);
       // Straight-alpha "over": deposit the healed colour at coverage f over the
       // existing pixel. Critically, where the target is transparent (alpha≈0)
       // the result is the healed colour itself — NOT colour×f (which read as a

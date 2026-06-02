@@ -27,28 +27,44 @@ export function diffusionFill(data, w, h, mask, maxIter = 600) {
   if (bx1 < 0) return false;
   bx0 = Math.max(0, bx0 - 1); by0 = Math.max(0, by0 - 1);
   bx1 = Math.min(w - 1, bx1 + 1); by1 = Math.min(h - 1, by1 + 1);
-  // Diffusion converges ~geometrically; scale iterations to the hole size so the
-  // centre fully resolves (cheap for small holes; capped for big ones).
-  const iter = Math.max(120, Math.min(maxIter, Math.max(bx1 - bx0, by1 - by0) * 8));
-  const tmp = new Float32Array(w * h * 3);
-  for (let i = 0; i < w * h; i++) { tmp[i * 3] = data[i * 4]; tmp[i * 3 + 1] = data[i * 4 + 1]; tmp[i * 3 + 2] = data[i * 4 + 2]; }
+  // Jacobi diffusion spreads information ~sqrt(iterations) pixels per step, so a
+  // pixel `d` deep inside the hole needs ~d^2 iterations to resolve. The deepest
+  // interior point sits ~half the hole's narrower span from a border, so scale by
+  // that depth squared (capped at maxIter; floored so tiny holes still settle).
+  const depth = Math.ceil(Math.min(bx1 - bx0, by1 - by0) / 2);
+  const iter = Math.max(120, Math.min(maxIter, depth * depth));
+  // Carry alpha as a confidence channel: transparent source pixels read back as
+  // RGB 0,0,0 (canvas un-premultiplies them to black), so averaging them in would
+  // bleed a dark halo into the hole. We only sample neighbours that are known
+  // (opaque enough) and diffuse alpha alongside colour rather than forcing 255.
+  const ALPHA_MIN = 8;
+  const tmp = new Float32Array(w * h * 4);
+  for (let i = 0; i < w * h; i++) {
+    tmp[i * 4] = data[i * 4]; tmp[i * 4 + 1] = data[i * 4 + 1];
+    tmp[i * 4 + 2] = data[i * 4 + 2]; tmp[i * 4 + 3] = data[i * 4 + 3];
+  }
   for (let it = 0; it < iter; it++) {
     for (let y = by0; y <= by1; y++) {
       for (let x = bx0; x <= bx1; x++) {
         const idx = y * w + x;
         if (!fill[idx]) continue;
-        let r = 0, g = 0, b = 0, n = 0;
-        if (x > 0) { const j = (idx - 1) * 3; r += tmp[j]; g += tmp[j + 1]; b += tmp[j + 2]; n++; }
-        if (x < w - 1) { const j = (idx + 1) * 3; r += tmp[j]; g += tmp[j + 1]; b += tmp[j + 2]; n++; }
-        if (y > 0) { const j = (idx - w) * 3; r += tmp[j]; g += tmp[j + 1]; b += tmp[j + 2]; n++; }
-        if (y < h - 1) { const j = (idx + w) * 3; r += tmp[j]; g += tmp[j + 1]; b += tmp[j + 2]; n++; }
-        if (n) { tmp[idx * 3] = r / n; tmp[idx * 3 + 1] = g / n; tmp[idx * 3 + 2] = b / n; }
+        let r = 0, g = 0, b = 0, a = 0, n = 0;
+        if (x > 0) { const j = (idx - 1) * 4; if (tmp[j + 3] > ALPHA_MIN) { r += tmp[j]; g += tmp[j + 1]; b += tmp[j + 2]; a += tmp[j + 3]; n++; } }
+        if (x < w - 1) { const j = (idx + 1) * 4; if (tmp[j + 3] > ALPHA_MIN) { r += tmp[j]; g += tmp[j + 1]; b += tmp[j + 2]; a += tmp[j + 3]; n++; } }
+        if (y > 0) { const j = (idx - w) * 4; if (tmp[j + 3] > ALPHA_MIN) { r += tmp[j]; g += tmp[j + 1]; b += tmp[j + 2]; a += tmp[j + 3]; n++; } }
+        if (y < h - 1) { const j = (idx + w) * 4; if (tmp[j + 3] > ALPHA_MIN) { r += tmp[j]; g += tmp[j + 1]; b += tmp[j + 2]; a += tmp[j + 3]; n++; } }
+        if (n) { tmp[idx * 4] = r / n; tmp[idx * 4 + 1] = g / n; tmp[idx * 4 + 2] = b / n; tmp[idx * 4 + 3] = a / n; }
       }
     }
   }
-  for (let i = 0; i < w * h; i++) {
-    if (!fill[i]) continue;
-    data[i * 4] = tmp[i * 3]; data[i * 4 + 1] = tmp[i * 3 + 1]; data[i * 4 + 2] = tmp[i * 3 + 2]; data[i * 4 + 3] = 255;
+  // Fill pixels only exist inside the bbox, so write back just that rect.
+  for (let y = by0; y <= by1; y++) {
+    for (let x = bx0; x <= bx1; x++) {
+      const idx = y * w + x;
+      if (!fill[idx]) continue;
+      data[idx * 4] = tmp[idx * 4]; data[idx * 4 + 1] = tmp[idx * 4 + 1];
+      data[idx * 4 + 2] = tmp[idx * 4 + 2]; data[idx * 4 + 3] = tmp[idx * 4 + 3];
+    }
   }
   return true;
 }

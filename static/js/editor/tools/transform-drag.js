@@ -44,11 +44,23 @@ export function createTransformDragTool({
         // "start + dx" (correct delta) rather than accumulating off the
         // running offset, which was making top/left grabs drift.
         const layer = state.transformLayer;
+        if (!layer) { state.transformHandle = null; return false; }
         const off = state.layerOffsets.get(layer.id) || { x: 0, y: 0 };
         state.transformStartOffX = off.x;
         state.transformStartOffY = off.y;
-        state.transformOrigW = layer.canvas.width;
-        state.transformOrigH = layer.canvas.height;
+        // Seed the resize from the LOGICAL (unrotated) source size, not the
+        // layer canvas — layer.canvas.{width,height} is the ROTATED bounding
+        // box (reapplyTransform sizes it to finalW/finalH), whereas the resize
+        // delta and transformPendingW/H are expressed in logical space. Using
+        // the bbox here double-counts the rotation and makes resize jump on a
+        // rotated layer. For a layer with no rotation the two are identical.
+        state.transformOrigW = state.transformPendingW || layer.canvas.width;
+        state.transformOrigH = state.transformPendingH || layer.canvas.height;
+        // Visual centre at drag-start (rotation pivots about the layer centre,
+        // which is the centre of the rotated bbox). Needed to anchor the
+        // opposite edge correctly when a rotation is active.
+        state.transformStartCenterX = off.x + layer.canvas.width / 2;
+        state.transformStartCenterY = off.y + layer.canvas.height / 2;
         return true;
       }
       // No corner hit — if click inside the layer's bounding box, act
@@ -88,6 +100,10 @@ export function createTransformDragTool({
         return false; // didn't fully consume the event
       }
       if (!state.transformHandle) return false;
+      // Layer can vanish mid-drag (deleted / doc switched) while a handle is
+      // still grabbed — both the rotation and resize paths below dereference
+      // it, so bail cleanly instead of throwing.
+      if (!state.transformLayer) { state.transformHandle = null; return false; }
       e.preventDefault();
       const coords = canvasCoords(e, state.mainCanvas);
       // Rotation grip — angle measured from the layer's geometric
@@ -111,11 +127,19 @@ export function createTransformDragTool({
         return true;
       }
       // Resize via corner / edge handle.
-      const dx = coords.x - state.transformStartX;
-      const dy = coords.y - state.transformStartY;
-      const layer = state.transformLayer;
-      let newW = layer.canvas.width;
-      let newH = layer.canvas.height;
+      // Map the cursor delta into the layer's UNROTATED frame so a handle
+      // drag scales along the layer's own W/H axes (which are rotated on
+      // screen), not the screen axes. For an unrotated layer R(-θ)=identity
+      // and this is byte-identical to the old screen-space delta.
+      const rawDx = coords.x - state.transformStartX;
+      const rawDy = coords.y - state.transformStartY;
+      const rotRad = ((state.transformPendingRot || 0) * Math.PI) / 180;
+      const cosR = Math.cos(rotRad);
+      const sinR = Math.sin(rotRad);
+      const dx = rawDx * cosR + rawDy * sinR;   // R(-θ) applied to (rawDx,rawDy)
+      const dy = -rawDx * sinR + rawDy * cosR;
+      let newW = state.transformOrigW;
+      let newH = state.transformOrigH;
       if (state.transformHandle.includes('r')) newW = state.transformOrigW + dx;
       if (state.transformHandle.includes('l')) newW = state.transformOrigW - dx;
       if (state.transformHandle.includes('b')) newH = state.transformOrigH + dy;
@@ -139,13 +163,26 @@ export function createTransformDragTool({
       // handles don't slide while the user drags.
       state.transformPendingW = newW;
       state.transformPendingH = newH;
-      const anchorOffX = state.transformStartOffX +
-        (state.transformHandle.includes('l') ? (state.transformOrigW - newW) : 0);
-      const anchorOffY = state.transformStartOffY +
-        (state.transformHandle.includes('t') ? (state.transformOrigH - newH) : 0);
+      // Anchor the opposite edge: in the layer's UNROTATED frame the box
+      // centre shifts by ±half the size change toward the grabbed edge. Rotate
+      // that shift back into canvas space (R(θ)) and apply it to the start
+      // centre to get the new visual centre, then express it as the offset
+      // reapplyTransform consumes (offset = centre − logical/2). For an
+      // unrotated layer this reduces exactly to the previous anchorOff math.
+      let shiftU = 0;
+      let shiftV = 0;
+      if (state.transformHandle.includes('r')) shiftU = (newW - state.transformOrigW) / 2;
+      if (state.transformHandle.includes('l')) shiftU = -(newW - state.transformOrigW) / 2;
+      if (state.transformHandle.includes('b')) shiftV = (newH - state.transformOrigH) / 2;
+      if (state.transformHandle.includes('t')) shiftV = -(newH - state.transformOrigH) / 2;
+      const newCenterX = state.transformStartCenterX + (shiftU * cosR - shiftV * sinR);
+      const newCenterY = state.transformStartCenterY + (shiftU * sinR + shiftV * cosR);
+      // reapplyTransform derives the visual centre as
+      // transformOrigOffset + transformOrigW/H ÷ 2, so back out the offset
+      // using the SAME logical orig dims it will add (not newW/newH).
       state.transformOrigOffset = {
-        x: anchorOffX + newW / 2 - state.transformOrigW / 2,
-        y: anchorOffY + newH / 2 - state.transformOrigH / 2,
+        x: newCenterX - state.transformOrigW / 2,
+        y: newCenterY - state.transformOrigH / 2,
       };
       reapplyTransform();
       // Mirror the new W/H into the popup if it's open.
@@ -164,8 +201,25 @@ export function createTransformDragTool({
     tryEnd() {
       if (!(state.transformActive && state.transformHandle)) return false;
       state.transformHandle = null;
-      state.transformOrigW = state.transformLayer?.canvas.width || 0;
-      state.transformOrigH = state.transformLayer?.canvas.height || 0;
+      // Leave transformOrigW/H in LOGICAL space so the session stays coherent
+      // for subsequent popup edits / the next drag (reapplyTransform recenters
+      // via transformOrigOffset + transformOrigW/H÷2, and aspect-lock reads the
+      // ratio from them). The old code reseeded from layer.canvas.{w,h} — the
+      // ROTATED bbox — which corrupted the pivot/ratio after a rotated drag.
+      // Rebase transformOrigOffset onto the new logical size so the visual
+      // centre is preserved across the basis change.
+      const prevOrigW = state.transformOrigW;
+      const prevOrigH = state.transformOrigH;
+      const newOrigW = state.transformPendingW || prevOrigW;
+      const newOrigH = state.transformPendingH || prevOrigH;
+      if (state.transformOrigOffset) {
+        state.transformOrigOffset = {
+          x: state.transformOrigOffset.x + (prevOrigW - newOrigW) / 2,
+          y: state.transformOrigOffset.y + (prevOrigH - newOrigH) / 2,
+        };
+      }
+      state.transformOrigW = newOrigW;
+      state.transformOrigH = newOrigH;
       composite();
       drawTransformHandles();
       return true;

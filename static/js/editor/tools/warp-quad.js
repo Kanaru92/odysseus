@@ -88,6 +88,11 @@ function drawTri(ctx, img, s0, s1, s2, d0, d1, d2) {
   const x0 = s0.x, y0 = s0.y, x1 = s1.x, y1 = s1.y, x2 = s2.x, y2 = s2.y;
   const denom = (x1 - x0) * (y2 - y0) - (x2 - x0) * (y1 - y0);
   if (Math.abs(denom) < 1e-9) return;
+  // Reject a degenerate (collinear/zero-area) DESTINATION triangle too — a
+  // straightened/folded quad can collapse a dest cell, which yields a singular
+  // affine map (NaN/Infinity coefficients) and a corrupt drawImage.
+  const ddenom = (d1.x - d0.x) * (d2.y - d0.y) - (d2.x - d0.x) * (d1.y - d0.y);
+  if (Math.abs(ddenom) < 1e-9) return;
   // x' = a·x + b·y + e ; y' = c·x + d·y + f
   const a = ((d1.x - d0.x) * (y2 - y0) - (d2.x - d0.x) * (y1 - y0)) / denom;
   const b = ((x1 - x0) * (d2.x - d0.x) - (x2 - x0) * (d1.x - d0.x)) / denom;
@@ -95,17 +100,31 @@ function drawTri(ctx, img, s0, s1, s2, d0, d1, d2) {
   const d = ((x1 - x0) * (d2.y - d0.y) - (x2 - x0) * (d1.y - d0.y)) / denom;
   const e = d0.x - a * x0 - b * y0;
   const f = d0.y - c * x0 - d * y0;
+  if (!Number.isFinite(a) || !Number.isFinite(b) || !Number.isFinite(c) ||
+      !Number.isFinite(d) || !Number.isFinite(e) || !Number.isFinite(f)) return;
   // Grow the clip triangle ~0.6px outward from its centroid so neighbouring
   // cells overlap — kills the hairline anti-aliased seams between triangles.
   const gx = (d0.x + d1.x + d2.x) / 3, gy = (d0.y + d1.y + d2.y) / 3;
   const grow = (p) => { const dx = p.x - gx, dy = p.y - gy; const len = Math.hypot(dx, dy) || 1; const k = (len + 0.6) / len; return { x: gx + dx * k, y: gy + dy * k }; };
   const g0 = grow(d0), g1 = grow(d1), g2 = grow(d2);
+  // Bound the blit to this triangle's source sub-rect (padded 1px to keep edge
+  // samples) instead of re-rasterizing the WHOLE source under the clip — the
+  // active setTransform maps source coords→dest, so src and dest rects match.
+  const iw = img.width || img.naturalWidth, ih = img.height || img.naturalHeight;
+  let bx = Math.floor(Math.min(x0, x1, x2)) - 1;
+  let by = Math.floor(Math.min(y0, y1, y2)) - 1;
+  let bx2 = Math.ceil(Math.max(x0, x1, x2)) + 1;
+  let by2 = Math.ceil(Math.max(y0, y1, y2)) + 1;
+  bx = Math.max(0, Math.min(bx, iw)); by = Math.max(0, Math.min(by, ih));
+  bx2 = Math.max(0, Math.min(bx2, iw)); by2 = Math.max(0, Math.min(by2, ih));
+  const bw = bx2 - bx, bh = by2 - by;
+  if (bw <= 0 || bh <= 0) return;
   ctx.save();
   ctx.beginPath();
   ctx.moveTo(g0.x, g0.y); ctx.lineTo(g1.x, g1.y); ctx.lineTo(g2.x, g2.y); ctx.closePath();
   ctx.clip();
   ctx.setTransform(a, c, b, d, e, f); // (m11,m12,m21,m22,dx,dy)
-  ctx.drawImage(img, 0, 0);
+  ctx.drawImage(img, bx, by, bw, bh, bx, by, bw, bh);
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.restore();
 }

@@ -24,19 +24,46 @@ import { createBrushEngine } from './brush/index.js';
 import { getPreset } from './brush/presets.js';
 import { makeNoiseGrain } from './brush/grain-textures.js';
 
+// 1×1 scratch canvas to resolve any CSS colour the fast paths below can't parse
+// (named colours like 'white', hsl()/hsla(), #rgba / #rrggbbaa). Built lazily and
+// reused so the fallback doesn't allocate per stroke segment.
+let _lumaProbe = null, _lumaProbeCtx = null;
+function _cssToRgb(css) {
+  if (!_lumaProbe) {
+    _lumaProbe = document.createElement('canvas');
+    _lumaProbe.width = 1; _lumaProbe.height = 1;
+    _lumaProbeCtx = _lumaProbe.getContext('2d', { willReadFrequently: true });
+  }
+  _lumaProbeCtx.clearRect(0, 0, 1, 1);
+  // An invalid colour leaves fillStyle unchanged; clear to a known sentinel first
+  // so an unparseable string resolves to black (0) rather than a stale value.
+  _lumaProbeCtx.fillStyle = '#000000';
+  _lumaProbeCtx.fillStyle = css;
+  _lumaProbeCtx.fillRect(0, 0, 1, 1);
+  const d = _lumaProbeCtx.getImageData(0, 0, 1, 1).data;
+  return { r: d[0], g: d[1], b: d[2] };
+}
+
 // Rec.601 luminance (0..255) of any CSS colour string — converts the foreground
-// colour to a grayscale tone when painting a PS layer mask (black hides, white
-// reveals, gray = partial). Parses #rgb / #rrggbb and rgb()/rgba().
+// colour to a grayscale tone when painting a layer mask (black hides, white
+// reveals, gray = partial). Fast-parses #rgb / #rrggbb and rgb()/rgba(); falls
+// back to a canvas probe for named colours / hsl() / #rgba so an unparseable
+// value no longer silently resolves to black (which would hide instead of reveal).
 function _lumaOf(css) {
-  let r = 0, g = 0, b = 0;
+  let r = 0, g = 0, b = 0, parsed = false;
   if (typeof css === 'string' && css[0] === '#') {
     let h = css.slice(1);
     if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
-    const n = parseInt(h, 16);
-    if (!Number.isNaN(n)) { r = (n >> 16) & 255; g = (n >> 8) & 255; b = n & 255; }
+    if (h.length === 6) {
+      const n = parseInt(h, 16);
+      if (!Number.isNaN(n)) { r = (n >> 16) & 255; g = (n >> 8) & 255; b = n & 255; parsed = true; }
+    }
   } else {
     const m = /rgba?\(([^)]+)\)/i.exec(css || '');
-    if (m) { const p = m[1].split(',').map((s) => parseFloat(s)); r = p[0] || 0; g = p[1] || 0; b = p[2] || 0; }
+    if (m) { const p = m[1].split(',').map((s) => parseFloat(s)); r = p[0] || 0; g = p[1] || 0; b = p[2] || 0; parsed = true; }
+  }
+  if (!parsed && typeof css === 'string' && css) {
+    try { ({ r, g, b } = _cssToRgb(css)); } catch { r = g = b = 0; }
   }
   return r * 0.299 + g * 0.587 + b * 0.114;
 }
@@ -407,7 +434,15 @@ export function createStrokePipeline({ activeLayer, getActiveMaskLayer, composit
         state.lastX = tx;
         state.lastY = ty;
         state.lastPressure = pr;
-        composite(dirty);
+        // Symmetry mirrors dabs across the canvas centre and large scatter throws
+        // them up to scatter×size away — both land OUTSIDE this endpoint-derived
+        // rect. The engine paints them onto the layer correctly, but a dirty-rect
+        // composite() would only blit this local bbox, leaving the mirrored /
+        // far-scattered paint invisible until an unrelated full redraw. Force a
+        // full composite for those cases so the screen matches the layer.
+        const _scatter = (eng.preset && eng.preset.scatter) || 0;
+        if ((rt.symmetry && rt.symmetry !== 'none') || _scatter > 1.2) composite();
+        else composite(dirty);
         return;
       } catch (err) {
         if (typeof console !== 'undefined') console.warn('[brush-engine] fell back to legacy stroke:', err);

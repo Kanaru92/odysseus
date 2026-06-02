@@ -85,17 +85,20 @@ export function createDodgeBurnTool({ activeLayer, saveState, composite }) {
       state.dodgeBurnActive = true;
       state.dodgeBurnLast = { x: c.x - off.x, y: c.y - off.y };
       // Apply an initial dab so a single click registers.
-      this.stamp(state.dodgeBurnLast, state.dodgeBurnLast);
-      composite();
+      const rect = this.stamp(state.dodgeBurnLast, state.dodgeBurnLast);
+      // Dirty-rect composite: convert the painted layer-local rect to document
+      // space (layer is drawn at its offset); the compositor clamps to canvas
+      // bounds and falls back to a full redraw when unsafe.
+      composite(rect ? { x: rect.x + off.x, y: rect.y + off.y, w: rect.w, h: rect.h } : undefined);
     },
     move(e) {
       if (!state.dodgeBurnActive || !layerRef) return;
       const off = state.layerOffsets.get(layerRef.id) || { x: 0, y: 0 };
       const c = canvasCoords(e, state.mainCanvas);
       const cur = { x: c.x - off.x, y: c.y - off.y };
-      this.stamp(state.dodgeBurnLast || cur, cur);
+      const rect = this.stamp(state.dodgeBurnLast || cur, cur);
       state.dodgeBurnLast = cur;
-      composite();
+      composite(rect ? { x: rect.x + off.x, y: rect.y + off.y, w: rect.w, h: rect.h } : undefined);
     },
     stamp(last, cur) {
       const W = layerRef.canvas.width, H = layerRef.canvas.height;
@@ -104,7 +107,7 @@ export function createDodgeBurnTool({ activeLayer, saveState, composite }) {
       const maxX = Math.min(W, Math.ceil(Math.max(last.x, cur.x) + radius));
       const maxY = Math.min(H, Math.ceil(Math.max(last.y, cur.y) + radius));
       const rw = maxX - minX, rh = maxY - minY;
-      if (rw <= 0 || rh <= 0) return;
+      if (rw <= 0 || rh <= 0) return null;
       const region = ctx.getImageData(minX, minY, rw, rh);
       const mode = modeVal(), amount = amountVal();
       const segLen = Math.hypot(cur.x - last.x, cur.y - last.y);
@@ -115,6 +118,9 @@ export function createDodgeBurnTool({ activeLayer, saveState, composite }) {
           last.x + (cur.x - last.x) * t, last.y + (cur.y - last.y) * t, radius, mode, amount);
       }
       ctx.putImageData(region, minX, minY);
+      // Return the painted rect (layer-local) so begin()/move() can pass a
+      // dirty rect to composite() instead of forcing a full-document redraw.
+      return { x: minX, y: minY, w: rw, h: rh };
     },
     end() {
       state.dodgeBurnActive = false;

@@ -55,7 +55,7 @@ export function createStrokeTool({
     stopAirbrush();
     if (state.tool !== 'brush' || !state.airbrush) return;
     airbrushTimer = setInterval(() => {
-      if (state.drawing) strokeTo(state.lastX, state.lastY);
+      if (state.drawing && state.tool === 'brush' && state.airbrush) strokeTo(state.lastX, state.lastY);
       else stopAirbrush();
     }, 40);
   }
@@ -144,10 +144,18 @@ export function createStrokeTool({
      * Wrap up an in-progress stroke. Returns true if there was one.
      */
     tryEnd() {
-      if (!state.drawing) return false;
+      // Always kill the airbrush timer first: a stroke can be torn down by
+      // other paths (tool switch, Escape, quick-select) that flip
+      // state.drawing without routing through here, so make teardown
+      // authoritative rather than relying on the drawing guard below.
       stopAirbrush();
+      if (!state.drawing) return false;
       const wasDrawingInpaint = state.tool === 'inpaint';
       state.drawing = false;
+      // A clone stroke leaves a full-document source snapshot resident in
+      // state; release it at stroke end so it doesn't pin a full-canvas
+      // bitmap until the next source-pick/stroke.
+      if (state.tool === 'clone') state.cloneSourceSnapshot = null;
       // Remember the stroke's end so a following Shift-click draws a straight
       // line from here (brush/eraser only).
       if (state.tool === 'brush' || state.tool === 'eraser') {

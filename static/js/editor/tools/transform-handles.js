@@ -257,12 +257,16 @@ export function getHandleAt(x, y) {
   const trH = rotCorner( preW / 2, -preH / 2);
   const brH = rotCorner( preW / 2,  preH / 2);
   const blH = rotCorner(-preW / 2,  preH / 2);
+  // Hit-test in reverse paint order: drawHandles paints the rotation
+  // knob LAST (on top), so it must be checked FIRST here. Otherwise a
+  // knob flipped onto/near a corner (knob.rotInside) would resolve to
+  // the corner id and a rotate grab silently becomes a resize.
   const handles = [
+    { x: knob.rotX, y: knob.rotY, id: 'rot' },
     { x: tlH.x,    y: tlH.y,    id: 'tl' },
     { x: trH.x,    y: trH.y,    id: 'tr' },
     { x: brH.x,    y: brH.y,    id: 'br' },
     { x: blH.x,    y: blH.y,    id: 'bl' },
-    { x: knob.rotX, y: knob.rotY, id: 'rot' },
   ];
   for (const c of handles) {
     if (Math.abs(x - c.x) < threshold && Math.abs(y - c.y) < threshold) return c.id;

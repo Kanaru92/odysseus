@@ -250,16 +250,19 @@ export function createSmudgeTool({ activeLayer, saveState, composite }) {
         minX = Math.min(minX, sg.a.x, sg.b.x); minY = Math.min(minY, sg.a.y, sg.b.y);
         maxX = Math.max(maxX, sg.a.x, sg.b.x); maxY = Math.max(maxY, sg.a.y, sg.b.y);
       }
-      minX = Math.max(0, Math.floor(minX - radius));
-      minY = Math.max(0, Math.floor(minY - radius));
-      maxX = Math.min(W, Math.ceil(maxX + radius));
-      maxY = Math.min(H, Math.ceil(maxY + radius));
+      const scatter = scatterAmt();   // random per-dab positional jitter
+      // Pad by the post-scatter footprint: a scattered dab centre can move up to
+      // scatter*radius from the segment, so its falloff reaches radius*(1+scatter).
+      const pad = radius * (1 + scatter);
+      minX = Math.max(0, Math.floor(minX - pad));
+      minY = Math.max(0, Math.floor(minY - pad));
+      maxX = Math.min(W, Math.ceil(maxX + pad));
+      maxY = Math.min(H, Math.ceil(maxY + pad));
       const rw = maxX - minX, rh = maxY - minY;
       if (rw <= 0 || rh <= 0) { state.smudgeLast = cur; return; }
       const region = ctx.getImageData(minX, minY, rw, rh);
       const s = effStrength(strengthVal());
       const pow = falloffPow();
-      const scatter = scatterAmt();   // random per-dab positional jitter
       const jitter = jitterAmt();     // random per-dab strength variation
       const stepLen = Math.max(0.75, radius * spacingFrac()); // step ↔ spacing
       for (let m = 0; m < segs.length; m++) {
