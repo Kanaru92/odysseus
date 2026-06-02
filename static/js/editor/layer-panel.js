@@ -207,6 +207,49 @@ export function createLayerPanelRenderer(deps) {
     return box;
   }
 
+  // Mask thumbnail (PS-style): a small grayscale preview of the layer's raster
+  // visibility mask, shown beside the layer thumbnail when one exists. Click =
+  // edit the mask (toggles back to pixels if already editing it); Shift+click =
+  // disable/enable; Alt+click = rubylith overlay (red over hidden areas). An
+  // accent outline marks the mask being edited; a disabled mask is dimmed + slashed.
+  function maskThumb(layer) {
+    const W = 34;
+    const aspect = (state.imgWidth && state.imgHeight) ? state.imgHeight / state.imgWidth : 1;
+    const H = Math.max(10, Math.min(30, Math.round(W * aspect)));
+    const box = document.createElement('canvas');
+    box.width = W; box.height = H;
+    box.className = 'ge-row-mask-thumb';
+    const editing = !!(state.layerMaskEdit && state.activeLayerId === layer.id);
+    const disabled = layer.maskEnabled === false;
+    box.style.cssText = `width:${W}px;height:${H}px;border:${editing ? '2px solid #4a9eff' : '1px solid rgba(255,255,255,0.4)'};border-radius:2px;flex-shrink:0;margin:0 2px;opacity:${disabled ? '0.5' : '1'};cursor:pointer;`;
+    box.title = `Layer mask — click: edit · Shift+click: ${disabled ? 'enable' : 'disable'} · Alt+click: view`;
+    const c = box.getContext('2d');
+    c.fillStyle = '#000'; c.fillRect(0, 0, W, H);
+    try {
+      if (layer.layerMask) {
+        c.imageSmoothingEnabled = true; c.imageSmoothingQuality = 'high';
+        c.drawImage(layer.layerMask, 0, 0, layer.layerMask.width, layer.layerMask.height, 0, 0, W, H);
+      }
+    } catch {}
+    if (disabled) { c.strokeStyle = '#ff4d4d'; c.lineWidth = 2; c.beginPath(); c.moveTo(2, H - 2); c.lineTo(W - 2, 2); c.stroke(); }
+    box.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const wasActive = state.activeLayerId === layer.id;
+      state.activeLayerId = layer.id;
+      if (e.shiftKey) {
+        layer.maskEnabled = layer.maskEnabled === false; // false→true (enable), else→false (disable)
+      } else if (e.altKey) {
+        state.maskOverlay = (state.maskOverlay === layer.id) ? null : layer.id;
+      } else {
+        state.layerMaskEdit = !(wasActive && state.layerMaskEdit); // toggle edit-mask vs edit-pixels
+      }
+      document.getElementById('ge-layer-mask')?.classList.toggle('active', !!(state.layerMaskEdit && layer.layerMask));
+      composite();
+      render();
+    });
+    return box;
+  }
+
   // ── Layer colour labels (row tag) ─────────────────────────────────────
   // A colour-label visually groups related rows (NOT pixel colour). Set it
   // from a small right-click context menu on the row. Persists in the draft +
@@ -731,6 +774,7 @@ export function createLayerPanelRenderer(deps) {
 
       item.appendChild(visBtn);
       item.appendChild(layerThumb(layer));
+      if (layer.layerMask) item.appendChild(maskThumb(layer));
       // Small queryable colour-label swatch next to the name (mirrors the
       // left-edge stripe). Only present when the row carries a label.
       if (layer.colorLabel) {

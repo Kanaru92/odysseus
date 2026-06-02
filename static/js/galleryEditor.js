@@ -699,6 +699,33 @@ function _deleteLayerMask() {
   _syncLayerMaskBtn();
   composite();
 }
+// Rubylith overlay for the active layer's mask (Alt+click the mask thumb / '\'):
+// tint the HIDDEN (low-coverage) areas red, like the PS mask preview. Only shown
+// while the overlaid layer is the active one, so switching layers hides it.
+function _drawMaskRubylith() {
+  if (state.maskOverlay !== state.activeLayerId) return;
+  const layer = state.layers.find((l) => l.id === state.maskOverlay);
+  if (!layer || !layer.layerMask) return;
+  const off = state.layerOffsets.get(layer.id) || { x: 0, y: 0 };
+  const W = state.mainCanvas.width, H = state.mainCanvas.height;
+  const tmp = document.createElement('canvas');
+  tmp.width = W; tmp.height = H;
+  const t = tmp.getContext('2d');
+  t.fillStyle = 'rgba(255,0,40,0.5)';
+  t.fillRect(0, 0, W, H);
+  // Knock out the red where the mask reveals (high coverage matte alpha) so red
+  // remains only over the hidden areas.
+  t.globalCompositeOperation = 'destination-out';
+  t.drawImage(_maskCoverageMatte(layer.layerMask), off.x, off.y);
+  state.mainCtx.drawImage(tmp, 0, 0);
+}
+// Toggle the rubylith mask view for the active layer (bound to '\').
+function _toggleMaskView() {
+  const layer = activeLayer();
+  if (!layer || !layer.layerMask) return;
+  state.maskOverlay = (state.maskOverlay === layer.id) ? null : layer.id;
+  composite();
+}
 // Reflect mask-edit state on the header button (active = currently painting the mask).
 function _syncLayerMaskBtn() {
   const btn = document.getElementById('ge-layer-mask');
@@ -896,6 +923,7 @@ function _renderLayersTo(ctx, canvas) {
 // false → fall back to the full redraw so output stays pixel-identical.
 function _canDirtyComposite() {
   if (state.cmykProof || state.maskVisible) return false;
+  if (state.maskOverlay) return false;
   if (state.transformActive || state.pcropActive) return false;
   if (state.cropRect || state.cropping) return false;
   if (state.lassoPoints && state.lassoPoints.length) return false;
@@ -1019,6 +1047,8 @@ function composite(dirty) {
   if (state.activeSnapGuides && state.activeSnapGuides.length) _drawSnapGuides();
   // Magic-wand selection overlay (translucent red tint of the mask).
   if (state.wandMask && state.wandLayerId && state.wandMaskVisible) _drawWandOverlay();
+  // Layer-mask rubylith overlay (Alt+click the mask thumb / '\').
+  if (state.maskOverlay) _drawMaskRubylith();
   // Keep the per-tool clear-X badges in sync. Cheap: two classList
   // toggles. Composite runs on every visible state change, so this
   // catches every lasso/wand mutation site without each one having to
@@ -5057,6 +5087,7 @@ function _buildEditor(container) {
     drawLassoOverlay: _drawLassoOverlay,
     swapColors: _swapColors,
     defaultColors: _defaultColors,
+    toggleMaskView: _toggleMaskView,
     activeLayer,
     uiModule,
     renderLayerPanel: () => _renderLayerPanel(),

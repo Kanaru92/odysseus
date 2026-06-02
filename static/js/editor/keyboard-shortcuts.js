@@ -63,7 +63,7 @@ export function wireKeyboardShortcuts(deps) {
     wandDeleteSelection, wandCopyToNewLayer,
     lassoDeleteSelection, lassoCopyToLayer, lassoToMask,
     buildLassoMask, drawLassoOverlay,
-    swapColors, defaultColors,
+    swapColors, defaultColors, toggleMaskView,
     activeLayer, uiModule, renderLayerPanel, fillActiveLayer, stampVisible,
     confirmDistort, cancelDistort,
     polyLassoClose, polyLassoCancel,
@@ -473,6 +473,9 @@ export function wireKeyboardShortcuts(deps) {
       if (sl) sl.value = String(state.brushSoftness);
       if (lbl) lbl.textContent = state.brushSoftness + '%';
     }
+    // '\' toggles the layer-mask rubylith overlay (red over hidden areas) for
+    // the active layer's mask.
+    if (e.key === '\\' && toggleMaskView) { e.preventDefault(); toggleMaskView(); }
     // Color keys — X swaps FG/BG, D resets to default black/white.
     // D also serves as lasso-delete when a lasso selection is active, so only
     // treat it as default-colors when there's no lasso selection.

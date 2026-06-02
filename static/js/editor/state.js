@@ -127,6 +127,7 @@ export const state = {
   maskCtx: null,
   maskVisible: true,
   layerMaskEdit: false, // when true, brush/eraser paint the active layer's PS visibility mask (layer.layerMask): brush reveals, eraser hides
+  maskOverlay: null,    // layer id whose mask is shown as a red rubylith overlay ('\' / Alt+click the mask thumb); null = off
   // Reused canvas for the union-of-masks tint pass (saves repeated
   // allocation on every composite).
   compositeMaskUnion: null,
