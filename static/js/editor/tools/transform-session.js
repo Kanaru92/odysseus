@@ -40,11 +40,21 @@ export function createTransformSession({
   activeLayer, saveState, composite, fitZoom, drawTransformHandles,
   showCanvasLoading, hideCanvasLoading, undo, uiModule,
 }) {
-  function startTransform() {
+  // `opts.silent` = popup-less, no fit-to-viewport, no toast on commit. Used by
+  // the Move tool's always-on transform box (Feature 2): same non-destructive
+  // snapshot + handle rig as Free Transform, but it must not steal the zoom,
+  // pop a dialog, or toast on every layer/tool change. The numeric-popup path
+  // (Free Transform proper) is byte-identical when opts is omitted.
+  function startTransform(opts) {
+    const silent = !!(opts && opts.silent);
     const layer = activeLayer();
-    if (!layer || layer.locked) { uiModule.showToast('Select an unlocked layer'); return; }
+    if (!layer || layer.locked) {
+      if (!silent) uiModule.showToast('Select an unlocked layer');
+      return;
+    }
     if (state.transformActive) { cancelTransform(); return; } // toggle off
     state.transformActive = true;
+    state.transformSilent = silent;
     state.transformLayer = layer;
     // Smart Objects re-derive from their PRISTINE source each session (no
     // compounding resample loss); normal layers snapshot the current pixels.
@@ -87,11 +97,12 @@ export function createTransformSession({
     saveState();
     // Fit canvas to viewport so the corner handles are visible —
     // without this, a layer larger than the viewport leaves the grab
-    // markers off-screen.
-    try { fitZoom(); } catch {}
+    // markers off-screen. Skipped in silent (Move-tool) mode so selecting
+    // Move doesn't yank the user's zoom/pan.
+    if (!silent) { try { fitZoom(); } catch {} }
     composite();
     drawTransformHandles();
-    openTransformPopup();
+    if (!silent) openTransformPopup();
   }
 
   function closeTransformPopup() {
@@ -386,13 +397,17 @@ export function createTransformSession({
       };
     }
     closeTransformPopup();
+    const wasSilent = state.transformSilent;
     state.transformOrigCanvas = null;
     state.transformOrigOffset = null;
     state.transformActive = false;
+    state.transformSilent = false;
     state.transformLayer = null;
     state.transformHandle = null;
     composite();
-    uiModule.showToast('Transform applied');
+    // Silent (Move-tool) sessions confirm on every layer/tool change, so a
+    // toast each time would be noise. Free Transform still confirms loudly.
+    if (!wasSilent) uiModule.showToast('Transform applied');
   }
 
   function cancelTransform() {
@@ -401,6 +416,7 @@ export function createTransformSession({
     state.transformOrigOffset = null;
     if (state.transformLayer) undo(); // restore saved state
     state.transformActive = false;
+    state.transformSilent = false;
     state.transformLayer = null;
     state.transformHandle = null;
     composite();

@@ -1681,6 +1681,10 @@ function _beginDraw(e) {
   // Fall back to the parent resolver so a stale activeLayerId doesn't
   // block strokes when there ARE layers present.
   const layer = activeLayer() || _activeParentLayer();
+  // Move tool: make sure the always-on transform box targets the CURRENT
+  // active layer before hit-testing its handles (a bare layer-list click
+  // only toggles selection, so the box may be stale here).
+  if (state.tool === 'move') _resyncMoveTransform();
   // Transform-tool drag (handle grab or move-fallback) — handler in
   // editor/tools/transform-drag.js.
   if (_transformDragTool.tryBegin(e)) return;
@@ -1951,6 +1955,64 @@ const _moveTool = createMoveTool({ activeLayer, saveState: _saveState, composite
 const _beginMove    = _moveTool.begin;
 const _continueMove = _moveTool.drag;
 const _endMove      = _moveTool.end;
+
+// Feature 2 — Move tool's always-on transform box. Starts a SILENT transform
+// session (no popup, no zoom-fit) around the active layer so the standard 8
+// handles + rotation grip render and resize/rotate work, while a plain in-box
+// drag still moves the layer. Non-destructive until commit (reuses the
+// transform session's clean snapshot). No-op if a session is already running
+// (e.g. the dedicated Transform tool) or there's no unlocked active layer.
+function _ensureMoveTransform() {
+  if (state.tool !== 'move') return;
+  if (state.transformActive) return;
+  const layer = activeLayer();
+  if (!layer || layer.locked) return;
+  _startTransform({ silent: true });
+}
+
+// True when the live silent session hasn't actually changed the layer (no
+// resize / rotation / flip). A pristine session can be torn down without a
+// real commit — important so re-arming on layer-select doesn't pollute undo.
+function _moveTransformPristine() {
+  return state.transformSilent &&
+    state.transformPendingRot === 0 &&
+    !state.transformPendingFlipH && !state.transformPendingFlipV &&
+    state.transformPendingW === state.transformOrigW &&
+    state.transformPendingH === state.transformOrigH;
+}
+
+// Re-sync the Move-tool box when the active layer changes underneath it.
+// If the current silent session is pristine, tear it down cheaply (no
+// commit, no undo entry); otherwise commit the edit onto the old layer.
+// Then re-arm on the new layer. No-op outside Move / when a non-silent
+// (Free Transform) session owns the canvas. Guarded against re-entrancy so a
+// composite() triggered during teardown can't recurse back in.
+let _resyncingMoveTransform = false;
+function _resyncMoveTransform() {
+  if (_resyncingMoveTransform) return;
+  if (state.tool !== 'move') return;
+  if (state.transformActive) {
+    if (!state.transformSilent) return; // don't disturb Free Transform
+    if (state.transformLayer === activeLayer()) return; // already on this layer
+    _resyncingMoveTransform = true;
+    try {
+      if (_moveTransformPristine()) {
+        // Pristine: drop session state without a commit/undo entry.
+        state.transformOrigCanvas = null;
+        state.transformOrigOffset = null;
+        state.transformActive = false;
+        state.transformSilent = false;
+        state.transformLayer = null;
+        state.transformHandle = null;
+      } else {
+        _confirmTransform();
+      }
+    } finally {
+      _resyncingMoveTransform = false;
+    }
+  }
+  _ensureMoveTransform();
+}
 
 // ── Crop tool ──
 
@@ -3806,7 +3868,11 @@ function _buildEditor(container) {
     },
     onSelectTool: (toolId, _btn, toolbarEl) => {
       // Leaving transform mode without confirm? Treat tool change as confirm.
-      if (state.transformActive && toolId !== 'transform') _confirmTransform();
+      // The Move tool's always-on box runs a SILENT transform session
+      // (state.transformSilent); it must also commit when switching to the
+      // dedicated Transform tool so we don't toggle it off in _startTransform
+      // below. Free Transform proper still only commits for non-transform tools.
+      if (state.transformActive && (toolId !== 'transform' || state.transformSilent)) _confirmTransform();
       if (state.distortActive && toolId !== 'distort') _distortTool.commit();
       if (state.pcropActive && toolId !== 'pcrop') _pcropTool.cancel();
       // Leaving the polygonal lasso mid-polygon? Drop the in-progress points so
@@ -3843,6 +3909,12 @@ function _buildEditor(container) {
       if (toolId === 'transform' && !state.transformActive) _startTransform();
       if (toolId === 'distort' && !state.distortActive) _distortTool.start();
       if (toolId === 'pcrop' && !state.pcropActive) _pcropTool.start();
+      // Move tool — show the active layer's transform box + handles via a
+      // SILENT transform session (Feature 2). Reuses the Free-Transform rig
+      // (8 handles + rotation, non-destructive snapshot) but with no popup /
+      // zoom-fit. A plain in-box drag still moves the layer (handled by the
+      // transform-drag fallback → _beginMove).
+      if (toolId === 'move') _ensureMoveTransform();
       // Show/hide brush controls. Brush, Eraser AND Clone use the
       // shared size+color row; Inpaint has its OWN size slider.
       const brushControls = document.getElementById('ge-brush-controls');
@@ -4867,7 +4939,21 @@ const _layerPanelRenderer = createLayerPanelRenderer({
   dragSortModule,
   uiModule,
 });
-function _renderLayerPanel() { return _layerPanelRenderer.render(); }
+function _renderLayerPanel() {
+  const r = _layerPanelRenderer.render();
+  // Keep the Move-tool transform box glued to the active layer after any
+  // panel re-render. Arms the box if none is up yet (covers editor open,
+  // where every load path calls _renderLayerPanel() once the layer exists)
+  // and re-targets it if the active layer changed (add / delete / reorder /
+  // merge). Re-composite so the box repaints on the right layer. Skipped
+  // while a non-silent Free-Transform session owns the canvas.
+  if (state.tool === 'move' && !(state.transformActive && !state.transformSilent) &&
+      state.transformLayer !== activeLayer()) {
+    _resyncMoveTransform();
+    composite();
+  }
+  return r;
+}
 
 function _revealLayerPanel() {
   requestAnimationFrame(() => {

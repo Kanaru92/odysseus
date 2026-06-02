@@ -56,8 +56,17 @@ export function createMoveTool({ activeLayer, saveState, composite }) {
       const layer = activeLayer();
       if (!layer) return;
       const coords = canvasCoords(e, state.mainCanvas);
-      const dx = coords.x - state.moveStartX;
-      const dy = coords.y - state.moveStartY;
+      let dx = coords.x - state.moveStartX;
+      let dy = coords.y - state.moveStartY;
+      // Shift = constrain to the dominant axis (pure horizontal OR pure
+      // vertical), matching the standard Move-tool behaviour. Zero out the
+      // smaller of |dx|,|dy| on the RAW delta so both the live preview and
+      // the committed offset (state.layerOffsets, written below) stay locked
+      // to one axis — the commit just keeps the last previewed value.
+      if (e.shiftKey) {
+        if (Math.abs(dx) >= Math.abs(dy)) dy = 0;
+        else dx = 0;
+      }
       let nx = state.moveLayerOffsetX + dx;
       let ny = state.moveLayerOffsetY + dy;
       // Ctrl held = snap to canvas edges/center and to every other
