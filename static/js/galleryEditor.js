@@ -1182,6 +1182,12 @@ function _resetLayerCaches(layer) {
   layer._fxCache = null; layer._fxKey = ''; layer._adjFinal = null; layer._adjFinalKey = '';
   layer._adjCache = null; layer._adjCacheKey = ''; layer._pixVer = (layer._pixVer || 0) + 1;
 }
+// Register a window/document listener that closeEditor auto-removes, so listeners
+// added in _buildEditor don't accumulate (and fire stale) across editor reopens.
+function _addManagedListener(target, type, fn, opts) {
+  try { target.addEventListener(type, fn, opts); } catch { return; }
+  (state.editorManagedListeners || (state.editorManagedListeners = [])).push({ target, type, fn, opts });
+}
 
 // Expand-on-paint: grow the document toward the right/bottom so a stroke reaching
 // the edge keeps painting instead of clipping. Content stays at the origin (no
@@ -1686,8 +1692,11 @@ function _drawCropOverlay() {
   state.mainCtx.globalAlpha = 1;
   state.mainCtx.restore();
   state.mainCtx.strokeStyle = '#fff';
-  state.mainCtx.lineWidth = 1;
-  state.mainCtx.setLineDash([4, 4]);
+  // Scale stroke + dash by 1/zoom so the crop border stays ~1 screen px at any
+  // zoom (the main canvas is CSS-zoomed), matching grid/guide/lasso overlays.
+  const _cz = state.zoom || 1;
+  state.mainCtx.lineWidth = 1 / _cz;
+  state.mainCtx.setLineDash([4 / _cz, 4 / _cz]);
   state.mainCtx.strokeRect(x, y, w, h);
   state.mainCtx.setLineDash([]);
 }
@@ -4065,10 +4074,14 @@ function _drawWandOverlay() {
   // Marching-ants boundary (cached; crawls with _antsPhase).
   if (!state.wandMask._ants) state.wandMask._ants = _computeMaskBoundary(state.wandMask);
   const b = state.wandMask._ants, ph = _antsPhase, c = state.mainCtx, ox = off.x, oy = off.y;
+  // The main canvas is CSS-zoomed, so a 1-backing-px dot renders at `zoom` screen
+  // px — chunky when zoomed in, sub-pixel (vanishing) when zoomed out. Size each
+  // ant to 1/zoom so it stays ~1 screen px, matching the lasso/grid/guide overlays.
+  const z = state.zoom || 1, dot = 1 / z;
   for (let i = 0; i < b.length; i += 2) {
     const x = b[i], y = b[i + 1];
     c.fillStyle = (((x + y - ph) >> 1) & 1) ? '#000' : '#fff';
-    c.fillRect(ox + x, oy + y, 1, 1);
+    c.fillRect(ox + x, oy + y, dot, dot);
   }
 }
 
@@ -4758,9 +4771,11 @@ function _wireInpaintPopoverWindow() {
       head.style.cursor = '';
       head.removeEventListener('pointermove', onMove);
       head.removeEventListener('pointerup', onUp);
+      head.removeEventListener('pointercancel', onUp);
     };
     head.addEventListener('pointermove', onMove);
     head.addEventListener('pointerup', onUp);
+    head.addEventListener('pointercancel', onUp); // release capture if the gesture is aborted (multi-touch / OS)
   });
 }
 
@@ -5243,7 +5258,7 @@ function _buildEditor(container) {
     },
   });
   let _navRaf = 0;
-  window.addEventListener('ge:composited', () => {
+  _addManagedListener(window, 'ge:composited', () => {
     if (_navRaf) return;
     _navRaf = requestAnimationFrame(() => { _navRaf = 0; try { _navigator && _navigator.refresh(); } catch {} });
   });
@@ -5340,7 +5355,7 @@ function _buildEditor(container) {
   // On-canvas brush HUD — Alt+right-drag adjusts Size (horizontal) and Opacity
   // (vertical; drag UP = more opaque) live with a readout, so the artist never
   // leaves the canvas. Started in _beginDraw.
-  window.addEventListener('mousemove', (e) => {
+  _addManagedListener(window, 'mousemove', (e) => {
     if (!state.brushHudActive || !state.brushHudStart) return;
     const s = state.brushHudStart;
     state.brushSize = Math.max(1, Math.min(800, Math.round(s.size + (e.clientX - s.x))));
@@ -5355,7 +5370,7 @@ function _buildEditor(container) {
     try { _updateBrushCursor(e); } catch {}
     _showBrushHudReadout(e, state.brushSize, newOp);
   });
-  window.addEventListener('mouseup', () => { state.brushHudActive = false; _hideBrushHudReadout(); });
+  _addManagedListener(window, 'mouseup', () => { state.brushHudActive = false; _hideBrushHudReadout(); });
   // Right-click on the canvas with Brush/Eraser → the brush quick-pick popup
   // (Size / Hardness / preset grid, PS parity). Otherwise: suppress the browser
   // menu only while Alt+right-dragging the size HUD; any other right-click falls
@@ -5375,7 +5390,7 @@ function _buildEditor(container) {
   // colour under the cursor so the pick is predictable (PS shows this ring).
   let _eyedropPrev = null;
   const _hideEyedropPrev = () => { if (_eyedropPrev) _eyedropPrev.style.display = 'none'; };
-  window.addEventListener('mousemove', (e) => {
+  _addManagedListener(window, 'mousemove', (e) => {
     const tool = state.tool;
     const eligible = tool === 'eyedropper' || ((tool === 'brush' || tool === 'eraser') && e.altKey);
     if (!eligible || state.brushHudActive || !state.mainCanvas || e.target !== state.mainCanvas) { _hideEyedropPrev(); return; }
@@ -5394,7 +5409,7 @@ function _buildEditor(container) {
     _eyedropPrev.style.top = (e.clientY + 18) + 'px';
     _eyedropPrev.style.display = '';
   });
-  window.addEventListener('keyup', (e) => { if (e.key === 'Alt') _hideEyedropPrev(); });
+  _addManagedListener(window, 'keyup', (e) => { if (e.key === 'Alt') _hideEyedropPrev(); });
   state.mainCanvas.addEventListener('mouseleave', _hideEyedropPrev);
   // Topbar wiring (undo/redo/history, Save dropdown, zoom buttons,
   // Export/Download/Project, Edge popup, cross-dropdown coordination) —
@@ -5744,11 +5759,11 @@ function _buildEditor(container) {
   document.getElementById('ge-distort-cancel')?.addEventListener('click', () => { _distortTool.cancel(); });
   const _distortMode = document.getElementById('ge-distort-mode');
   _distortMode?.addEventListener('change', () => { state.distortMode = _distortMode.value; });
-  window.addEventListener('ge:composited', () => { if (state.distortActive) _distortTool.reposition(); });
+  _addManagedListener(window, 'ge:composited', () => { if (state.distortActive) _distortTool.reposition(); });
   // Perspective crop — Apply de-skews; Cancel discards; handles track redraws.
   document.getElementById('ge-pcrop-apply')?.addEventListener('click', () => { _pcropTool.apply(); });
   document.getElementById('ge-pcrop-cancel')?.addEventListener('click', () => { _pcropTool.cancel(); });
-  window.addEventListener('ge:composited', () => { if (state.pcropActive) _pcropTool.reposition(); });
+  _addManagedListener(window, 'ge:composited', () => { if (state.pcropActive) _pcropTool.reposition(); });
 
   // Crop aspect-ratio presets — constrain the crop drag to a fixed ratio.
   document.querySelectorAll('.ge-crop-ratio').forEach((btn) => {
@@ -5872,7 +5887,7 @@ function _buildEditor(container) {
   // handler (gallery, keyboard-shortcuts module, etc.) so cancelling a
   // crop / lasso / transform inside the editor can't ever bubble up and
   // accidentally close the gallery modal.
-  document.addEventListener('keydown', (e) => {
+  _addManagedListener(document, 'keydown', (e) => {
     if (!state.editorOpen) return;
     // Esc on the shortcuts overlay closes it; takes priority over the
     // other modal cancels so the cheatsheet feels responsive AND so the
@@ -6988,6 +7003,16 @@ export function closeEditor() {
     const h = state.editorDocClickHandlers.pop();
     try { document.removeEventListener('click', h); } catch {}
   }
+  // Remove every window/document listener registered via _addManagedListener this
+  // session (ge:composited refreshers, brush-HUD + eyedropper mouse tracking, the
+  // crop/lasso Esc interceptor) so they don't accumulate / fire stale across reopens.
+  if (state.editorManagedListeners) {
+    for (const L of state.editorManagedListeners) { try { L.target.removeEventListener(L.type, L.fn, L.opts); } catch {} }
+    state.editorManagedListeners.length = 0;
+  }
+  // Reset the Esc-closer stack so popovers from this session can't leave stale
+  // closers (pointing at torn-down DOM) that fire on the next editor open.
+  if (state.editorEscClosers) state.editorEscClosers.length = 0;
   if (state.cursorEl) { state.cursorEl.remove(); state.cursorEl = null; }
   // Tear down all floating popups + the dock so closing the editor
   // doesn't leave stale chips/panels behind on top of the gallery.
