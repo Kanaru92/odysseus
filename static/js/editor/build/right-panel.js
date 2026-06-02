@@ -168,32 +168,36 @@ export function buildRightPanel({ controlsHTML, layerPanelHTML }) {
     const savedW = parseInt(localStorage.getItem('ge-right-panel-width') || '', 10);
     if (savedW && savedW > 160 && savedW < 800) rightPanel.style.flex = `0 0 ${savedW}px`;
   } catch {}
-  let panelResizing = false;
+  // Drag-resize. The move/up listeners are attached to `document` ONLY for the
+  // duration of a drag (added on mousedown, removed on mouseup) so they don't
+  // accumulate on the global document across editor re-opens (was a leak: every
+  // buildRightPanel added permanent document listeners) and don't run on every
+  // pointer move when idle.
   let panelStartX = 0;
   let panelStartW = 0;
-  panelResize.addEventListener('mousedown', (e) => {
-    panelResizing = true;
-    panelStartX = e.clientX;
-    panelStartW = rightPanel.getBoundingClientRect().width;
-    e.preventDefault();
-    document.body.style.cursor = 'ew-resize';
-  });
-  document.addEventListener('mousemove', (e) => {
-    if (!panelResizing) return;
-    // Dragging left → wider panel (the panel sits on the right of
-    // the editor, so a leftward drag pulls its left edge left).
+  const onPanelMove = (e) => {
+    // Dragging left → wider panel (the panel sits on the right of the editor, so
+    // a leftward drag pulls its left edge left).
     const delta = panelStartX - e.clientX;
     const next = Math.max(160, Math.min(window.innerWidth - 200, panelStartW + delta));
     rightPanel.style.flex = `0 0 ${next}px`;
-  });
-  document.addEventListener('mouseup', () => {
-    if (!panelResizing) return;
-    panelResizing = false;
+  };
+  const onPanelUp = () => {
+    document.removeEventListener('mousemove', onPanelMove);
+    document.removeEventListener('mouseup', onPanelUp);
     document.body.style.cursor = '';
     try {
       const w = Math.round(rightPanel.getBoundingClientRect().width);
       localStorage.setItem('ge-right-panel-width', String(w));
     } catch {}
+  };
+  panelResize.addEventListener('mousedown', (e) => {
+    panelStartX = e.clientX;
+    panelStartW = rightPanel.getBoundingClientRect().width;
+    e.preventDefault();
+    document.body.style.cursor = 'ew-resize';
+    document.addEventListener('mousemove', onPanelMove);
+    document.addEventListener('mouseup', onPanelUp);
   });
 
   return { rightPanel, controls, layerPanel, panelResize };
