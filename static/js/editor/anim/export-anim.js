@@ -28,19 +28,40 @@ function encodeWebM(frames, fps) {
     if (!MediaRecorder.isTypeSupported(mime)) mime = 'video/webm';
     const rec = new MediaRecorder(stream, { mimeType: mime });
     const chunks = [];
+    const stopTracks = () => { try { stream.getTracks().forEach((t) => t.stop()); } catch {} };
     rec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
-    rec.onstop = () => resolve(new Blob(chunks, { type: 'video/webm' }));
-    rec.onerror = (e) => reject((e && e.error) || new Error('WebM record failed'));
+    rec.onstop = () => { stopTracks(); resolve(new Blob(chunks, { type: 'video/webm' })); };
+    rec.onerror = (e) => { stopTracks(); reject((e && e.error) || new Error('WebM record failed')); };
     const spf = 1000 / Math.max(1, fps);
     rec.start();
-    let i = 0;
-    const drawNext = () => {
-      if (i >= frames.length) { setTimeout(() => { try { rec.stop(); } catch {} }, spf); return; }
-      ctx.clearRect(0, 0, W, H); ctx.drawImage(frames[i], 0, 0);
-      i++;
-      setTimeout(drawNext, spf);
+    // Drive frame advancement from a monotonic clock (rAF + performance.now) so
+    // pacing doesn't drift the way chained setTimeout does (clamped/throttled).
+    // Defer frame 0 by one tick so it's captured after the stream is live, and
+    // hold the last frame for a floor before stopping so the encoder flushes it.
+    const last = frames.length - 1;
+    const stopDelay = Math.max(100, 2 * spf);
+    let drawn = -1;     // index of the frame currently on-canvas
+    let startTs = 0;    // monotonic clock seeded once the stream is live
+    let endTs = 0;      // timestamp the final frame was first drawn
+    const tick = (now) => {
+      // Frame index due by elapsed wall-clock time (best-effort: intervening
+      // frames are skipped if a tab throttles, but duration tracks `fps`).
+      const want = Math.min(last, Math.floor((now - startTs) / spf));
+      if (want !== drawn) {
+        drawn = want;
+        ctx.clearRect(0, 0, W, H); ctx.drawImage(frames[drawn], 0, 0);
+        if (drawn === last) endTs = now;
+      }
+      if (drawn >= last && now - endTs >= stopDelay) {
+        try { rec.requestData(); } catch {}
+        try { rec.stop(); } catch {}
+        return;
+      }
+      requestAnimationFrame(tick);
     };
-    drawNext();
+    // First draw deferred to the next frame: capture frame 0 once the pipeline
+    // is live, and seed the monotonic clock from that same timestamp.
+    requestAnimationFrame((now) => { startTs = now; tick(now); });
   });
 }
 

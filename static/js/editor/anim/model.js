@@ -51,17 +51,23 @@ export function defaultOnionSkin() {
   return { enabled: false, before: 2, after: 2, beforeTint: '#ff5555', afterTint: '#55aaff', opacity: 0.3 };
 }
 
-/** Neighbour frames to draw as onion skin, with tint + linear falloff. */
-export function onionFrames(frame, onion) {
+/**
+ * Neighbour frames to draw as onion skin, with tint + linear falloff.
+ * Pass `frameCount` to upper-bound the "after" neighbours so onion skins are
+ * not emitted past the last frame (mirrors the `f >= 0` lower bound).
+ */
+export function onionFrames(frame, onion, frameCount) {
   if (!onion || !onion.enabled) return [];
   const out = [];
   const op = onion.opacity != null ? onion.opacity : 0.3;
+  const hasMax = Number.isFinite(frameCount);
   for (let i = 1; i <= (onion.before || 0); i++) {
     const f = frame - i;
     if (f >= 0) out.push({ frame: f, tint: onion.beforeTint || '#ff5555', alpha: op * (1 - (i - 1) / Math.max(1, onion.before)) });
   }
   for (let i = 1; i <= (onion.after || 0); i++) {
-    out.push({ frame: frame + i, tint: onion.afterTint || '#55aaff', alpha: op * (1 - (i - 1) / Math.max(1, onion.after)) });
+    const f = frame + i;
+    if (!hasMax || f < frameCount) out.push({ frame: f, tint: onion.afterTint || '#55aaff', alpha: op * (1 - (i - 1) / Math.max(1, onion.after)) });
   }
   return out;
 }

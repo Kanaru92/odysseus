@@ -1,51 +1,11 @@
 /**
- * Pure composite helpers — flatten a layer list into a single canvas
- * for thumbnails / merged-mask use.
+ * Pure composite helper — merge a layer list's mask sub-layers into a
+ * single canvas for merged-mask use.
  *
- * Both helpers are stateless: the caller passes everything they need
- * (layer list, canvas dimensions, an offsets lookup). The legacy
- * gallery editor's module-level functions wrap these with their own
- * state.
+ * Stateless: the caller passes everything they need (layer list, canvas
+ * dimensions). The legacy gallery editor's module-level functions wrap
+ * this with their own state.
  */
-
-/**
- * Cheap downscaled preview composited from all visible layers.
- * Returns a JPEG dataURL, or null when there's nothing to draw.
- *
- * @param {Array<{visible: boolean, opacity: number, id: string, canvas: HTMLCanvasElement}>} layers
- * @param {number} imgW            Document width in canvas pixels.
- * @param {number} imgH            Document height in canvas pixels.
- * @param {Map<string,{x:number,y:number}>} offsets  Layer offsets, keyed by id.
- * @param {number} maxDim          Longest-edge target in CSS pixels.
- * @param {number} quality         JPEG quality 0..1.
- * @returns {string|null}
- */
-export function buildThumbnail(layers, imgW, imgH, offsets, maxDim, quality = 0.6) {
-  if (!imgW || !imgH) return null;
-  try {
-    const scale = Math.min(1, maxDim / Math.max(imgW, imgH));
-    const tw = Math.max(1, Math.round(imgW * scale));
-    const th = Math.max(1, Math.round(imgH * scale));
-    const c = document.createElement('canvas');
-    c.width = tw; c.height = th;
-    const ctx = c.getContext('2d');
-    for (const layer of layers) {
-      if (!layer.visible) continue;
-      ctx.globalAlpha = layer.opacity;
-      const off = offsets.get(layer.id) || { x: 0, y: 0 };
-      ctx.drawImage(
-        layer.canvas,
-        off.x * scale, off.y * scale,
-        layer.canvas.width * scale, layer.canvas.height * scale,
-      );
-    }
-    ctx.globalAlpha = 1;
-    return c.toDataURL('image/jpeg', quality);
-  } catch (_) {
-    return null;
-  }
-}
-
 
 /**
  * Union of every visible mask sub-layer across `layers`, rendered as a

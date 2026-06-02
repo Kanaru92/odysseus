@@ -58,8 +58,15 @@ export function gaussianBlur(snap, v, dst) {
 
 
 /**
- * Zoom blur — radial smear from the canvas centre. 16 scaled copies at
- * low alpha approximate a Gaussian zoom blur.
+ * Zoom blur — radial smear from the canvas centre. The base plus 16
+ * scaled copies are summed in an offscreen accumulator to approximate a
+ * Gaussian zoom blur.
+ *
+ * Each of the (steps + 1) stamps is rendered at globalAlpha = 1/(steps+1)
+ * with globalCompositeOperation = 'lighter' (additive), so the
+ * contributions sum to the original intensity instead of over-blending
+ * (source-over would wash the result out). Using an accumulator keeps
+ * `dst` and its globalAlpha untouched if anything throws mid-way.
  *
  * @param {HTMLCanvasElement} snap
  * @param {{ strength: number }} v
@@ -68,15 +75,21 @@ export function gaussianBlur(snap, v, dst) {
 export function zoomBlur(snap, v, dst) {
   const w = snap.width, h = snap.height;
   const steps = 16;
-  dst.drawImage(snap, 0, 0);
-  dst.globalAlpha = 0.18;
-  for (let s = 1; s <= steps; s++) {
+  const acc = document.createElement('canvas');
+  acc.width = w; acc.height = h;
+  const actx = acc.getContext('2d');
+  actx.globalCompositeOperation = 'lighter';
+  actx.globalAlpha = 1 / (steps + 1);
+  // Stamp 0 is the base (scale 1); stamps 1..steps are the scaled copies.
+  for (let s = 0; s <= steps; s++) {
     const t = s / steps;
     const scale = 1 + (v.strength / 200) * t;
     const sw = w * scale, sh = h * scale;
-    dst.drawImage(snap, (w - sw) / 2, (h - sh) / 2, sw, sh);
+    actx.drawImage(snap, (w - sw) / 2, (h - sh) / 2, sw, sh);
   }
-  dst.globalAlpha = 1;
+  actx.globalCompositeOperation = 'source-over';
+  actx.globalAlpha = 1;
+  dst.drawImage(acc, 0, 0);
 }
 
 

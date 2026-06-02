@@ -64,12 +64,14 @@ export function wireClipboardAndDrop({
     if (!items) return;
     for (const item of items) {
       if (!item.type.startsWith('image/')) continue;
+      const blob = item.getAsFile();
+      if (!blob) continue;
       e.preventDefault();
       e.stopImmediatePropagation();
-      const blob = item.getAsFile();
       const url = URL.createObjectURL(blob);
       const img = new Image();
       img.onload = () => { pasteAsLayer(img, 'Pasted'); URL.revokeObjectURL(url); };
+      img.onerror = () => URL.revokeObjectURL(url);
       img.src = url;
       break;
     }

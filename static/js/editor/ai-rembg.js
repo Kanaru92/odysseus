@@ -115,12 +115,38 @@ export function wireRembgAndSharpen({
     if (rembgRaf) return;
     rembgRaf = requestAnimationFrame(() => { rembgRaf = null; rembgApplyEdgeNow(); });
   }
+  // Reuse one offscreen scratch canvas across edge-tune passes instead of
+  // allocating a fresh full-document canvas on every slider frame. The
+  // grow and feather branches run sequentially, so they can share it.
+  let rembgScratch = null;
+  function rembgScratchCtx(w, h) {
+    if (!rembgScratch) rembgScratch = document.createElement('canvas');
+    if (rembgScratch.width !== w || rembgScratch.height !== h) {
+      rembgScratch.width = w; rembgScratch.height = h;
+    }
+    const ctx = rembgScratch.getContext('2d');
+    ctx.clearRect(0, 0, w, h);
+    return ctx;
+  }
   function rembgApplyEdgeNow() {
     if (!state.rembgLiveLayer || !state.rembgLiveSnap) return;
-    const feather = parseInt(document.getElementById('ge-rembg-feather')?.value || '0', 10);
-    const grow = parseInt(document.getElementById('ge-rembg-grow')?.value || '0', 10);
     const layer = state.rembgLiveLayer;
     const snap = state.rembgLiveSnap;
+    // The bound layer may have been deleted (or undone away), in which
+    // case writing to its now-detached canvas is a silent no-op leak.
+    // The document may also have been resized after binding, leaving the
+    // pristine snapshot a different size than the live layer canvas — the
+    // snapshot no longer matches the layer geometry. Either way, drop the
+    // stale binding and bail.
+    if (!state.layers.includes(layer)
+        || snap.width !== layer.canvas.width
+        || snap.height !== layer.canvas.height) {
+      state.rembgLiveLayer = null;
+      state.rembgLiveSnap = null;
+      return;
+    }
+    const feather = parseInt(document.getElementById('ge-rembg-feather')?.value || '0', 10);
+    const grow = parseInt(document.getElementById('ge-rembg-grow')?.value || '0', 10);
     const w = snap.width, h = snap.height;
     const lctx = layer.ctx;
 
@@ -133,9 +159,7 @@ export function wireRembgAndSharpen({
     //      grow < 0 → high threshold (200) → only solid interior → shrinks.
     //    RGB is kept; only alpha is replaced.
     if (grow !== 0) {
-      const blurC = document.createElement('canvas');
-      blurC.width = w; blurC.height = h;
-      const bctx = blurC.getContext('2d');
+      const bctx = rembgScratchCtx(w, h);
       bctx.filter = `blur(${Math.abs(grow)}px)`;
       bctx.drawImage(snap, 0, 0);
       bctx.filter = 'none';
@@ -154,14 +178,12 @@ export function wireRembgAndSharpen({
     //    faint blur at the edge which actually helps hide residual
     //    colour fringing from the original background.
     if (feather > 0) {
-      const fC = document.createElement('canvas');
-      fC.width = w; fC.height = h;
-      const fctx = fC.getContext('2d');
+      const fctx = rembgScratchCtx(w, h);
       fctx.filter = `blur(${feather}px)`;
       fctx.drawImage(layer.canvas, 0, 0);
       fctx.filter = 'none';
       lctx.clearRect(0, 0, w, h);
-      lctx.drawImage(fC, 0, 0);
+      lctx.drawImage(rembgScratch, 0, 0);
     }
     composite();
   }

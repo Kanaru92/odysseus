@@ -91,11 +91,18 @@ export function createBrushEngine(preset) {
   function tipFor(size, hardness, color) {
     const key = `${Math.max(1, Math.round(size))}|${Math.round(hardness * 100)}|${color}|${p.tipType}${p.tipImage ? '|img' : ''}`;
     let t = cache.get(key);
-    if (!t) {
-      t = makeTip({ type: p.tipType, size, hardness, color, image: p.tipImage });
+    if (t) {
+      // Re-insert on hit so the Map's insertion order tracks recency (LRU).
+      cache.delete(key);
       cache.set(key, t);
-      if (cache.size > 96) cache.clear();
+      return t;
     }
+    t = makeTip({ type: p.tipType, size, hardness, color, image: p.tipImage });
+    cache.set(key, t);
+    // Bounded LRU eviction: drop only the oldest entry on overflow instead of
+    // clearing the whole map, so tips the current stroke is actively reusing
+    // (size/colour jitter spawns many keys mid-stroke) stay resident.
+    if (cache.size > 96) cache.delete(cache.keys().next().value);
     return t;
   }
 
@@ -168,9 +175,16 @@ export function createBrushEngine(preset) {
       + (rt && rt.tiltAngle ? (rt.tiltAz || 0) : 0)
       + (rotationFn(info, 0) || 0) * Math.PI / 180;
     // Per-dab colour jitter (Color Dynamics) — one jittered hue per dab (shared
-    // across its symmetry mirrors below).
+    // across its symmetry mirrors below). Quantize the random sample into a small
+    // fixed set of buckets so the jittered colour (and thus the tip-cache key,
+    // which includes it) has bounded cardinality — otherwise a fresh continuous
+    // hue per dab guarantees a cache miss and a makeTip() rebuild every dab.
     let dabColor = rt.color || '#000';
-    if (rt.colorJitter > 0) dabColor = jitterHue(dabColor, rt.colorJitter, Math.random());
+    if (rt.colorJitter > 0) {
+      const COLOR_JITTER_BUCKETS = 24;
+      const bucket = Math.floor(Math.random() * COLOR_JITTER_BUCKETS) / COLOR_JITTER_BUCKETS;
+      dabColor = jitterHue(dabColor, rt.colorJitter, bucket);
+    }
     const tip = tipFor(size, rt.hardness != null ? rt.hardness : 1, dabColor);
     const w = size, h = size * p.ratio;
     // Symmetry positions across the canvas center. x/y/xy = axis mirrors;

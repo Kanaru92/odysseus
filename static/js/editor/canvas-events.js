@@ -50,12 +50,23 @@ export function wireCanvasEvents({ canvasArea, beginDraw, continueDraw, endDraw:
     }
     return rawEndDraw(e);
   };
+  // Listeners attached to window/document outlive the canvas DOM (which is
+  // wiped by container.innerHTML='' on every openEditor). Collect their
+  // removers here and return a disposer so closeEditor can tear them down;
+  // otherwise a fresh set leaks per open and stale copies keep firing
+  // continueDraw/endDraw on the hot move path after the editor is closed.
+  const disposers = [];
+  const on = (target, type, handler, opts) => {
+    target.addEventListener(type, handler, opts);
+    disposers.push(() => { try { target.removeEventListener(type, handler, opts); } catch {} });
+  };
+
   // Mouse — mousedown stays on the canvas; mousemove/up are bound to
   // the WINDOW so a drag can continue (and end) past the canvas edge.
   // Critical for the Resize tool where users overshoot.
   state.mainCanvas.addEventListener('mousedown', beginDraw);
-  window.addEventListener('mousemove', continueDraw);
-  window.addEventListener('mouseup', endDraw);
+  on(window, 'mousemove', continueDraw);
+  on(window, 'mouseup', endDraw);
   // Lasso can start OUTSIDE the canvas — fallback mousedown on the
   // surrounding canvas-area so the user can begin a lasso path in
   // the empty space around the image. Other tools stay canvas-only.
@@ -280,9 +291,9 @@ export function wireCanvasEvents({ canvasArea, beginDraw, continueDraw, endDraw:
     e.preventDefault();
     e.stopPropagation(); // don't let beginDraw fire
   }, true);
-  window.addEventListener('mousemove', (e) => { if (spacePanning) applyOffset(e.clientX - spStartX, e.clientY - spStartY); });
-  window.addEventListener('mouseup', () => { if (spacePanning) { spacePanning = false; canvasArea.style.cursor = state.spaceDown ? 'grab' : ''; } });
-  document.addEventListener('keydown', (e) => {
+  on(window, 'mousemove', (e) => { if (spacePanning) applyOffset(e.clientX - spStartX, e.clientY - spStartY); });
+  on(window, 'mouseup', () => { if (spacePanning) { spacePanning = false; canvasArea.style.cursor = state.spaceDown ? 'grab' : ''; } });
+  on(document, 'keydown', (e) => {
     if (e.code !== 'Space' || !state.editorOpen) return;
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
     if (!state.spaceDown) {
@@ -292,7 +303,7 @@ export function wireCanvasEvents({ canvasArea, beginDraw, continueDraw, endDraw:
     }
     e.preventDefault(); // suppress page scroll while panning
   });
-  document.addEventListener('keyup', (e) => {
+  on(document, 'keyup', (e) => {
     if (e.code !== 'Space') return;
     state.spaceDown = false;
     if (!spacePanning) canvasArea.style.cursor = '';
@@ -334,4 +345,12 @@ export function wireCanvasEvents({ canvasArea, beginDraw, continueDraw, endDraw:
   canvasArea._resetPan = () => applyOffset(0, 0);
   // Re-apply the current pan + view rotation (called when viewRotation changes).
   canvasArea._reapplyView = () => { const o = getOffset(); applyOffset(o.x, o.y); };
+
+  // Teardown for the window/document listeners (they outlive the canvas DOM).
+  // A prior call's listeners are removed first so re-wiring (next openEditor)
+  // never stacks two generations, then closeEditor calls this to clean up.
+  const dispose = () => { while (disposers.length) disposers.pop()(); };
+  try { if (typeof state.canvasEventsDispose === 'function') state.canvasEventsDispose(); } catch {}
+  state.canvasEventsDispose = dispose;
+  return dispose;
 }

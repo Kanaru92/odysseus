@@ -41,10 +41,14 @@ export function wireDocTabs({ composite, renderLayerPanel, createLayer, fitZoom,
     state.maskCanvas = document.createElement('canvas');
     state.maskCanvas.width = slot.imgWidth; state.maskCanvas.height = slot.imgHeight;
     state.maskCtx = state.maskCanvas.getContext('2d');
-    // Drop transient overlays/selection from the other doc.
+    // Drop transient overlays/selection from the other doc. Clear EVERY
+    // active-tool flag consumed by the ge:composited reposition handlers and
+    // tool code (distort/crop included) so switching mid-edit can't leave a
+    // stale flag pointing at the previous doc's geometry/surfaces.
     state.wandMask = null; state.wandLayerId = null;
     state.lassoPoints = []; state.lassoActive = false;
     state.cropRect = null; state.transformActive = false; state.pcropActive = false;
+    state.distortActive = false; state.cropping = false; state.cropMoving = false;
     try { composite(); } catch {}
     try { renderLayerPanel(); } catch {}
     try { fitZoom(); } catch {}
@@ -90,6 +94,10 @@ export function wireDocTabs({ composite, renderLayerPanel, createLayer, fitZoom,
   }
   function closeDoc(i) {
     if (docs.length <= 1) return; // keep at least one document open
+    // Flush the LIVE state (incl. the reassigned-not-mutated `_histTiles`
+    // dedup map + latest undo/redo) into the active slot before mutating the
+    // array, so no slot resumes with a stale snapshot/tile map.
+    captureInto(docs[active]);
     const wasActive = (i === active);
     docs.splice(i, 1);
     if (active > i) active--;

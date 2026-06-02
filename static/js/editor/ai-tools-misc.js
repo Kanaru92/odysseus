@@ -40,11 +40,13 @@ export function wireAIToolsMisc({
   const harmColorPrev = document.getElementById('ge-harmonize-color-preview');
   const harmSeamPrev = document.getElementById('ge-harmonize-seam-preview');
   document.getElementById('ge-harmonize-color')?.addEventListener('input', (e) => {
-    document.getElementById('ge-harmonize-color-label').textContent = (e.target.value / 100).toFixed(2);
+    const lbl = document.getElementById('ge-harmonize-color-label');
+    if (lbl) lbl.textContent = (e.target.value / 100).toFixed(2);
     if (harmColorPrev) harmColorPrev.style.opacity = (parseInt(e.target.value, 10) / 100).toFixed(2);
   });
   document.getElementById('ge-harmonize-seam')?.addEventListener('input', (e) => {
-    document.getElementById('ge-harmonize-seam-label').textContent = (e.target.value / 100).toFixed(2);
+    const lbl = document.getElementById('ge-harmonize-seam-label');
+    if (lbl) lbl.textContent = (e.target.value / 100).toFixed(2);
     if (harmSeamPrev) harmSeamPrev.style.opacity = (parseInt(e.target.value, 10) / 100).toFixed(2);
   });
 
@@ -87,7 +89,17 @@ export function wireAIToolsMisc({
       l.canvas.width = newW; l.canvas.height = newH;
       l.ctx.drawImage(tmp, 0, 0);
     });
-    if (state.maskCanvas) { state.maskCanvas.width = newW; state.maskCanvas.height = newH; }
+    // Scale the active selection/inpaint mask into the resized buffer instead
+    // of clobbering it with a bare width/height assignment, then re-fetch the
+    // context (resizing the canvas resets it).
+    if (state.maskCanvas) {
+      const mTmp = document.createElement('canvas');
+      mTmp.width = newW; mTmp.height = newH;
+      mTmp.getContext('2d').drawImage(state.maskCanvas, 0, 0, state.imgWidth, state.imgHeight, 0, 0, newW, newH);
+      state.maskCanvas.width = newW; state.maskCanvas.height = newH;
+      state.maskCtx = state.maskCanvas.getContext('2d');
+      state.maskCtx.drawImage(mTmp, 0, 0);
+    }
     state.imgWidth = newW; state.imgHeight = newH;
     state.mainCanvas.width = newW; state.mainCanvas.height = newH;
     const sizeLabel = document.getElementById('ge-canvas-size');
@@ -130,13 +142,39 @@ export function wireAIToolsMisc({
           if (!state.editorOpen) return;
           saveState();
           const newW = img.width, newH = img.height;
+          const oldW = state.imgWidth, oldH = state.imgHeight;
+          // Rescale the existing layers to the new (larger) document so they
+          // keep filling the canvas — _renderLayersTo draws each layer at its
+          // native size with no scaling, so without this prior layers would
+          // render at their old size pinned to the top-left. Matches the
+          // canvasUpscale path above.
+          state.layers.forEach(l => {
+            const tmp = document.createElement('canvas');
+            tmp.width = newW; tmp.height = newH;
+            const tCtx = tmp.getContext('2d');
+            tCtx.imageSmoothingEnabled = true;
+            tCtx.imageSmoothingQuality = 'high';
+            tCtx.drawImage(l.canvas, 0, 0, newW, newH);
+            l.canvas.width = newW; l.canvas.height = newH;
+            l.ctx.drawImage(tmp, 0, 0);
+          });
           const layer = createLayer('AI Upscaled', newW, newH);
           layer.ctx.drawImage(img, 0, 0);
           state.layers.push(layer);
           state.activeLayerId = layer.id;
           state.imgWidth = newW; state.imgHeight = newH;
           state.mainCanvas.width = newW; state.mainCanvas.height = newH;
-          if (state.maskCanvas) { state.maskCanvas.width = newW; state.maskCanvas.height = newH; }
+          // Preserve the active selection/inpaint mask by scaling it into the
+          // resized buffer (a bare width/height assignment would clear it),
+          // then re-fetch the context (resizing resets it).
+          if (state.maskCanvas) {
+            const mTmp = document.createElement('canvas');
+            mTmp.width = newW; mTmp.height = newH;
+            mTmp.getContext('2d').drawImage(state.maskCanvas, 0, 0, oldW, oldH, 0, 0, newW, newH);
+            state.maskCanvas.width = newW; state.maskCanvas.height = newH;
+            state.maskCtx = state.maskCanvas.getContext('2d');
+            state.maskCtx.drawImage(mTmp, 0, 0);
+          }
           const sizeLabel = document.getElementById('ge-canvas-size');
           if (sizeLabel) sizeLabel.textContent = `${newW}×${newH}`;
           fitZoom();
@@ -158,7 +196,8 @@ export function wireAIToolsMisc({
 
   // ── Style transfer ──
   document.getElementById('ge-style-strength')?.addEventListener('input', (e) => {
-    document.getElementById('ge-style-strength-label').textContent = (parseInt(e.target.value) / 100).toFixed(2);
+    const lbl = document.getElementById('ge-style-strength-label');
+    if (lbl) lbl.textContent = (parseInt(e.target.value, 10) / 100).toFixed(2);
   });
   document.getElementById('ge-style-run')?.addEventListener('click', async () => {
     const btn = document.getElementById('ge-style-run');

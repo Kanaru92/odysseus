@@ -80,11 +80,13 @@ export function wireInpaintButtons({
       const mainRect = state.mainCanvas.getBoundingClientRect();
       if (area && mainRect.width && mainRect.height) {
         // Find the mask's bbox so we can centre the whirlpool over it.
+        // Reuse the union mask + pixel data already built/read above for
+        // the has-mask precheck instead of rebuilding + re-reading it.
         let cx = state.imgWidth / 2, cy = state.imgHeight / 2;
         try {
-          const merged = buildMergedMaskCanvas();
+          const merged = preMerged;
           if (merged) {
-            const d = merged.getContext('2d').getImageData(0, 0, merged.width, merged.height).data;
+            const d = maskData;
             let minX = merged.width, maxX = 0, minY = merged.height, maxY = 0;
             for (let y = 0; y < merged.height; y += 4) {
               for (let x = 0; x < merged.width; x += 4) {
@@ -132,7 +134,9 @@ export function wireInpaintButtons({
       // This way, if the user built up the inpaint region across
       // multiple masks, the final generation sees the combined
       // region instead of just the currently-active mask.
-      const mergedMask = buildMergedMaskCanvas() || state.maskCanvas;
+      // Reuse the union mask built for the precheck (guaranteed
+      // non-null here) instead of rebuilding it a third time.
+      const mergedMask = preMerged || state.maskCanvas;
       const dilatedMask = dilateMask(mergedMask, padPx);
       const imageB64 = flatCanvas.toDataURL('image/png').split(',')[1];
       const maskB64 = dilatedMask.toDataURL('image/png').split(',')[1];
@@ -158,8 +162,13 @@ export function wireInpaintButtons({
       // Feather slider can re-derive the alpha on each input event
       // without re-running the model.
       const resultImg = new Image();
+      // Await the decode + render before the finally runs, so the
+      // spinner/button/'ge:inpaint-done' don't clear while the image is
+      // still decoding and the layer hasn't been placed yet (which would
+      // let a second click start mid-decode and fire the event early).
+      await new Promise((resolve) => {
       resultImg.onload = () => {
-        if (!state.editorOpen) return; // user closed mid-decode
+        if (!state.editorOpen) { resolve(); return; } // user closed mid-decode
         try {
           saveState('Inpaint result');
           // OpenAI returns at one of its allowed sizes (1024²,
@@ -176,10 +185,15 @@ export function wireInpaintButtons({
           const aiSnap = document.createElement('canvas');
           aiSnap.width = state.imgWidth; aiSnap.height = state.imgHeight;
           aiSnap.getContext('2d').drawImage(resultLayer.canvas, 0, 0);
+          // Cache the SAME (un-dilated) union mask that drove the
+          // generation, not just state.maskCanvas (the active sub-layer).
+          // applyInpaintFeather clips the AI result via this mask, so it
+          // must match the full region the model actually filled —
+          // otherwise multi-mask inpaints get clipped to one sub-layer.
           const maskSnap = document.createElement('canvas');
-          maskSnap.width = state.maskCanvas.width;
-          maskSnap.height = state.maskCanvas.height;
-          maskSnap.getContext('2d').drawImage(state.maskCanvas, 0, 0);
+          maskSnap.width = mergedMask.width;
+          maskSnap.height = mergedMask.height;
+          maskSnap.getContext('2d').drawImage(mergedMask, 0, 0);
           resultLayer.inpaintSource = { ai: aiSnap, mask: maskSnap, padPx };
           // Apply initial alpha = hard mask (no feather, no edge shift).
           applyInpaintFeather(resultLayer, 0, 0);
@@ -227,13 +241,17 @@ export function wireInpaintButtons({
         } catch (renderErr) {
           console.error('[inpaint] render error', renderErr);
           if (uiModule) uiModule.showToast('Inpaint render failed: ' + (renderErr.message || renderErr), 6000);
+        } finally {
+          resolve();
         }
       };
       resultImg.onerror = (e) => {
         console.error('[inpaint] base64 decode failed', e);
         if (uiModule) uiModule.showToast('Inpaint result failed to decode', 6000);
+        resolve();
       };
       resultImg.src = 'data:image/png;base64,' + data.image;
+      });
     } catch (e) {
       if (uiModule) uiModule.showToast('Inpaint failed: ' + e.message, 6000);
     } finally {

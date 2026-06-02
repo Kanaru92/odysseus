@@ -51,6 +51,12 @@ export function createAnimation({ composite, createLayer, renderLayerPanel, onCh
     applyFrameVisibility();
     const cel = trk.cels.find((c) => c.id === M.celAtFrame(trk, a.currentFrame));
     if (cel) state.activeLayerId = cel.layerId; // paint target = the visible cel
+    else if (!state.layers.some((l) => l.id === state.activeLayerId)) {
+      // No cel resolves (hold frame) and the prior active layer is gone (e.g.
+      // deleted by deleteFrame) — fall back to a surviving layer so paint/strokes
+      // don't target a dead layer id.
+      state.activeLayerId = state.layers[state.layers.length - 1]?.id ?? null;
+    }
     composite();
     renderLayerPanel && renderLayerPanel();
     emit();
@@ -116,10 +122,12 @@ export function createAnimation({ composite, createLayer, renderLayerPanel, onCh
     const trk = track();
     const W = state.mainCanvas.width, H = state.mainCanvas.height;
     if (!scratch) scratch = document.createElement('canvas');
-    scratch.width = W; scratch.height = H;
-    const sctx = scratch.getContext('2d');
+    if (scratch.width !== W || scratch.height !== H) { scratch.width = W; scratch.height = H; }
+    const sctx = scratch._ctx || (scratch._ctx = scratch.getContext('2d'));
     const main = state.mainCtx;
+    const fc = Math.max(1, a.frameCount || 1);
     for (const ent of M.onionFrames(a.currentFrame, a.onion)) {
+      if (ent.frame < 0 || ent.frame >= fc) continue; // skip phantom frames past the timeline
       const layer = celLayer(trk.cels.find((c) => c.id === M.celAtFrame(trk, ent.frame)));
       if (!layer || !layer.canvas || !layer.canvas.width) continue;
       const off = state.layerOffsets.get(layer.id) || { x: 0, y: 0 };

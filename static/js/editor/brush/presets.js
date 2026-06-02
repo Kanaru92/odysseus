@@ -260,16 +260,45 @@ const SAMPLED_PRESETS = [
 // for non-browser contexts (static module-graph checks) where Image is absent;
 // there the presets still load with tipImage null and simply render as a plain
 // round dab until a browser builds the tips.
+//
+// The bitmaps are large data: URIs that still take an async decode tick, so a
+// dab stamped before decode would draw a blank mask — and makeTip's image path
+// would then cache that blank tip with no invalidation. To avoid that race we
+// (a) force decode eagerly via img.decode() so the bitmaps are ready as soon as
+// possible, (b) expose a `tipsReady` promise + `whenTipsReady()` so consumers
+// can gate the first stamp, and (c) once all tips finish decoding, fire a
+// 'ge:brush-tips-ready' event so any tip cache built during the decode window
+// can be invalidated and rebuilt against the now-decoded bitmaps.
+let tipsReady = Promise.resolve();
 if (typeof Image !== 'undefined') {
+  const decodes = [];
   for (const p of SAMPLED_PRESETS) {
     const url = DEFAULT_TIP_DATA[p.tipKey];
     if (!url) continue;
     const img = new Image();
     img.src = url;
     p.tipImage = img;
+    // decode() resolves when the bitmap is paintable; fall back to onload for
+    // engines without decode(). Swallow rejection so one bad tip can't reject
+    // the whole readiness promise.
+    const done = typeof img.decode === 'function'
+      ? img.decode().catch(() => {})
+      : new Promise((resolve) => { img.onload = resolve; img.onerror = resolve; });
+    decodes.push(done);
   }
+  tipsReady = Promise.all(decodes).then(() => {
+    if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+      window.dispatchEvent(new Event('ge:brush-tips-ready'));
+    }
+  });
 }
 BRUSH_PRESETS.push(...SAMPLED_PRESETS);
+
+/** Resolves once every baked sampled-tip bitmap has decoded (immediately in
+ *  non-browser contexts). Use to gate the first stamp of a sampled brush. */
+export function whenTipsReady() {
+  return tipsReady;
+}
 
 export const DEFAULT_PRESET_ID = 'hard-round';
 
