@@ -89,6 +89,7 @@ export function defaultAdjParams(type) {
     case 'clarity':              return { amount: 30 };
     case 'chromatic-aberration': return { amount: 3 };
     case 'lens-distortion':      return { amount: -40 };
+    case 'color-lookup':         return { lutId: null, lutName: null, amount: 100 };
   }
   return {};
 }
@@ -118,6 +119,7 @@ export function adjLayerLabel(type) {
     'clarity': 'Clarity',
     'chromatic-aberration': 'Chromatic Aberration',
     'lens-distortion': 'Lens Distortion',
+    'color-lookup': 'Color Lookup',
     'grain': 'Grain',
   }[type] || type;
 }

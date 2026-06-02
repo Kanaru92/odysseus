@@ -3,6 +3,7 @@ import { vignettePixels } from './vignette.js';
 import { clarity } from './clarity.js';
 import { chromaticAberration } from './chromatic-aberration.js';
 import { lensDistortPixels } from './lens-distortion.js';
+import { getLut, applyLut } from './lut.js';
 
 /**
  * Apply a Brightness/Contrast, Hue/Saturation, Levels, or Color Balance
@@ -48,6 +49,13 @@ export function applyAdjustment(srcCanvas, adj) {
     octx.drawImage(srcCanvas, 0, 0);
     octx.filter = 'none';
     return out;
+  }
+  if (adj.type === 'color-lookup') {
+    // 3D LUT (Color Lookup). The big LUT lives in the lut.js registry keyed by id,
+    // so the adjustment's serialized params (lutId/amount) stay tiny for the memo.
+    const lut = adj.params && adj.params.lutId ? getLut(adj.params.lutId) : null;
+    if (!lut) { octx.drawImage(srcCanvas, 0, 0); return out; } // no LUT loaded → passthrough
+    return applyLut(srcCanvas, lut, { amount: (adj.params.amount == null ? 100 : adj.params.amount) / 100 });
   }
 
   // Levels + Color Balance need per-pixel math.

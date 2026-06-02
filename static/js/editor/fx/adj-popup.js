@@ -47,6 +47,7 @@ import {
 } from '../layer-helpers.js';
 import { drawHistogram } from './histogram.js';
 import { buildCurveLUT } from './curves.js';
+import { registerCube, hasLut } from './lut.js';
 
 const clampV = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 
@@ -153,6 +154,7 @@ export function createAdjPopupSystem({ composite, saveState, renderLayerPanel })
       { type: 'clarity',             label: 'Clarity' },
       { type: 'chromatic-aberration', label: 'Chromatic Aberration' },
       { type: 'lens-distortion',     label: 'Lens Distortion' },
+      { type: 'color-lookup',        label: 'Color Lookup' },
       { type: 'grain',               label: 'Grain' },
       { type: 'posterize',           label: 'Posterize' },
       { type: 'threshold',           label: 'Threshold' },
@@ -624,6 +626,33 @@ export function createAdjPopupSystem({ composite, saveState, renderLayerPanel })
       body.innerHTML = sliderRow('amount', 'Amount', 0, 20, Math.round(p.amount || 0), '');
     } else if (type === 'lens-distortion') {
       body.innerHTML = sliderRow('amount', 'Amount', -100, 100, Math.round(p.amount || 0), '');
+    } else if (type === 'color-lookup') {
+      const loaded = p.lutId && hasLut(p.lutId);
+      body.innerHTML =
+        `<div class="ge-adj-row" style="gap:var(--ge-s3,6px);">
+           <button type="button" class="ge-btn ge-btn-sm ge-cl-load">Load .cube…</button>
+           <span class="ge-cl-name" style="font-size:var(--ge-fs-hint,10px);opacity:var(--ge-op-mid,0.7);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${loaded ? (p.lutName || 'LUT loaded') : 'No LUT loaded'}</span>
+           <input type="file" class="ge-cl-file" accept=".cube,.CUBE" style="display:none" />
+         </div>` +
+        sliderRow('amount', 'Amount', 0, 100, Math.round(p.amount == null ? 100 : p.amount), '');
+      const fileEl = body.querySelector('.ge-cl-file');
+      body.querySelector('.ge-cl-load')?.addEventListener('click', () => fileEl && fileEl.click());
+      fileEl?.addEventListener('change', async (e) => {
+        const f = e.target.files && e.target.files[0];
+        if (!f) return;
+        try {
+          const text = await f.text();
+          const name = f.name.replace(/\.[^.]+$/, '');
+          const id = registerCube(text, { name });
+          if (id) {
+            p.lutId = id; p.lutName = name; layer._adjFinalKey = null;
+            body.innerHTML = ''; buildAdjBody(layer, type, body, popEl); scheduleAdjRefresh(layer);
+          } else {
+            const nm = body.querySelector('.ge-cl-name');
+            if (nm) nm.textContent = 'Could not parse .cube';
+          }
+        } catch (err) { console.warn('[color-lookup] LUT load failed', err); }
+      });
     } else if (type === 'grain') {
       body.innerHTML = sliderRow('amount', 'Amount', 0, 100, Math.round(p.amount || 0), '%');
     } else if (type === 'channel-mixer') {
