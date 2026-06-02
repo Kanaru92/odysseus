@@ -1174,6 +1174,14 @@ function _effectiveLayerCanvas(layer) {
 // re-renders. Called at every site that mutates a layer's raw pixels.
 function _markLayerDirty(layer) { if (layer) layer._pixVer = (layer._pixVer || 0) + 1; }
 function _markAllLayersDirty() { for (const l of state.layers) l._pixVer = (l._pixVer || 0) + 1; }
+// Drop a layer's render caches whose canvases are sized to the OLD document
+// dimensions — call after any op that reallocs a layer's pixel buffers
+// (_expandDocTo, _resampleImage) so a stale cache isn't composited at the wrong size.
+function _resetLayerCaches(layer) {
+  if (!layer) return;
+  layer._fxCache = null; layer._fxKey = ''; layer._adjFinal = null; layer._adjFinalKey = '';
+  layer._adjCache = null; layer._adjCacheKey = ''; layer._pixVer = (layer._pixVer || 0) + 1;
+}
 
 // Expand-on-paint: grow the document toward the right/bottom so a stroke reaching
 // the edge keeps painting instead of clipping. Content stays at the origin (no
@@ -1193,8 +1201,7 @@ function _expandDocTo(newW, newH) {
       if (layer.masks) for (const m of layer.masks) { m.canvas = grow(m.canvas); m.ctx = m.canvas.getContext('2d'); }
     } catch (e) { console.error('[gallery] expandDocTo layer grow failed:', e); }
     // Per-layer caches are sized to the old document — drop them.
-    layer._fxCache = null; layer._fxKey = ''; layer._adjFinal = null; layer._adjFinalKey = '';
-    layer._adjCache = null; layer._adjCacheKey = ''; layer._pixVer = (layer._pixVer || 0) + 1;
+    _resetLayerCaches(layer);
   }
   if (state.maskCanvas) { try { state.maskCanvas = grow(state.maskCanvas); state.maskCtx = state.maskCanvas.getContext('2d'); } catch {} }
   state.mainCanvas.width = newW; state.mainCanvas.height = newH;
@@ -2887,6 +2894,7 @@ function _resampleImage(newW, newH, method) {
     if (layer.layerMask && layer.layerMask.width) scaleCanvas(layer.layerMask);
     const off = state.layerOffsets.get(layer.id);
     if (off) state.layerOffsets.set(layer.id, { x: Math.round(off.x * sx), y: Math.round(off.y * sy) });
+    _resetLayerCaches(layer); // canvases are a different size now — drop old-dim caches
   }
   if (state.maskCanvas) { scaleCanvas(state.maskCanvas); state.maskCtx = state.maskCanvas.getContext('2d'); }
   state.imgWidth = newW; state.imgHeight = newH;
@@ -6899,6 +6907,8 @@ export function closeEditor() {
   if (state.layers.length) {
     try { _persistDraft(); } catch {}
   }
+  // Stop the playback rAF loop so it doesn't keep ticking after the editor closes.
+  if (_anim) { try { _anim.pause(); } catch {} }
   _setEditTabLabel(null);
   _unmountEditorLoading();
   state.editorOpen = false;

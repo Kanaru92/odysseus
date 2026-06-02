@@ -303,7 +303,7 @@ export function wireCanvasEvents({ canvasArea, beginDraw, continueDraw, endDraw:
     e.preventDefault();
     e.stopPropagation(); // don't let beginDraw fire
   }, true);
-  on(window, 'mousemove', (e) => { if (spacePanning) applyOffset(e.clientX - spStartX, e.clientY - spStartY); });
+  on(window, 'mousemove', (e) => { if (spacePanning) { e.preventDefault(); applyOffset(e.clientX - spStartX, e.clientY - spStartY); } });
   on(window, 'mouseup', () => { if (spacePanning) { spacePanning = false; canvasArea.style.cursor = state.spaceDown ? 'grab' : ''; } });
   on(document, 'keydown', (e) => {
     if (e.code !== 'Space' || !state.editorOpen) return;

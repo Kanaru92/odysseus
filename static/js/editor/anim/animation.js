@@ -107,6 +107,12 @@ export function createAnimation({ composite, createLayer, renderLayerPanel, onCh
       trk.cels = trk.cels.filter((c) => c.id !== celId);
     }
     delete trk.frameMap[a.currentFrame];
+    // Recompute the timeline length from surviving cels so deleting the last
+    // frame doesn't leave frameCount pointing past the end (zombie state where
+    // addFrame/playback see phantom frames).
+    let maxF = 0;
+    for (const t of a.tracks) for (const k of Object.keys(t.frameMap)) maxF = Math.max(maxF, (+k) + 1);
+    a.frameCount = Math.max(1, maxF);
     gotoFrame(Math.max(0, a.currentFrame - 1));
   }
 
@@ -126,7 +132,7 @@ export function createAnimation({ composite, createLayer, renderLayerPanel, onCh
     const sctx = scratch._ctx || (scratch._ctx = scratch.getContext('2d'));
     const main = state.mainCtx;
     const fc = Math.max(1, a.frameCount || 1);
-    for (const ent of M.onionFrames(a.currentFrame, a.onion)) {
+    for (const ent of M.onionFrames(a.currentFrame, a.onion, fc)) {
       if (ent.frame < 0 || ent.frame >= fc) continue; // skip phantom frames past the timeline
       const layer = celLayer(trk.cels.find((c) => c.id === M.celAtFrame(trk, ent.frame)));
       if (!layer || !layer.canvas || !layer.canvas.width) continue;

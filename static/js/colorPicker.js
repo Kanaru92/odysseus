@@ -217,8 +217,8 @@ function wireHandlers(p) {
     }
   });
   hex.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') { commitCurrent(); close(); }
-    if (e.key === 'Escape') { close(); }
+    if (e.key === 'Enter') { e.preventDefault(); commitCurrent(); close(); }
+    if (e.key === 'Escape') { e.preventDefault(); close(); }
   });
 
   p.addEventListener('click', (e) => {

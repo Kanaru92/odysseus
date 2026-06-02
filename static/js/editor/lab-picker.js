@@ -49,7 +49,11 @@ export function wireLabPicker() {
 
   hex.addEventListener('change', () => {
     const v = hex.value.trim();
-    if (!/^#?[0-9a-f]{6}$/i.test(v)) { syncFromFg(); return; }
+    if (!/^#?[0-9a-f]{6}$/i.test(v)) {
+      const { L, a, b } = hexToLab(fg.value || '#000000');
+      hex.value = labToHex(L, a, b); // revert the field to the current valid colour
+      return;
+    }
     const { L, a, b } = hexToLab(v);
     setFromLab(L, a, b, true);
     hex.value = labToHex(L, a, b); // normalize the just-committed value
