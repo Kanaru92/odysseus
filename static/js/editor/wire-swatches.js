@@ -14,6 +14,7 @@ const DEFAULT_PALETTE = [
   '#ff0000', '#ff8000', '#ffff00', '#00ff00', '#00ffff', '#0080ff', '#0000ff', '#8000ff', '#ff00ff',
 ];
 const LS_KEY = 'ge-swatches-v1';
+const RECENT_KEY = 'ge-swatches-recent-v1';
 
 export function wireSwatches() {
   const grid = document.getElementById('ge-swatches');
@@ -26,7 +27,7 @@ export function wireSwatches() {
   if (!grid || !fg) return;
 
   let saved = load();      // [{ hex, name }]
-  const recent = [];       // hex strings
+  const recent = loadRecent(); // hex strings, most-recent first (persisted)
 
   const apply = (hex) => { fg.value = hex; fg.dispatchEvent(new Event('input', { bubbles: true })); };
   const cell = (entry, removable) => {
@@ -70,6 +71,11 @@ export function wireSwatches() {
     return '#' + d.slice(0, 6);
   }
   function persist() { try { localStorage.setItem(LS_KEY, JSON.stringify(saved)); } catch {} }
+  function persistRecent() { try { localStorage.setItem(RECENT_KEY, JSON.stringify(recent)); } catch {} }
+  function loadRecent() {
+    try { const v = JSON.parse(localStorage.getItem(RECENT_KEY)); return Array.isArray(v) ? v.filter((h) => typeof h === 'string').slice(0, 14) : []; }
+    catch { return []; }
+  }
   function load() {
     try {
       const v = JSON.parse(localStorage.getItem(LS_KEY));
@@ -124,6 +130,7 @@ export function wireSwatches() {
     recent.unshift(hex);
     if (recent.length > 14) recent.pop();
     renderRecent();
+    persistRecent(); // survive page reload
   });
 
   render();

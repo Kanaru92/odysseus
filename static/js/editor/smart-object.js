@@ -126,9 +126,13 @@ export function createSmartObject({ activeLayer, saveState, composite, renderLay
   // re-derives through the existing transform, so placement is preserved.
   function _loadInto(layer, url, label, cacheBust) {
     const img = new Image();
+    // Snapshot the layer's pixel-version: undo/redo (and any edit) during the
+    // async decode bumps it (_restoreState marks all layers dirty), so if it
+    // changed we must NOT clobber the restored/edited layer with this result.
+    const pv0 = layer._pixVer || 0;
     try { img.crossOrigin = 'anonymous'; } catch {}
     img.onload = () => {
-      if (!state.layers.includes(layer)) return; // layer removed while loading
+      if (!state.layers.includes(layer) || (layer._pixVer || 0) !== pv0) return; // removed or changed mid-load
       saveState(label);
       if (!layer.isSmart) {
         layer.isSmart = true;
