@@ -13,7 +13,7 @@ import { state } from './state.js';
 // intentionally excluded (global monotonic id counter → no cross-doc collisions).
 const DOC_FIELDS = ['layers', 'layerOffsets', 'imgWidth', 'imgHeight', 'activeLayerId', 'undoStack', 'redoStack', '_histTiles'];
 
-export function wireDocTabs({ composite, renderLayerPanel, createLayer, fitZoom }) {
+export function wireDocTabs({ composite, renderLayerPanel, createLayer, fitZoom, promptNewSize }) {
   if (document.querySelector('.ge-doc-tabs')) return;
   // Mount ABOVE the editor body (which is a horizontal flex row of
   // toolbar | canvas | panel). Inserting inside that row made the tab bar a tall
@@ -57,9 +57,8 @@ export function wireDocTabs({ composite, renderLayerPanel, createLayer, fitZoom 
     applyFrom(docs[active]);
     renderTabs();
   }
-  function newDoc() {
+  function _makeDoc(w, h) {
     captureInto(docs[active]);
-    const w = state.imgWidth || 1024, h = state.imgHeight || 1024;
     const bg = createLayer('Background', w, h);
     bg.ctx.fillStyle = '#ffffff'; bg.ctx.fillRect(0, 0, w, h);
     const offsets = new Map(); offsets.set(bg.id, { x: 0, y: 0 });
@@ -69,6 +68,17 @@ export function wireDocTabs({ composite, renderLayerPanel, createLayer, fitZoom 
     active = docs.length - 1;
     applyFrom(docs[active]);
     renderTabs();
+  }
+  // New document: ask for a size first (presets + aspect ratio) via the
+  // shared new-canvas dialog, then create at the chosen dimensions. Falls
+  // back to the current doc's size if no size-prompt dep was provided or the
+  // user cancels with no prior size.
+  function newDoc() {
+    if (promptNewSize) {
+      const p = promptNewSize();
+      if (p && p.then) { p.then(size => { if (size && size.w > 0 && size.h > 0) _makeDoc(size.w, size.h); }).catch(() => {}); return; }
+    }
+    _makeDoc(state.imgWidth || 1024, state.imgHeight || 1024);
   }
   function closeDoc(i) {
     if (docs.length <= 1) return; // keep at least one document open

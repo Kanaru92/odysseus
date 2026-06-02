@@ -4256,7 +4256,7 @@ function _buildEditor(container) {
   // Actions — record/replay the command stream (Filter ▸ Actions…).
   wireActions({ saveState: _saveState, composite });
   // Tabbed documents — work between multiple open files.
-  wireDocTabs({ composite, renderLayerPanel: _renderLayerPanel, createLayer, fitZoom: _fitZoom });
+  wireDocTabs({ composite, renderLayerPanel: _renderLayerPanel, createLayer, fitZoom: _fitZoom, promptNewSize: () => _promptCanvasSize() });
   // Reference image panel (display-only docker).
   wireReference();
   // Histogram panel (read-only, live tonal feedback).
