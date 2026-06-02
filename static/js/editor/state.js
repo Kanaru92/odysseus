@@ -205,6 +205,10 @@ export const state = {
   // so the editor can reopen with fresh dimensions.
   mainCanvas: null,
   mainCtx: null,
+  // Render backend for the layer composite: 'canvas2d' (default) or 'webgl2'
+  // (GPU compositor — only used when every visible layer's blend mode is
+  // GPU-exact and there's no clipping; falls back to canvas2d otherwise).
+  renderBackend: 'canvas2d',
 
   // ── Document + layers ──
   layers: [],

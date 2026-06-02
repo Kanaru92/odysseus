@@ -123,6 +123,7 @@ import {
 import { createCanvasTransforms } from './editor/canvas-transforms.js';
 import { createApplyImageTool } from './editor/ai-tool-runner.js';
 import { createStrokePipeline } from './editor/stroke-pipeline.js';
+import { createWebGLCompositor } from './editor/render/webgl-compositor.js';
 import { createAdjPopupSystem } from './editor/fx/adj-popup.js';
 import { createHistoryPanel } from './editor/history-panel.js';
 import { createTransformSession } from './editor/tools/transform-session.js';
@@ -978,10 +979,82 @@ function _effectiveLayerCanvas(layer) {
   return src;
 }
 
+// WebGL2 layer compositor (lazy). Used only when state.renderBackend==='webgl2'
+// and the doc is GPU-eligible; otherwise the CPU path below runs unchanged.
+const _glCompositor = createWebGLCompositor();
+// Blend modes whose GPU (W3C) result is pixel-identical to the CPU path
+// (canvas globalCompositeOperation). Custom JS-loop modes use an opaque-backdrop
+// shortcut on CPU, so they're excluded until that path is reconciled; the
+// non-separable component modes (hue/sat/color/lum) aren't on the GPU at all.
+const _GPU_EXACT_MODES = new Set([
+  'source-over', 'multiply', 'screen', 'darken', 'lighten', 'overlay',
+  'hard-light', 'color-dodge', 'color-burn', 'soft-light', 'difference', 'exclusion',
+]);
+
+// GPU layer render. Returns true if it composited the stack onto ctx, false to
+// fall back to the CPU loop (ineligible doc, no WebGL2, or a failure).
+function _glRenderTo(ctx, canvas) {
+  const W = canvas.width, H = canvas.height;
+  if (!_glCompositor.available(W, H)) return false;
+  const maxT = _glCompositor.maxTextureSize();
+  if (maxT && (W > maxT || H > maxT)) return false;
+  const groups = {};
+  for (const l of state.layers) if (l.isGroup) groups[l.id] = l;
+  const list = [];
+  for (const layer of state.layers) {
+    if (layer.isGroup || !layer.visible) continue;
+    let grpMul = 1;
+    if (layer.groupId && groups[layer.groupId]) {
+      const g = groups[layer.groupId];
+      if (!g.visible) continue;
+      grpMul = (g.opacity == null ? 1 : g.opacity);
+    }
+    if (layer.clipped) return false; // clipping not yet on the GPU path
+    const mode = layer.blendMode || 'source-over';
+    if (!_GPU_EXACT_MODES.has(mode)) return false;
+    const off = state.layerOffsets.get(layer.id) || { x: 0, y: 0 };
+    list.push({ canvas: _effectiveLayerCanvas(layer), x: off.x, y: off.y, opacity: layer.opacity * grpMul, mode });
+  }
+  const gc = _glCompositor.composite(W, H, list);
+  if (!gc) return false;
+  ctx.clearRect(0, 0, W, H);
+  ctx.drawImage(gc, 0, 0);
+  return true;
+}
+
+// Golden-image diff: render the doc via the CPU path AND the GPU path and report
+// the max per-channel delta. Playwright-drivable dev hook (window.__geGoldenDiff)
+// — the WYSIWYG safety net before the GPU backend is enabled by default.
+function _goldenDiff() {
+  const W = state.imgWidth, H = state.imgHeight;
+  const mk = () => { const c = document.createElement('canvas'); c.width = W; c.height = H; return c; };
+  const a = mk(), b = mk();
+  const prev = state.renderBackend;
+  state.renderBackend = 'canvas2d'; _renderLayersTo(a.getContext('2d'), a);
+  state.renderBackend = 'webgl2'; const usedGpu = _glRenderTo(b.getContext('2d'), b);
+  state.renderBackend = prev;
+  if (!usedGpu) return { usedGpu: false, W, H };
+  const ca = a.getContext('2d'), cb = b.getContext('2d');
+  const da = ca.getImageData(0, 0, W, H).data;
+  const db = cb.getImageData(0, 0, W, H).data;
+  let maxDelta = 0, over1 = 0, over2 = 0, worstPx = -1;
+  let minX = W, minY = H, maxX = -1, maxY = -1;
+  for (let p = 0; p < da.length; p += 4) {
+    let dpx = 0;
+    for (let k = 0; k < 4; k++) { const d = Math.abs(da[p + k] - db[p + k]); if (d > dpx) dpx = d; if (d > 1) over1++; if (d > 2) over2++; }
+    if (dpx > maxDelta) { maxDelta = dpx; worstPx = p; }
+    if (dpx > 2) { const xi = (p / 4) % W, yi = ((p / 4) / W) | 0; if (xi < minX) minX = xi; if (xi > maxX) maxX = xi; if (yi < minY) minY = yi; if (yi > maxY) maxY = yi; }
+  }
+  const worst = worstPx >= 0 ? { x: (worstPx / 4) % W, y: ((worstPx / 4) / W) | 0, cpu: [da[worstPx], da[worstPx + 1], da[worstPx + 2], da[worstPx + 3]], gpu: [db[worstPx], db[worstPx + 1], db[worstPx + 2], db[worstPx + 3]] } : null;
+  return { usedGpu: true, W, H, maxDelta, over1, over2, total: da.length, worst, diffBBox: maxX < 0 ? null : { minX, minY, maxX, maxY } };
+}
+
 // Draw all visible layers (honouring opacity, blend mode, clipping masks, raster
 // layer masks, and layer effects) onto an arbitrary target ctx/canvas. Shared by
 // composite() (main canvas) and Stamp Visible. No checkerboard / overlays.
 function _renderLayersTo(ctx, canvas) {
+  // GPU fast path (opt-in via state.renderBackend); falls through on ineligible.
+  if (state.renderBackend === 'webgl2' && _glRenderTo(ctx, canvas)) return;
   const drawWithMode = (src, o, opacity, mode) => {
     if (_isCustomBlend(mode)) {
       _compositeCustomBlend(src, o, opacity, mode, ctx, canvas);
@@ -6079,6 +6152,7 @@ export function openEditor(imageUrl, imageId, presetSize, displayName, draftId) 
   state.layerMaskEdit = false; // don't leak mask-edit / rubylith across documents
   state.maskOverlay = null;
   window.__galleryEditLive = true;
+  try { window.__geGoldenDiff = _goldenDiff; } catch {} // dev: GPU-vs-CPU golden diff
   if (state.persistTimer) { clearTimeout(state.persistTimer); state.persistTimer = null; }
   state.persistDirty = false;
 
