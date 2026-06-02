@@ -2750,6 +2750,39 @@ function _applyCrop() {
   _fitZoom();
 }
 
+// Trim — auto-crop the document to the bounding box of all visible content
+// (drops fully-transparent borders). Computes the union of every visible layer's
+// non-transparent pixels in document space, then reuses the crop pipeline.
+function _trimToContent() {
+  const W = state.imgWidth, H = state.imgHeight;
+  if (!W || !H) return;
+  let minX = W, minY = H, maxX = -1, maxY = -1;
+  for (const layer of state.layers) {
+    if (layer.isGroup || !layer.visible) continue;
+    let d;
+    try { d = layer.ctx.getImageData(0, 0, layer.canvas.width, layer.canvas.height).data; } catch { continue; }
+    const off = state.layerOffsets.get(layer.id) || { x: 0, y: 0 };
+    const lw = layer.canvas.width, lh = layer.canvas.height;
+    for (let y = 0; y < lh; y++) {
+      for (let x = 0; x < lw; x++) {
+        if (d[(y * lw + x) * 4 + 3] > 8) {
+          const dx = x + off.x, dy = y + off.y;
+          if (dx < minX) minX = dx; if (dx > maxX) maxX = dx;
+          if (dy < minY) minY = dy; if (dy > maxY) maxY = dy;
+        }
+      }
+    }
+  }
+  if (maxX < minX || maxY < minY) { if (uiModule) uiModule.showToast('Nothing to trim (no visible content)'); return; }
+  minX = Math.max(0, minX); minY = Math.max(0, minY);
+  maxX = Math.min(W - 1, maxX); maxY = Math.min(H - 1, maxY);
+  if (minX === 0 && minY === 0 && maxX === W - 1 && maxY === H - 1) { if (uiModule) uiModule.showToast('No transparent border to trim'); return; }
+  state.cropRect = { x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1 };
+  state.cropDeletePixels = true; // bake the crop (drop the trimmed border)
+  _applyCrop();
+  if (uiModule) uiModule.showToast('Trimmed to content');
+}
+
 // Image Size (resample) — scale EVERY layer's pixels (+ masks + offsets) to a
 // new document size with a chosen interpolation. Distinct from Canvas Size,
 // which crops/extends without resampling. `method`: 'nearest' | 'bilinear' |
@@ -5309,6 +5342,7 @@ function _buildEditor(container) {
     doFillSelection: () => _doFillSelection(),
     rotateAllLayers: (deg) => _rotateAllLayers(deg),
     flipAllLayers: (axis) => _flipAllLayers(axis),
+    trimToContent: () => _trimToContent(),
     applyGaussianBlur: () => _applyGaussianBlur(),
     applyZoomBlur: () => _applyZoomBlur(),
     uiModule,

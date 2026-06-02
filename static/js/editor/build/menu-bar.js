@@ -38,6 +38,7 @@ const MENUS = [
   { title: 'Image', items: [
     { label: 'Image size… (resample)', click: '#ge-image-size-trigger' },
     { label: 'Canvas size…', image: 'resize' },
+    { label: 'Trim transparent borders', image: 'trim' },
     { sep: true },
     { label: 'Rotate 90° CW', image: 'rotate-90' },
     { label: 'Rotate 90° CCW', image: 'rotate-270' },

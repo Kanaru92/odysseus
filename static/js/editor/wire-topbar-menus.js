@@ -41,7 +41,7 @@ export function wireTopbarMenus({
   closeOtherTopbarMenus, registerDocClickAway,
   saveState, composite, fitZoom,
   promptCanvasSize, doFillSelection,
-  rotateAllLayers, flipAllLayers,
+  rotateAllLayers, flipAllLayers, trimToContent,
   applyGaussianBlur, applyZoomBlur,
   uiModule,
 }) {
@@ -109,6 +109,7 @@ export function wireTopbarMenus({
         else if (action === 'rotate-180') rotateAllLayers(180);
         else if (action === 'flip-h') flipAllLayers('h');
         else if (action === 'flip-v') flipAllLayers('v');
+        else if (action === 'trim') { if (trimToContent) trimToContent(); }
       });
     }
   }
