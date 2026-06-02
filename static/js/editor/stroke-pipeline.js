@@ -24,6 +24,23 @@ import { createBrushEngine } from './brush/index.js';
 import { getPreset } from './brush/presets.js';
 import { makeNoiseGrain } from './brush/grain-textures.js';
 
+// Rec.601 luminance (0..255) of any CSS colour string — converts the foreground
+// colour to a grayscale tone when painting a PS layer mask (black hides, white
+// reveals, gray = partial). Parses #rgb / #rrggbb and rgb()/rgba().
+function _lumaOf(css) {
+  let r = 0, g = 0, b = 0;
+  if (typeof css === 'string' && css[0] === '#') {
+    let h = css.slice(1);
+    if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+    const n = parseInt(h, 16);
+    if (!Number.isNaN(n)) { r = (n >> 16) & 255; g = (n >> 8) & 255; b = n & 255; }
+  } else {
+    const m = /rgba?\(([^)]+)\)/i.exec(css || '');
+    if (m) { const p = m[1].split(',').map((s) => parseFloat(s)); r = p[0] || 0; g = p[1] || 0; b = p[2] || 0; }
+  }
+  return r * 0.299 + g * 0.587 + b * 0.114;
+}
+
 // Lazily-built brush engine, rebuilt when the active preset OR a live dynamics
 // override (scatter / spacing / roundness) changes. Module singleton so the
 // dab-spacing residual + tip cache persist across strokes. The dynamics
@@ -413,15 +430,27 @@ export function createStrokePipeline({ activeLayer, getActiveMaskLayer, composit
         ctx.filter = `blur(${blurPx.toFixed(2)}px)`;
       }
     } else if (state.tool === 'brush') {
-      // Brush — state.color onto the layer (or white onto an active
-      // mask sub-layer). Mask painting forces full alpha so masks
-      // stay a clean binary by default (a sub-100% brush would
-      // silently paint partial-strength mask pixels).
       ctx.globalCompositeOperation = 'source-over';
-      ctx.strokeStyle = paintingMask ? 'rgba(255,255,255,1)' : state.color;
-      if (paintingMask) {
+      if (editingLayerMask) {
+        // PS layer mask: paint a GRAYSCALE tone from the foreground colour —
+        // black hides, white reveals, gray = partial. Respect opacity/flow so
+        // partial coverage builds up, and honour softness. (D/X give the
+        // canonical black<->white mask pair.)
+        const L = Math.round(_lumaOf(state.color));
+        ctx.strokeStyle = `rgb(${L},${L},${L})`;
+        ctx.globalAlpha = (state.brushOpacity / 100) * (state.brushFlow / 100);
+        if (state.brushSoftness > 0) {
+          const blurPx = (state.brushSoftness / 100) * (state.brushSize / 2);
+          ctx.filter = `blur(${blurPx.toFixed(2)}px)`;
+        }
+      } else if (paintingMask) {
+        // Inpaint-region mask sub-layer — binary white at full alpha (the
+        // diffusion server expects white = region; partial pixels would muddy it).
+        ctx.strokeStyle = 'rgba(255,255,255,1)';
         ctx.globalAlpha = 1;
       } else {
+        // Brush — state.color onto the layer pixels.
+        ctx.strokeStyle = state.color;
         ctx.globalAlpha = (state.brushOpacity / 100) * (state.brushFlow / 100);
         if (state.brushSoftness > 0) {
           const blurPx = (state.brushSoftness / 100) * (state.brushSize / 2);

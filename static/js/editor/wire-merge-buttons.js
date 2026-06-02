@@ -20,6 +20,11 @@
  */
 import { state } from './state.js';
 
+// Resolves a layer's fully-composited pixels (adjustment layers + raster mask +
+// fx applied). Set by wireMergeButtons from galleryEditor so merges don't
+// silently drop them; defaults to the raw canvas before init.
+let _effectiveCanvas = (l) => l.canvas;
+
 // Build an id→group map for gating members by their folder's visibility/opacity.
 function _groupMap() {
   const m = {};
@@ -41,7 +46,7 @@ export function mergeLayerDownAtIndex(idx) {
   lower.ctx.save();
   lower.ctx.globalAlpha = upper.opacity;
   lower.ctx.drawImage(
-    upper.canvas,
+    _effectiveCanvas(upper), // honour the upper layer's mask / fx / adjustments
     upperOff.x - lowerOff.x,
     upperOff.y - lowerOff.y,
   );
@@ -52,7 +57,8 @@ export function mergeLayerDownAtIndex(idx) {
   return lower;
 }
 
-export function wireMergeButtons({ saveState, createLayer, renderLayerPanel, composite, uiModule }) {
+export function wireMergeButtons({ saveState, createLayer, renderLayerPanel, composite, uiModule, effectiveCanvas }) {
+  if (effectiveCanvas) _effectiveCanvas = effectiveCanvas;
   // Flatten Copy.
   document.getElementById('ge-flatten')?.addEventListener('click', () => {
     if (state.layers.length < 2) return;
@@ -70,7 +76,7 @@ export function wireMergeButtons({ saveState, createLayer, renderLayerPanel, com
       }
       const off = state.layerOffsets.get(l.id) || { x: 0, y: 0 };
       ctx.globalAlpha = l.opacity * gm;
-      ctx.drawImage(l.canvas, off.x, off.y);
+      ctx.drawImage(_effectiveCanvas(l), off.x, off.y);
       ctx.globalAlpha = 1;
     }
     state.layers.push(merged);
@@ -94,11 +100,22 @@ export function wireMergeButtons({ saveState, createLayer, renderLayerPanel, com
     saveState('Merge all');
     const base = visibleLayers[0];
     const baseCtx = base.ctx;
+    // Bake the base layer's OWN mask / fx / adjustments into its pixels first,
+    // then clear them so they don't re-clip the whole merged result.
+    if (base.layerMask || base.fx || (base.adjLayers && base.adjLayers.length)) {
+      baseCtx.save();
+      baseCtx.globalAlpha = 1;
+      baseCtx.globalCompositeOperation = 'copy';
+      baseCtx.drawImage(_effectiveCanvas(base), 0, 0);
+      baseCtx.restore();
+      base.layerMask = null; base.fx = null; base.adjLayers = [];
+      base._adjFinal = null; base._adjCache = null;
+    }
     for (let i = 1; i < visibleLayers.length; i++) {
       const l = visibleLayers[i];
       const off = state.layerOffsets.get(l.id) || { x: 0, y: 0 };
       baseCtx.globalAlpha = l.opacity * gmOf(l);
-      baseCtx.drawImage(l.canvas, off.x, off.y);
+      baseCtx.drawImage(_effectiveCanvas(l), off.x, off.y);
       baseCtx.globalAlpha = 1;
     }
     // Free offset entries for the discarded layers; keep base.

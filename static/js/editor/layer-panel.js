@@ -369,6 +369,13 @@ export function createLayerPanelRenderer(deps) {
           };
         });
       }
+      if (layer.layerMask) {
+        const lm = document.createElement('canvas');
+        lm.width = layer.layerMask.width; lm.height = layer.layerMask.height;
+        lm.getContext('2d').drawImage(layer.layerMask, 0, 0);
+        copy.layerMask = lm;
+        if (layer.maskEnabled === false) copy.maskEnabled = false;
+      }
       if (Array.isArray(layer.adjLayers) && layer.adjLayers.length) {
         copy.adjLayers = layer.adjLayers.map((a) => ({
           id: 'adj-' + Math.random().toString(36).slice(2, 9),
@@ -745,6 +752,7 @@ export function createLayerPanelRenderer(deps) {
         layer.activeMaskId = null;
         state.maskCanvas = null;
         state.maskCtx = null;
+        state.layerMaskEdit = false; // don't leak mask-edit mode across layers
         render();
         composite();
       });

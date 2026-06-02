@@ -84,6 +84,17 @@ export function createTransformSession({
     state.transformOrigCanvas.width = state.transformOrigW;
     state.transformOrigCanvas.height = state.transformOrigH;
     state.transformOrigCanvas.getContext('2d').drawImage(srcCanvas, 0, 0);
+    // Snapshot the raster layer mask too so it can be transformed in lockstep
+    // with the pixels — otherwise it keeps its old size and clips the wrong
+    // region after a scale/rotate (matched to the pending W×H box in reapply).
+    if (layer.layerMask) {
+      state.transformOrigMask = document.createElement('canvas');
+      state.transformOrigMask.width = layer.layerMask.width;
+      state.transformOrigMask.height = layer.layerMask.height;
+      state.transformOrigMask.getContext('2d').drawImage(layer.layerMask, 0, 0);
+    } else {
+      state.transformOrigMask = null;
+    }
     const curOff = state.layerOffsets.get(layer.id) || { x: 0, y: 0 };
     if (smart) {
       // Keep the current visual centre fixed while re-deriving from a source
@@ -375,6 +386,22 @@ export function createTransformSession({
     layer.canvas.height = finalH;
     layer.ctx.clearRect(0, 0, finalW, finalH);
     layer.ctx.drawImage(tmp, 0, 0);
+    // Transform the layer mask the same way (scaled into the same W×H box, then
+    // rotated/flipped) so it stays aligned to the pixels at the new size.
+    if (state.transformOrigMask) {
+      const mtmp = document.createElement('canvas');
+      mtmp.width = finalW; mtmp.height = finalH;
+      const mC = mtmp.getContext('2d');
+      mC.imageSmoothingEnabled = true;
+      mC.imageSmoothingQuality = 'high';
+      mC.save();
+      mC.translate(finalW / 2, finalH / 2);
+      if (rotDeg) mC.rotate(rotRad);
+      mC.scale(state.transformPendingFlipH ? -1 : 1, state.transformPendingFlipV ? -1 : 1);
+      mC.drawImage(state.transformOrigMask, -w / 2, -h / 2, w, h);
+      mC.restore();
+      layer.layerMask = mtmp;
+    }
     // Recenter the layer so the rotation pivot stays put visually.
     const origCenterX = state.transformOrigOffset.x + state.transformOrigW / 2;
     const origCenterY = state.transformOrigOffset.y + state.transformOrigH / 2;
@@ -400,6 +427,7 @@ export function createTransformSession({
     const wasSilent = state.transformSilent;
     state.transformOrigCanvas = null;
     state.transformOrigOffset = null;
+    state.transformOrigMask = null;
     state.transformActive = false;
     state.transformSilent = false;
     state.transformLayer = null;
@@ -414,6 +442,7 @@ export function createTransformSession({
     closeTransformPopup();
     state.transformOrigCanvas = null;
     state.transformOrigOffset = null;
+    state.transformOrigMask = null;
     if (state.transformLayer) undo(); // restore saved state
     state.transformActive = false;
     state.transformSilent = false;

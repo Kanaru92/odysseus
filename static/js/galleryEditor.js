@@ -828,6 +828,17 @@ function _applyLayerFx(source, fx) {
   return out;
 }
 
+// A layer's fully-resolved pixels as composited — adjustment layers, the raster
+// layer mask (unless disabled), and layer fx applied — returned as a NEW canvas
+// (originals never mutated). Single source of truth reused by _renderLayersTo
+// AND the merge/flatten paths so a merge can't silently drop a mask/fx/adjustment.
+function _effectiveLayerCanvas(layer) {
+  let src = _renderLayerWithAdjLayers(layer);
+  if (layer.layerMask && layer.maskEnabled !== false) src = _applyLayerMask(src, layer.layerMask);
+  if (layer.fx) src = _applyLayerFx(src, layer.fx);
+  return src;
+}
+
 // Draw all visible layers (honouring opacity, blend mode, clipping masks, raster
 // layer masks, and layer effects) onto an arbitrary target ctx/canvas. Shared by
 // composite() (main canvas) and Stamp Visible. No checkerboard / overlays.
@@ -861,9 +872,7 @@ function _renderLayersTo(ctx, canvas) {
     }
     const mode = layer.blendMode || 'source-over';
     const off = state.layerOffsets.get(layer.id) || { x: 0, y: 0 };
-    let source = _renderLayerWithAdjLayers(layer);
-    if (layer.layerMask) source = _applyLayerMask(source, layer.layerMask);
-    if (layer.fx) source = _applyLayerFx(source, layer.fx);
+    let source = _effectiveLayerCanvas(layer);
     if (layer.clipped && clipBase) {
       const tmp = document.createElement('canvas');
       tmp.width = canvas.width; tmp.height = canvas.height;
@@ -4987,6 +4996,7 @@ function _buildEditor(container) {
     renderLayerPanel: () => _renderLayerPanel(),
     composite,
     uiModule,
+    effectiveCanvas: _effectiveLayerCanvas,
   });
 
   // Capture-phase Escape interceptor — runs BEFORE any bubble-phase
