@@ -105,15 +105,28 @@ export function createSmudgeTool({ activeLayer, saveState, composite }) {
         const fr = parseInt(h.slice(0, 2), 16), fg = parseInt(h.slice(2, 4), 16), fb = parseInt(h.slice(4, 6), 16);
         for (let i = 0; i < bw * bw; i++) { const di = i * 4; carried[di] = fr; carried[di + 1] = fg; carried[di + 2] = fb; carried[di + 3] = 255; }
       } else {
-        const full = ctx.getImageData(0, 0, W, H).data;
+        // Seed from the pixels under the brush (clamped to the canvas edge).
+        // Read ONLY the brush-sized neighbourhood, not the whole document. The
+        // sampled coords (after edge-clamping to [0,W-1]×[0,H-1]) all fall in
+        // this window, so the seed pixels are identical to a full-document read.
+        const rx0 = Math.max(0, Math.floor(sx0 - cr));
+        const ry0 = Math.max(0, Math.floor(sy0 - cr));
+        const rx1 = Math.min(W, Math.ceil(sx0 + cr) + 1);
+        const ry1 = Math.min(H, Math.ceil(sy0 + cr) + 1);
+        const nw = Math.max(1, rx1 - rx0), nh = Math.max(1, ry1 - ry0);
+        const nb = ctx.getImageData(rx0, ry0, nw, nh).data;
         for (let ly = 0; ly < bw; ly++) {
           for (let lx = 0; lx < bw; lx++) {
             let px = Math.round(sx0 - cr + lx), py = Math.round(sy0 - cr + ly);
             if (px < 0) px = 0; else if (px > W - 1) px = W - 1;
             if (py < 0) py = 0; else if (py > H - 1) py = H - 1;
-            const si = (py * W + px) * 4, di = (ly * bw + lx) * 4;
-            carried[di] = full[si]; carried[di + 1] = full[si + 1];
-            carried[di + 2] = full[si + 2]; carried[di + 3] = full[si + 3];
+            // Index into the smaller neighbourhood buffer; clamp into its
+            // bounds so any edge-clamped coord still maps to a valid pixel.
+            let bx = px - rx0; if (bx < 0) bx = 0; else if (bx > nw - 1) bx = nw - 1;
+            let by = py - ry0; if (by < 0) by = 0; else if (by > nh - 1) by = nh - 1;
+            const si = (by * nw + bx) * 4, di = (ly * bw + lx) * 4;
+            carried[di] = nb[si]; carried[di + 1] = nb[si + 1];
+            carried[di + 2] = nb[si + 2]; carried[di + 3] = nb[si + 3];
           }
         }
       }
@@ -147,7 +160,11 @@ export function createSmudgeTool({ activeLayer, saveState, composite }) {
       }
       ctx.putImageData(region, minX, minY);
       state.smudgeLast = cur;
-      composite();
+      // Dirty-rect composite: only the region we just wrote changed. Convert the
+      // layer-local rect to document space (layer is drawn at its offset); the
+      // compositor clamps to canvas bounds and falls back to a full redraw when
+      // unsafe (fx/mask/selection/overlays).
+      composite({ x: minX + off.x, y: minY + off.y, w: rw, h: rh });
     },
     end() {
       state.smudgeActive = false;

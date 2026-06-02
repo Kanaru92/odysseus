@@ -84,12 +84,22 @@ export function createHealTool({ activeLayer, saveState, composite }) {
     }
     return [d, 0];
   }
+  // Heal one dab and write back only its rect. Returns the layer-local dab rect
+  // {x0,y0,x1,y1} so callers can union it for a dirty-rect composite.
   function dabAt(lx, ly) {
     const [ox, oy] = pickOffset(lx, ly);
     healDab(buf.data, W, H, lx, ly, radius, ox, oy);
     const x0 = Math.max(0, Math.floor(lx - radius)), y0 = Math.max(0, Math.floor(ly - radius));
     const x1 = Math.min(W, Math.ceil(lx + radius)), y1 = Math.min(H, Math.ceil(ly + radius));
     ctx.putImageData(buf, 0, 0, x0, y0, x1 - x0, y1 - y0); // write only the dab rect
+    return { x0, y0, x1, y1 };
+  }
+  // Composite only the union of the dab rects just written, in document space.
+  // The compositor clamps to canvas bounds and falls back to a full redraw when
+  // unsafe (fx/mask/selection/overlays).
+  function compositeRect(u, off) {
+    if (!u) { composite(); return; }
+    composite({ x: u.x0 + off.x, y: u.y0 + off.y, w: u.x1 - u.x0, h: u.y1 - u.y0 });
   }
 
   return {
@@ -105,8 +115,8 @@ export function createHealTool({ activeLayer, saveState, composite }) {
       saveState('Heal');
       state.healActive = true;
       state.healLast = { x: c.x - off.x, y: c.y - off.y };
-      dabAt(state.healLast.x, state.healLast.y);
-      composite();
+      const u = dabAt(state.healLast.x, state.healLast.y);
+      compositeRect(u, off);
     },
     move(e) {
       if (!state.healActive || !layerRef || !buf) return;
@@ -116,12 +126,18 @@ export function createHealTool({ activeLayer, saveState, composite }) {
       const last = state.healLast || cur;
       const seg = Math.hypot(cur.x - last.x, cur.y - last.y);
       const steps = Math.max(1, Math.ceil(seg / Math.max(1, radius * 0.5)));
+      let u = null;
       for (let i = 1; i <= steps; i++) {
         const t = i / steps;
-        dabAt(last.x + (cur.x - last.x) * t, last.y + (cur.y - last.y) * t);
+        const d = dabAt(last.x + (cur.x - last.x) * t, last.y + (cur.y - last.y) * t);
+        if (!u) u = d;
+        else {
+          if (d.x0 < u.x0) u.x0 = d.x0; if (d.y0 < u.y0) u.y0 = d.y0;
+          if (d.x1 > u.x1) u.x1 = d.x1; if (d.y1 > u.y1) u.y1 = d.y1;
+        }
       }
       state.healLast = cur;
-      composite();
+      compositeRect(u, off);
     },
     end() {
       state.healActive = false; state.healLast = null; buf = null; layerRef = null;

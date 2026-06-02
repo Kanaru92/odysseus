@@ -133,7 +133,11 @@ export function createMixerTool({ activeLayer, saveState, composite }) {
       }
       ctx.putImageData(region, minX, minY);
       state.mixerLast = cur;
-      composite();
+      // Dirty-rect composite: only the region we just wrote changed. Convert the
+      // layer-local rect to document space (layer is drawn at its offset); the
+      // compositor clamps to canvas bounds and falls back to a full redraw when
+      // unsafe (fx/mask/selection/overlays).
+      composite({ x: minX + off.x, y: minY + off.y, w: rw, h: rh });
     },
     end() {
       state.mixerActive = false;
