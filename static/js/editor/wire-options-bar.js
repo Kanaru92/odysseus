@@ -134,6 +134,15 @@ const GRADIENT_TYPES = [
 
 export function createOptionsBar() {
   const mirrored = new WeakSet();
+  // Inversion (DESIGN-GUIDE §11): controls the options bar HOSTS are hidden in the
+  // right panel so they aren't shown twice. One-time stylesheet; rows get the
+  // marker class in refresh(). `!important` overrides the rows' inline display.
+  if (typeof document !== 'undefined' && !document.getElementById('ge-ob-hosted-style')) {
+    const st = document.createElement('style');
+    st.id = 'ge-ob-hosted-style';
+    st.textContent = '.ge-control-row.ge-ob-hosted{display:none!important;}';
+    (document.head || document.documentElement).appendChild(st);
+  }
   const canonicalOf = (spec) => (spec.id ? document.getElementById(spec.id) : document.querySelector(spec.sel));
   const matchKey = (spec) => spec.id || spec.sel;
   // Button-group proxy: the canonical control is a set of toggle buttons
@@ -378,6 +387,19 @@ export function createOptionsBar() {
       field.appendChild(lbl); field.appendChild(input); field.appendChild(val);
       host.appendChild(field);
       setVal();
+    }
+
+    // Inversion: the bar now hosts this tool's primary controls, so hide their
+    // duplicate rows in the right panel (same PROXIES schema drives both). The
+    // canonical inputs stay in the DOM (hidden), so the proxies + all existing
+    // handlers keep working; the panel is left with only the tool's long tail +
+    // action rows (its "Tool Details"). Skip self-contained pickers (no panel
+    // twin) and the document-level FG colour swatch (a shared doc control).
+    for (const spec of specs) {
+      if (spec.kind === 'grad-type' || spec.kind === 'smudge-presets' || spec.kind === 'color') continue;
+      const canon = canonicalOf(spec);
+      const row = canon && canon.closest('.ge-control-row');
+      if (row) row.classList.add('ge-ob-hosted');
     }
   }
 
