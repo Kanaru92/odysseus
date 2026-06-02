@@ -72,7 +72,7 @@ export const state = {
   // ── Brush / Eraser / Clone tools ──
   // Shared paint color (brush picks up the swatch; eraser and clone
   // ignore color but reuse the same picker control).
-  color: '#e06c75',
+  color: '#000000',
   // Background color (FG/BG model). `color` is the foreground (what
   // the brush paints). X swaps the two; D resets to black/white.
   bgColor: '#ffffff',

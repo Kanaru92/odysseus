@@ -107,23 +107,12 @@ export function wireCanvasEvents({ canvasArea, beginDraw, continueDraw, endDraw,
     }
   };
   state.mainCanvas.addEventListener('pointerdown', capturePen);
-  // High-Hz stroke sampling: a single frame's pointermove carries the sub-frame
-  // samples in getCoalescedEvents(). Mouse/pen compat events fire at most once
-  // per frame, so fast strokes lose curvature and look stepped/polygonal. While
-  // a stroke is active we replay the coalesced points (each with its OWN
-  // pressure/tilt) through continueDraw — except the LAST one, which the compat
-  // mousemove that fires right after this handler will draw, so it's not doubled.
-  // Touch keeps its dedicated touchmove path, so it's excluded here.
-  state.mainCanvas.addEventListener('pointermove', (e) => {
-    capturePen(e);
-    if (state.drawing && e.pointerType !== 'touch' && typeof e.getCoalescedEvents === 'function') {
-      let co;
-      try { co = e.getCoalescedEvents(); } catch { co = null; }
-      if (co && co.length > 1) {
-        for (let i = 0; i < co.length - 1; i++) { capturePen(co[i]); continueDraw(co[i]); }
-      }
-    }
-  });
+  // Record stylus pressure/tilt only — the mouse-compat events DRIVE the stroke
+  // (one continueDraw per frame). Replaying every sub-frame getCoalescedEvents()
+  // sample through the full stroke pipeline composited N× per frame and made
+  // drawing lag, so high-Hz sub-sampling is deferred to a batched-composite
+  // approach. capturePen stays so pen pressure (Windows Ink) still works.
+  state.mainCanvas.addEventListener('pointermove', capturePen);
 
   // Touch — single finger draws; two fingers pan + pinch-zoom.
   let multiActive = false;

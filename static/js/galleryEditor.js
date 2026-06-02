@@ -1889,7 +1889,10 @@ function _updateBrushCursor(e) {
   if (!state.cursorEl) {
     state.cursorEl = document.createElement('div');
     state.cursorEl.className = 'ge-brush-cursor';
-    document.body.appendChild(state.cursorEl);
+    // Append inside the editor container (not document.body) so the cursor still
+    // renders when the editor is in element-fullscreen — body-level siblings of
+    // the fullscreen element are not painted.
+    (state.container || document.body).appendChild(state.cursorEl);
   }
 
   // Lasso uses the feather radius (or a sensible default) so the circle
@@ -4156,6 +4159,22 @@ function _buildEditor(container) {
   });
   document.addEventListener('fullscreenchange', () => {
     if (_fsBtn) _fsBtn.setAttribute('aria-pressed', document.fullscreenElement ? 'true' : 'false');
+    // Keyboard Lock API — while fullscreen, route normally-reserved browser
+    // shortcuts (Ctrl+W/T/N, Ctrl+Tab, Ctrl+1-9, F-keys, …) to the page so they
+    // can't yank the user out of the editor. Only effective in fullscreen + a
+    // secure context; degrades silently where unsupported. Escape stays a
+    // hold-to-exit per the spec. Released on exit so it never leaks outside.
+    try {
+      const kb = navigator.keyboard;
+      if (kb && kb.lock) {
+        if (document.fullscreenElement) { kb.lock().catch(() => {}); }
+        else if (kb.unlock) { kb.unlock(); }
+      }
+    } catch {}
+    // Re-focus the editor after any fullscreen transition so document-level
+    // shortcuts keep firing (a fullscreen element with no focused descendant
+    // can swallow keydowns).
+    if (document.fullscreenElement) { try { (state.container || document.fullscreenElement).focus({ preventScroll: true }); } catch {} }
   });
 
   // Dismiss-listeners for the inpaint popup are attached lazily by

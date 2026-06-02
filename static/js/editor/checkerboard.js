@@ -28,21 +28,36 @@ export function setChecker(cfg) {
   if (cfg.c2) checkerConfig.c2 = cfg.c2;
 }
 
+// Cached 2×2-cell pattern tile. Re-painting the checkerboard with a per-square
+// nested fillRect loop is O(canvas-area / size²) calls EVERY composite — tens of
+// thousands of fillRects per frame on a large canvas, and the dirty-rect clip
+// doesn't help (the loop still iterates the whole canvas). A repeating
+// CanvasPattern collapses it to a single clipped fillRect. The tile is rebuilt
+// only when size/colors change; createPattern() is cheap (references the tile,
+// no pixel copy) so we make it per-ctx-call to stay valid across contexts.
+let _tile = null, _tileKey = '';
+function _checkerTile() {
+  const size = Math.max(1, checkerConfig.size || 8);
+  const key = size + '|' + checkerConfig.c1 + '|' + checkerConfig.c2;
+  if (_tile && _tileKey === key) return _tile;
+  const t = document.createElement('canvas');
+  t.width = size * 2; t.height = size * 2;
+  const tc = t.getContext('2d');
+  tc.fillStyle = checkerConfig.c2; tc.fillRect(0, 0, size * 2, size * 2);
+  tc.fillStyle = checkerConfig.c1; tc.fillRect(0, 0, size, size); tc.fillRect(size, size, size, size);
+  _tile = t; _tileKey = key;
+  return t;
+}
+
 /**
  * @param {CanvasRenderingContext2D} ctx
  * @param {number} w  Width in canvas pixels.
  * @param {number} h  Height in canvas pixels.
  */
 export function drawCheckerboard(ctx, w, h) {
-  const size = Math.max(1, checkerConfig.size || 8);
-  ctx.fillStyle = checkerConfig.c2; // base (gray square)
-  ctx.fillRect(0, 0, w, h);
-  ctx.fillStyle = checkerConfig.c1; // light square on alternating cells
-  for (let y = 0; y < h; y += size) {
-    for (let x = 0; x < w; x += size) {
-      if ((Math.floor(x / size) + Math.floor(y / size)) % 2 === 0) {
-        ctx.fillRect(x, y, size, size);
-      }
-    }
-  }
+  const prev = ctx.fillStyle;
+  const pat = ctx.createPattern(_checkerTile(), 'repeat');
+  if (pat) { ctx.fillStyle = pat; ctx.fillRect(0, 0, w, h); ctx.fillStyle = prev; return; }
+  // Fallback (createPattern unavailable): solid base so we never error.
+  ctx.fillStyle = checkerConfig.c2; ctx.fillRect(0, 0, w, h); ctx.fillStyle = prev;
 }

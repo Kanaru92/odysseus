@@ -118,6 +118,9 @@ function _initHoverCardSpaceToggle() {
   }, true);
   document.addEventListener('keydown', (e) => {
     if (e.code !== 'Space' || e.repeat) return;
+    // The painting editor owns Space (hold-to-pan) — never let it minimize the
+    // editor modal or toggle a hovered card while painting.
+    if (window.__galleryEditLive || document.querySelector('#gallery-editor-container .gallery-editor')) return;
     if (hoveredToggleCard && _isSpaceVisible(hoveredToggleCard)) {
       if (_spaceIsBlocked(e, hoveredToggleCard)) return;
       e.preventDefault();

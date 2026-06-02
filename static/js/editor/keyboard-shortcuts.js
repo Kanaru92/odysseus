@@ -142,6 +142,11 @@ export function wireKeyboardShortcuts(deps) {
         e.preventDefault();
         document.getElementById(e.shiftKey ? 'ge-export-gallery' : 'ge-save')?.click();
       }
+      // Ctrl+E — merge the active layer down into the one below (PS standard).
+      if ((e.key === 'e' || e.key === 'E') && !e.shiftKey && !e.altKey) {
+        e.preventDefault();
+        document.getElementById('ge-merge-down')?.click();
+      }
       if (e.shiftKey && e.key === 'T') { e.preventDefault(); resizeCustomPrompt(); }
       if (e.altKey && e.key === 't') { e.preventDefault(); startTransform(); }
       // Ctrl+Shift+X — Liquify (forward-warp deform). e.code dodges the
@@ -471,7 +476,11 @@ export function wireKeyboardShortcuts(deps) {
       e.preventDefault();
       const el = (state.container && state.container.closest && state.container.closest('.gallery-modal-content')) || state.container;
       if (el) {
-        if (!document.fullscreenElement) { try { el.requestFullscreen(); } catch {} }
+        if (!document.fullscreenElement) {
+          // Focus the editor after going fullscreen so keyboard shortcuts keep
+          // working (a fullscreen element with no focus inside can swallow keys).
+          try { const p = el.requestFullscreen(); if (p && p.then) p.then(() => { try { (state.container || el).focus({ preventScroll: true }); } catch {} }).catch(() => {}); } catch {}
+        }
         else { try { document.exitFullscreen(); } catch {} }
       }
     }
