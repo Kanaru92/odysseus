@@ -70,6 +70,20 @@ export function wireBrushPresets() {
   _sj?.addEventListener('input', () => { state.brushSizeJitter = (parseInt(_sj.value, 10) || 0) / 100; const l = document.getElementById('ge-brush-sizejitter-label'); if (l) l.textContent = _sj.value + '%'; });
   const _fj = document.getElementById('ge-brush-flowjitter');
   _fj?.addEventListener('input', () => { state.brushFlowJitter = (parseInt(_fj.value, 10) || 0) / 100; const l = document.getElementById('ge-brush-flowjitter-label'); if (l) l.textContent = _fj.value + '%'; });
+  // Dual brush — secondary texturing tip per dab.
+  const _dual = document.getElementById('ge-brush-dual');
+  const _dualOpts = document.getElementById('ge-brush-dual-opts');
+  const _syncDualVis = () => { if (_dualOpts) _dualOpts.style.display = state.brushDualEnabled ? 'flex' : 'none'; };
+  if (_dual) { _dual.checked = !!state.brushDualEnabled; _dual.addEventListener('change', () => { state.brushDualEnabled = !!_dual.checked; _syncDualVis(); }); }
+  const _dtip = document.getElementById('ge-brush-dual-tip');
+  if (_dtip) { _dtip.value = state.brushDualTipType || 'round'; _dtip.addEventListener('change', () => { state.brushDualTipType = _dtip.value || 'round'; }); }
+  const _dscale = document.getElementById('ge-brush-dual-scale');
+  _dscale?.addEventListener('input', () => { state.brushDualScale = Math.max(0.05, (parseInt(_dscale.value, 10) || 35) / 100); const l = document.getElementById('ge-brush-dual-scale-label'); if (l) l.textContent = _dscale.value + '%'; });
+  const _dcount = document.getElementById('ge-brush-dual-count');
+  _dcount?.addEventListener('input', () => { state.brushDualCount = parseInt(_dcount.value, 10) || 6; const l = document.getElementById('ge-brush-dual-count-label'); if (l) l.textContent = _dcount.value; });
+  const _dscatter = document.getElementById('ge-brush-dual-scatter');
+  _dscatter?.addEventListener('input', () => { state.brushDualScatter = (parseInt(_dscatter.value, 10) || 80) / 100; const l = document.getElementById('ge-brush-dual-scatter-label'); if (l) l.textContent = _dscatter.value + '%'; });
+  _syncDualVis();
   // Brush blend mode — only the canvas-native modes (valid for the stroke→layer
   // composite); custom per-pixel modes don't apply to the live stroke buffer.
   const _bb = document.getElementById('ge-brush-blend');

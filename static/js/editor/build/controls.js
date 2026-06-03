@@ -420,6 +420,31 @@ export function controlsHTML({ color, brushSize, wandTolerance }) {
         <input type="range" id="ge-brush-flowjitter" min="0" max="100" value="0" title="Randomises the per-dab flow (opacity build-up) for textured, broken strokes." />
       </div>
       <div class="ge-control-row ge-eraser-row" style="gap:6px;">
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;" title="Dual brush: texture each dab with a scattered secondary tip (grainy / natural-media strokes)."><input type="checkbox" id="ge-brush-dual" /> Dual brush (texture tip)</label>
+      </div>
+      <div id="ge-brush-dual-opts" class="ge-eraser-row" style="display:none;flex-direction:column;align-items:stretch;gap:4px;padding-left:8px;border-left:2px solid rgba(255,255,255,0.08);">
+        <div class="ge-control-row" style="gap:6px;">
+          <label style="min-width:64px;">Tip</label>
+          <select id="ge-brush-dual-tip" title="Shape of the secondary (texturing) tip.">
+            <option value="round">Round</option>
+            <option value="soft">Soft</option>
+            <option value="gaussian">Gaussian</option>
+          </select>
+        </div>
+        <div class="ge-control-row">
+          <label>Size <span id="ge-brush-dual-scale-label">35%</span></label>
+          <input type="range" id="ge-brush-dual-scale" min="5" max="100" value="35" title="Secondary tip size as a fraction of the brush dab." />
+        </div>
+        <div class="ge-control-row">
+          <label>Count <span id="ge-brush-dual-count-label">6</span></label>
+          <input type="range" id="ge-brush-dual-count" min="1" max="24" value="6" title="How many secondary stamps texture each dab — higher = denser grain." />
+        </div>
+        <div class="ge-control-row">
+          <label>Scatter <span id="ge-brush-dual-scatter-label">80%</span></label>
+          <input type="range" id="ge-brush-dual-scatter" min="0" max="100" value="80" title="How far the secondary stamps spread across the dab." />
+        </div>
+      </div>
+      <div class="ge-control-row ge-eraser-row" style="gap:6px;">
         <label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="ge-brush-angle-follow" /> Tip follows stroke direction</label>
       </div>
       <div class="ge-control-row ge-eraser-row" style="gap:6px;">

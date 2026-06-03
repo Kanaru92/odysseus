@@ -320,6 +320,13 @@ export const state = {
   brushColorJitter: 0, // per-dab hue jitter 0..1 (Color Dynamics, natural-media variation)
   brushSizeJitter: 0,  // per-dab size jitter 0..1 (Shape Dynamics)
   brushFlowJitter: 0,  // per-dab flow jitter 0..1 (Transfer Dynamics)
+  // Dual brush — a scattered secondary tip textures each primary dab (PS Dual Brush).
+  brushDualEnabled: false,
+  brushDualTipType: 'round', // round | soft | gaussian
+  brushDualScale: 0.35,      // secondary tip size as a fraction of the dab
+  brushDualCount: 6,         // secondary stamps per dab
+  brushDualScatter: 0.8,     // spread of secondary stamps across the dab (0..1)
+  brushDualHardness: 1,      // secondary tip hardness 0..1
 
   // Tab toggles tool + side panels for a full-canvas view.
   panelsHidden: false,

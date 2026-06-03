@@ -89,6 +89,11 @@ export function createBrushEngine(preset) {
   let strokeBuf = null, strokeCtx = null; // accumulating stroke (flow build-up)
   let baseSnap = null, baseCtx = null;    // layer pixels captured at stroke start
   let targetCtx = null;                   // the layer ctx being painted
+  // ── Dual-brush scratch ── a secondary tip textures each primary dab (PS Dual
+  // Brush). secCache caches the white secondary tip; dualA/dualB are reused per
+  // dab so the modulation doesn't allocate two canvases for every stamp.
+  const secCache = new Map();
+  let dualA = null, dualAx = null, dualB = null, dualBx = null;
   let strokeOpacity = 1;                  // stroke-level cap (Opacity slider)
   let eraseMode = false;                  // true → buffer erases base (eraser)
   let strokeBlend = 'source-over';        // brush blend mode (stroke → layer composite)
@@ -112,6 +117,44 @@ export function createBrushEngine(preset) {
     // (size/colour jitter spawns many keys mid-stroke) stay resident.
     if (cache.size > 96) cache.delete(cache.keys().next().value);
     return t;
+  }
+
+  // White secondary tip for the dual brush, cached by rounded size + type.
+  function secTipFor(size, rt) {
+    const type = rt.dualTipType || 'round';
+    const key = `${Math.max(1, Math.round(size))}|${type}${rt.dualTipImage ? '|img' : ''}`;
+    let t = secCache.get(key);
+    if (t) { secCache.delete(key); secCache.set(key, t); return t; }
+    t = makeTip({ type, size, hardness: rt.dualHardness != null ? rt.dualHardness : 1, color: '#ffffff', image: rt.dualTipImage || null });
+    secCache.set(key, t);
+    if (secCache.size > 48) secCache.delete(secCache.keys().next().value);
+    return t;
+  }
+
+  // Build a textured copy of the primary dab: draw the primary tip, then carve it
+  // by the union of `count` scattered secondary-tip stamps (destination-in =
+  // intersection, the dominant PS "Multiply" dual-brush look). Returns a shared
+  // scratch canvas valid until the next call — fine because the caller consumes
+  // it (across its symmetry copies) before stamping the next dab.
+  function dualModulatedTip(tip, w, h, rt) {
+    const W = Math.max(1, Math.ceil(w)), H = Math.max(1, Math.ceil(h));
+    if (!dualA) { dualA = document.createElement('canvas'); dualAx = dualA.getContext('2d'); dualB = document.createElement('canvas'); dualBx = dualB.getContext('2d'); }
+    dualA.width = W; dualA.height = H;   // (re)assigning width clears the bitmap
+    dualB.width = W; dualB.height = H;
+    dualAx.drawImage(tip, 0, 0, W, H);
+    const dsize = Math.max(1, Math.min(W, H) * clamp01(rt.dualScale != null ? rt.dualScale : 0.35));
+    const dtip = secTipFor(dsize, rt);
+    const count = Math.max(1, Math.round(rt.dualCount != null ? rt.dualCount : 6));
+    const scat = rt.dualScatter != null ? rt.dualScatter : 0.8;
+    for (let i = 0; i < count; i++) {
+      const sx = W / 2 + (Math.random() * 2 - 1) * scat * (W / 2);
+      const sy = H / 2 + (Math.random() * 2 - 1) * scat * (H / 2);
+      dualBx.drawImage(dtip, sx - dsize / 2, sy - dsize / 2, dsize, dsize);
+    }
+    dualAx.globalCompositeOperation = 'destination-in';
+    dualAx.drawImage(dualB, 0, 0);
+    dualAx.globalCompositeOperation = 'source-over';
+    return dualA;
   }
 
   function ensureBuffers(w, h) {
@@ -195,6 +238,9 @@ export function createBrushEngine(preset) {
     }
     const tip = tipFor(size, rt.hardness != null ? rt.hardness : 1, dabColor);
     const w = size, h = size * p.ratio;
+    // Dual brush: texture this dab with a scattered secondary tip. Built once per
+    // dab and shared across its symmetry copies below.
+    const dab = (rt.dualEnabled && (rt.dualScale == null || rt.dualScale > 0)) ? dualModulatedTip(tip, w, h, rt) : tip;
     // Symmetry positions across the canvas center. x/y/xy = axis mirrors;
     // radial = N rotational copies; mandala = radial + mirrored (kaleidoscope).
     // Each entry carries an optional rot (so tips orient radially) + mirror flag.
@@ -242,7 +288,7 @@ export function createBrushEngine(preset) {
       const r = rot + (pos.rot || 0);
       if (pos.mirror) strokeCtx.scale(-1, 1); // true reflection for mandala
       if (r) strokeCtx.rotate(r);
-      strokeCtx.drawImage(tip, -w / 2, -h / 2, w, h);
+      strokeCtx.drawImage(dab, -w / 2, -h / 2, w, h);
       strokeCtx.restore();
     }
   }
