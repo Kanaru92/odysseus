@@ -396,6 +396,10 @@ export function createOptionsBar() {
     // handlers keep working; the panel is left with only the tool's long tail +
     // action rows (its "Tool Details"). Skip self-contained pickers (no panel
     // twin) and the document-level FG colour swatch (a shared doc control).
+    // Un-hide rows the PREVIOUS tool hosted before re-hiding for this one, so a
+    // shared control (e.g. the size slider) isn't left hidden after switching to
+    // a tool that doesn't host it.
+    document.querySelectorAll('.ge-control-row.ge-ob-hosted').forEach((r) => r.classList.remove('ge-ob-hosted'));
     for (const spec of specs) {
       if (spec.kind === 'grad-type' || spec.kind === 'smudge-presets' || spec.kind === 'color') continue;
       const canon = canonicalOf(spec);

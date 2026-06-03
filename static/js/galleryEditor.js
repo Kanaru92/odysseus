@@ -3236,7 +3236,12 @@ function _promptCheckerboard() {
 // drives all operate on the current selection (state.wandMask).
 function _openSelectMask() {
   let overlay = document.getElementById('ge-select-mask-overlay');
-  if (overlay) overlay.remove();
+  if (overlay) {
+    // Dispose a still-open instance cleanly (runs its close() so its Esc keydown
+    // listener is removed) before reopening — else stale listeners accumulate.
+    try { if (_activePromptClose) _activePromptClose(); } catch {}
+    overlay.remove();
+  }
   overlay = document.createElement('div');
   overlay.id = 'ge-select-mask-overlay';
   overlay.className = 'modal';
@@ -3335,6 +3340,12 @@ function _openSelectMask() {
     const src = document.getElementById('ge-sel-channel');
     if (src) src.value = chan.value;
     relay('ge-sel-load');
+    // Load swapped state.wandMask — drop the edge-refine snapshot so a later
+    // Radius re-captures the LOADED selection (not the stale one), reset the
+    // Radius UI, and resync the channel mirror.
+    _refineBase = null; _refineSaved = false;
+    const rs = $('ge-sm-radius'); if (rs) { rs.value = '0'; const rv = $('ge-sm-radius-val'); if (rv) rv.textContent = '0px'; }
+    syncChannels();
   });
   const close = () => { overlay.remove(); document.removeEventListener('keydown', onKey, true); _activePromptClose = null; };
   _activePromptClose = close; // let the Escape hard guard dismiss this modal
@@ -7127,6 +7138,9 @@ export function closeEditor() {
   // Abort any in-flight AI request so closing the editor doesn't leave the server
   // generating (and streaming back) a result that will never be shown.
   if (state.aiInflight) { for (const ac of state.aiInflight) { try { ac.abort(); } catch {} } state.aiInflight.clear(); }
+  // Remove any floated panel windows (they may be parented to document.body when
+  // the editor container was unavailable, so the innerHTML clear below misses them).
+  try { document.querySelectorAll('.ge-float-panel').forEach((el) => el.remove()); } catch {}
   _setEditTabLabel(null);
   _unmountEditorLoading();
   state.editorOpen = false;

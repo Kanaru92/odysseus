@@ -12,7 +12,7 @@ const SEL = '.ge-dock-section';
 
 export function wireSectionReorder(root) {
   if (!root) return;
-  let secs = Array.from(root.querySelectorAll(SEL));
+  let secs = Array.from(root.querySelectorAll(SEL)).filter((s) => s.id); // ids drive persist/restore
   if (secs.length < 2) return;
   const parent = secs[0].parentNode;
   if (!parent) return;
