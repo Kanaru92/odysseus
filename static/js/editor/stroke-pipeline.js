@@ -97,7 +97,10 @@ function getBrushEngine() {
   return _brushEngine;
 }
 
-export function createStrokePipeline({ activeLayer, getActiveMaskLayer, composite }) {
+export function createStrokePipeline({ activeLayer, getActiveMaskLayer, composite, scheduleComposite }) {
+  // In-stroke renders coalesce to one composite per animation frame (set by the
+  // editor); fall back to synchronous composite if a scheduler wasn't provided.
+  const paint = scheduleComposite || composite;
   // Resolve which canvas/offset a brush-engine stroke targets for the CURRENT
   // active layer + tool, mirroring the routing in strokeTo. Returns null when
   // the brush-engine path doesn't apply (mask paint / inpaint / no layer), so
@@ -214,7 +217,7 @@ export function createStrokePipeline({ activeLayer, getActiveMaskLayer, composit
       emitted++;
       if (nx === rawX && ny === rawY) break;
     }
-    if (emitted) composite();
+    if (emitted) paint();
     return emitted;
   }
 
@@ -268,7 +271,7 @@ export function createStrokePipeline({ activeLayer, getActiveMaskLayer, composit
     ctx.restore();
     state.lastX = x;
     state.lastY = y;
-    composite();
+    paint();
   }
 
   function strokeTo(x, y) {
@@ -296,7 +299,7 @@ export function createStrokePipeline({ activeLayer, getActiveMaskLayer, composit
       }
       state.lastX = x;
       state.lastY = y;
-      composite();
+      paint();
       return;
     }
     const layer = activeLayer();
@@ -441,8 +444,8 @@ export function createStrokePipeline({ activeLayer, getActiveMaskLayer, composit
         // far-scattered paint invisible until an unrelated full redraw. Force a
         // full composite for those cases so the screen matches the layer.
         const _scatter = (eng.preset && eng.preset.scatter) || 0;
-        if ((rt.symmetry && rt.symmetry !== 'none') || _scatter > 1.2) composite();
-        else composite(dirty);
+        if ((rt.symmetry && rt.symmetry !== 'none') || _scatter > 1.2) paint();
+        else paint(dirty);
         return;
       } catch (err) {
         if (typeof console !== 'undefined') console.warn('[brush-engine] fell back to legacy stroke:', err);
@@ -523,7 +526,7 @@ export function createStrokePipeline({ activeLayer, getActiveMaskLayer, composit
 
     state.lastX = x;
     state.lastY = y;
-    composite();
+    paint();
   }
 
   // Publish the stroke-end drain on shared state so the canvas event layer

@@ -42,10 +42,13 @@ function strokeLabel(tool) {
 }
 
 export function createStrokeTool({
-  saveState, strokeTo, composite,
+  saveState, strokeTo, composite, flushComposite,
   getActiveMaskLayer, activeParentLayer, ensureActiveMaskLayer, createLayer,
   renderLayerPanel, syncToolClearIndicators,
 }) {
+  // Render the final stroke frame synchronously on lift (flushes any rAF-coalesced
+  // composite scheduled during the stroke). Falls back to composite if unwired.
+  const finalComposite = flushComposite || composite;
   // Airbrush / build-up: while the brush is held, re-stamp at the current point
   // on a timer so paint keeps accumulating (the engine's flow buffer builds
   // toward the opacity cap) even when the cursor isn't moving.
@@ -161,7 +164,7 @@ export function createStrokeTool({
       if (state.tool === 'brush' || state.tool === 'eraser') {
         state.lineAnchor = { x: state.lastX, y: state.lastY };
       }
-      composite();
+      finalComposite();
       if (wasDrawingInpaint) syncToolClearIndicators();
       return true;
     },

@@ -1644,8 +1644,41 @@ function _canDirtyComposite() {
 // transform on the canvas element, so composite() always renders the document
 // 1:1 in image space — the clip below is exact. Unchanged areas keep their last
 // valid composite; only the dab rect is re-rendered.
+// rAF-coalesced compositing for the paint hot path. Per-segment strokeTo() used
+// to call composite() directly; on a heavy composite those queue up and the
+// painted result falls seconds behind the cursor (and the blocked main thread
+// drops pointer moves → skipped/angular lines). The stroke pipeline calls
+// _scheduleComposite() instead, which accumulates the dirty union and renders at
+// most ONCE per animation frame; _flushComposite() forces the final frame on
+// stroke end. Non-stroke composite() callers stay synchronous (unchanged).
+let _compRafId = 0, _compPendingFull = false, _compPendingDirty = null, _compositeCalls = 0;
+function _unionDirty(a, b) {
+  if (!a) return b; if (!b) return a;
+  const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y);
+  const r = Math.max(a.x + a.w, b.x + b.w), bt = Math.max(a.y + a.h, b.y + b.h);
+  return { x, y, w: r - x, h: bt - y };
+}
+function _scheduleComposite(dirty) {
+  if (!dirty) _compPendingFull = true;
+  else if (!_compPendingFull) _compPendingDirty = _unionDirty(_compPendingDirty, dirty);
+  if (_compRafId) return;
+  _compRafId = requestAnimationFrame(() => {
+    _compRafId = 0;
+    const d = _compPendingFull ? undefined : _compPendingDirty;
+    _compPendingFull = false; _compPendingDirty = null;
+    composite(d);
+  });
+}
+function _flushComposite() {
+  if (_compRafId) { try { cancelAnimationFrame(_compRafId); } catch {} _compRafId = 0; }
+  const d = _compPendingFull ? undefined : _compPendingDirty;
+  _compPendingFull = false; _compPendingDirty = null;
+  composite(d);
+}
+
 function composite(dirty) {
   if (!state.mainCtx) return;
+  _compositeCalls++; // dev: counts actual renders (window.__geCompositeCalls) to verify rAF coalescing
   // Animation mode needs a full repaint each time so the onion-skin overlay
   // (and per-frame cel visibility) always redraw — skip the dirty-rect path.
   if (state.anim && state.anim.enabled) dirty = null;
@@ -2770,6 +2803,7 @@ const _strokePipeline = createStrokePipeline({
   activeLayer: () => activeLayer() || _activeParentLayer(),
   getActiveMaskLayer: () => _getActiveMaskLayer(),
   composite,
+  scheduleComposite: _scheduleComposite,
 });
 const _strokeToRaw   = _strokePipeline.strokeTo;
 // Mark the active layer dirty on each dab so an fx-layer's cache stays fresh while painting.
@@ -3736,6 +3770,7 @@ const _strokeTool = createStrokeTool({
   saveState: _saveState,
   strokeTo: (x, y) => _strokeTo(x, y),
   composite,
+  flushComposite: _flushComposite,
   getActiveMaskLayer: () => _getActiveMaskLayer(),
   activeParentLayer: () => _activeParentLayer(),
   ensureActiveMaskLayer: () => _ensureActiveMaskLayer(),
@@ -7081,6 +7116,7 @@ export function openEditor(imageUrl, imageId, presetSize, displayName, draftId) 
   window.__galleryEditLive = true;
   try { window.__geGoldenDiff = _goldenDiff; } catch {} // dev: GPU-vs-CPU golden diff
   try { window.__geWebGPUStatus = _webgpuStatus; } catch {} // dev: WebGPU compute backend status (real-hardware check)
+  try { window.__geCompositeCalls = () => _compositeCalls; } catch {} // dev: composite-render counter (rAF-coalesce check)
   try { window.__geRenderLayers = (cv) => _renderLayersTo(cv.getContext('2d'), cv); } catch {} // dev: render the layer stack into a test canvas
   if (state.persistTimer) { clearTimeout(state.persistTimer); state.persistTimer = null; }
   state.persistDirty = false;
