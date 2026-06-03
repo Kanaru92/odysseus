@@ -429,6 +429,24 @@ function createLayer(name, width, height) {
 // re-editable `layer.fill` spec rather than painted. Because the result is baked
 // into layer.canvas it composites, masks, blends, and exports like any layer; the
 // spec just lets us regenerate it (re-edit, or resize the document) non-destructively.
+// Resolve a pattern id + scale to a (crisply) scaled tile canvas for
+// createPattern. Returns the source canvas at scale 1, a scaled copy otherwise,
+// or null if the pattern can't be resolved. Shared by pattern fill layers and
+// the Pattern Overlay layer style.
+function _patternTile(patternId, scale) {
+  const p = _getPattern(patternId) || _getPatterns()[0];
+  if (!p || !p.canvas) return null;
+  const sc = Math.max(0.05, scale || 1);
+  if (sc === 1) return p.canvas;
+  const t = document.createElement('canvas');
+  t.width = Math.max(1, Math.round(p.canvas.width * sc));
+  t.height = Math.max(1, Math.round(p.canvas.height * sc));
+  const tx = t.getContext('2d');
+  tx.imageSmoothingEnabled = false; // keep geometric tiles sharp
+  tx.drawImage(p.canvas, 0, 0, t.width, t.height);
+  return t;
+}
+
 function _renderFillLayer(layer) {
   const f = layer && layer.fill;
   if (!f || !layer.ctx || !layer.canvas) return;
@@ -437,25 +455,10 @@ function _renderFillLayer(layer) {
   ctx.globalCompositeOperation = 'source-over';
   ctx.clearRect(0, 0, w, h);
   if (f.type === 'pattern') {
-    // Tile a pattern across the whole layer at the spec's scale (crisp scaling
-    // so geometric tiles stay sharp). Falls back to a flat grey if the pattern
-    // id no longer resolves.
-    const p = _getPattern(f.patternId) || _getPatterns()[0];
-    let pat = null;
-    if (p && p.canvas) {
-      const sc = Math.max(0.05, f.scale || 1);
-      let tile = p.canvas;
-      if (sc !== 1) {
-        const t = document.createElement('canvas');
-        t.width = Math.max(1, Math.round(p.canvas.width * sc));
-        t.height = Math.max(1, Math.round(p.canvas.height * sc));
-        const tx = t.getContext('2d');
-        tx.imageSmoothingEnabled = false;
-        tx.drawImage(p.canvas, 0, 0, t.width, t.height);
-        tile = t;
-      }
-      pat = ctx.createPattern(tile, 'repeat');
-    }
+    // Tile a pattern across the whole layer at the spec's scale. Falls back to a
+    // flat grey if the pattern id no longer resolves.
+    const tile = _patternTile(f.patternId, f.scale);
+    const pat = tile && ctx.createPattern(tile, 'repeat');
     ctx.fillStyle = pat || '#888888';
   } else if (f.type === 'gradient') {
     const g = ctx.createLinearGradient(0, 0, w, 0); // left→right linear
@@ -1098,6 +1101,7 @@ function _openFxMenu() {
     innerGlow: { enabled: false, blur: 8, color: '#ffd24d', opacity: 0.7 },
     colorOverlay: { enabled: false, color: '#ff3030', opacity: 0.5 },
     gradientOverlay: { enabled: false, gradType: 'linear', angle: 90, stops: [{ pos: 0, color: '#000000' }, { pos: 1, color: '#ffffff' }], opacity: 1 },
+    patternOverlay: { enabled: false, patternId: null, scale: 1, opacity: 1 },
     satin: { enabled: false, color: '#7a4a2a', blur: 8, distance: 11, angle: 19, opacity: 0.5, invert: false },
     bevel: { enabled: false, size: 5, depth: 1, angle: 120, altitude: 30, highlight: '#ffffff', shadow: '#000000', opacity: 0.75 },
   };
@@ -1122,6 +1126,7 @@ function _openFxMenu() {
     ${row('satin', 'Satin', `<input type="color" data-fxp="satin.color" value="${fx.satin.color}">`)}
     ${row('gradientOverlay', 'Gradient Overlay', `<input type="color" data-fxp="gradientOverlay.stops.0.color" value="${fx.gradientOverlay.stops[0].color}"><input type="color" data-fxp="gradientOverlay.stops.1.color" value="${fx.gradientOverlay.stops[1].color}">`)}
     ${row('colorOverlay', 'Color Overlay', `<input type="color" data-fxp="colorOverlay.color" value="${fx.colorOverlay.color}">`)}
+    ${row('patternOverlay', 'Pattern Overlay', `<select data-fxp="patternOverlay.patternId" style="font-size:11px;background:#1c1c1f;color:#eee;border:1px solid #444;border-radius:4px;max-width:96px;">${_getPatterns().map((p) => `<option value="${p.id}"${(fx.patternOverlay.patternId || _defaultPatternId()) === p.id ? ' selected' : ''}>${p.name}</option>`).join('')}</select><input type="number" data-fxp="patternOverlay.scale" value="${fx.patternOverlay.scale}" min="0.1" max="4" step="0.1" style="width:46px;" title="Scale (×)">`)}
     ${row('bevel', 'Bevel & Emboss', `<input type="color" data-fxp="bevel.highlight" value="${fx.bevel.highlight}"><input type="color" data-fxp="bevel.shadow" value="${fx.bevel.shadow}">`)}
     <p style="font-size:10px;opacity:0.5;margin:6px 0 0;">Non-destructive effects on the active layer. Defaults are sensible; tweak colours/size here.</p>`;
   document.body.appendChild(pop);
@@ -1199,10 +1204,10 @@ function _applyLayerFx(source, fx) {
   if (!fx) return source;
   const ds = fx.dropShadow, gl = fx.glow, st = fx.stroke, co = fx.colorOverlay;
   const ish = fx.innerShadow, igl = fx.innerGlow;
-  const go = fx.gradientOverlay, sa = fx.satin, be = fx.bevel;
+  const go = fx.gradientOverlay, sa = fx.satin, be = fx.bevel, po = fx.patternOverlay;
   if (!(ds && ds.enabled) && !(gl && gl.enabled) && !(st && st.enabled) && !(co && co.enabled)
       && !(ish && ish.enabled) && !(igl && igl.enabled)
-      && !(go && go.enabled) && !(sa && sa.enabled) && !(be && be.enabled)) return source;
+      && !(go && go.enabled) && !(sa && sa.enabled) && !(be && be.enabled) && !(po && po.enabled)) return source;
   const w = source.width, h = source.height;
   const out = document.createElement('canvas');
   out.width = w; out.height = h;
@@ -1253,6 +1258,20 @@ function _applyLayerFx(source, fx) {
     ctx.globalAlpha = sa.opacity == null ? 0.5 : sa.opacity;
     ctx.drawImage(satin(source, { color: sa.color, blur: sa.blur, distance: sa.distance, angle: sa.angle, invert: sa.invert, opacity: 1 }), 0, 0);
     ctx.restore();
+  }
+  // Pattern Overlay — tiled pattern clipped to the layer's alpha. PS stacking:
+  // below Gradient + Color overlays, so those paint on top.
+  if (po && po.enabled) {
+    const tile = _patternTile(po.patternId, po.scale);
+    const pat = tile && ctx.createPattern(tile, 'repeat');
+    if (pat) {
+      ctx.save();
+      ctx.globalAlpha = po.opacity == null ? 1 : po.opacity;
+      ctx.globalCompositeOperation = 'source-atop'; // clip overlay to the layer's pixels
+      ctx.fillStyle = pat;
+      ctx.fillRect(0, 0, w, h);
+      ctx.restore();
+    }
   }
   if (go && go.enabled) {
     ctx.save();
