@@ -4462,7 +4462,20 @@ function _renderTextLayer(layer) {
   if (t.tracking) { try { ctx.letterSpacing = t.tracking + 'px'; } catch {} }
   const lh = t.size * (t.leading != null ? t.leading : 1.25);
   const lines = String(t.content || '').split('\n');
-  for (let i = 0; i < lines.length; i++) ctx.fillText(lines[i], t.x, t.y + i * lh);
+  const deco = t.underline || t.strikethrough;
+  const thick = Math.max(1, Math.round(t.size * 0.06));
+  for (let i = 0; i < lines.length; i++) {
+    const ly = t.y + i * lh;
+    ctx.fillText(lines[i], t.x, ly);
+    // Underline / strikethrough are drawn as rules in the text colour, sized to
+    // the measured line width and offset for the current alignment.
+    if (deco && lines[i]) {
+      const w = ctx.measureText(lines[i]).width;
+      const x0 = ctx.textAlign === 'center' ? t.x - w / 2 : ctx.textAlign === 'right' ? t.x - w : t.x;
+      if (t.underline) ctx.fillRect(x0, ly + t.size * 0.92, w, thick);
+      if (t.strikethrough) ctx.fillRect(x0, ly + t.size * 0.54, w, thick);
+    }
+  }
   ctx.restore();
 }
 function _placeTextLayer(e) {
@@ -4474,6 +4487,7 @@ function _placeTextLayer(e) {
     size: state.textSize || 48, color: state.color || '#000000', font: state.textFont || 'sans-serif',
     align: state.textAlign || 'left', leading: state.textLeading != null ? state.textLeading : 1.25,
     bold: !!state.textBold, italic: !!state.textItalic, tracking: state.textTracking || 0,
+    underline: !!state.textUnderline, strikethrough: !!state.textStrikethrough,
   };
   state.layers.push(layer);
   state.activeLayerId = layer.id;
@@ -4495,6 +4509,7 @@ function _positionTextEditor(inp, layer) {
   inp.style.textAlign = layer.text.align || 'left';
   inp.style.letterSpacing = (layer.text.tracking || 0) + 'px';
   inp.style.lineHeight = String(layer.text.leading != null ? layer.text.leading : 1.25);
+  inp.style.textDecoration = ((layer.text.underline ? 'underline ' : '') + (layer.text.strikethrough ? 'line-through' : '')).trim() || 'none';
 }
 // Live-apply a patch ({color/align/leading/bold/italic/tracking/size/font}) to the
 // text layer currently being edited, re-render + reposition the inline editor.
@@ -4515,6 +4530,7 @@ function _syncTypeControls(t) {
   state.textSize = t.size; state.textFont = t.font || 'sans-serif';
   state.textLeading = t.leading != null ? t.leading : 1.25;
   state.textBold = !!t.bold; state.textItalic = !!t.italic; state.textAlign = t.align || 'left';
+  state.textUnderline = !!t.underline; state.textStrikethrough = !!t.strikethrough;
   const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
   const lbl = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
   set('ge-text-size', t.size); lbl('ge-text-size-label', t.size);
@@ -4524,6 +4540,8 @@ function _syncTypeControls(t) {
   set('ge-text-tracking', state.textTracking); lbl('ge-text-tracking-label', String(state.textTracking));
   document.getElementById('ge-text-bold')?.classList.toggle('active', state.textBold);
   document.getElementById('ge-text-italic')?.classList.toggle('active', state.textItalic);
+  document.getElementById('ge-text-underline')?.classList.toggle('active', state.textUnderline);
+  document.getElementById('ge-text-strike')?.classList.toggle('active', state.textStrikethrough);
   ['ge-text-align-left', 'ge-text-align-center', 'ge-text-align-right'].forEach((a) =>
     document.getElementById(a)?.classList.toggle('active', a === 'ge-text-align-' + state.textAlign));
 }
@@ -6346,6 +6364,8 @@ function _buildEditor(container) {
   };
   _bindTextToggle('ge-text-bold', 'bold', 'textBold');
   _bindTextToggle('ge-text-italic', 'italic', 'textItalic');
+  _bindTextToggle('ge-text-underline', 'underline', 'textUnderline');
+  _bindTextToggle('ge-text-strike', 'strikethrough', 'textStrikethrough');
   const _alignIds = ['ge-text-align-left', 'ge-text-align-center', 'ge-text-align-right'];
   const _bindTextAlign = (id, val) => {
     document.getElementById(id)?.addEventListener('click', () => {

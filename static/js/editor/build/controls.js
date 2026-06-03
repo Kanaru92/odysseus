@@ -667,6 +667,8 @@ export function controlsHTML({ color, brushSize, wandTolerance }) {
       <div class="ge-control-row" style="gap:4px;align-items:center;">
         <button id="ge-text-bold" class="ge-text-style-btn" title="Bold" style="font-weight:bold;">B</button>
         <button id="ge-text-italic" class="ge-text-style-btn" title="Italic" style="font-style:italic;">I</button>
+        <button id="ge-text-underline" class="ge-text-style-btn" title="Underline" style="text-decoration:underline;">U</button>
+        <button id="ge-text-strike" class="ge-text-style-btn" title="Strikethrough" style="text-decoration:line-through;">S</button>
         <span style="flex:1;"></span>
         <button id="ge-text-align-left" class="ge-text-style-btn active" title="Align left">&#8676;</button>
         <button id="ge-text-align-center" class="ge-text-style-btn" title="Align center">&#8596;</button>
