@@ -25,6 +25,7 @@
  * }}
  */
 import { state } from '../state.js';
+import { wireSectionReorder } from '../panels/section-reorder.js';
 
 export function buildRightPanel({ controlsHTML, layerPanelHTML }) {
   const rightPanel = document.createElement('div');
@@ -78,6 +79,8 @@ export function buildRightPanel({ controlsHTML, layerPanelHTML }) {
       d.addEventListener('toggle', () => { try { localStorage.setItem(k, d.open ? '1' : '0'); } catch {} });
     });
   } catch {}
+  // Drag-to-reorder the document sections (grip in each header) + restore order.
+  try { wireSectionReorder(controls); } catch {}
   rightPanel.appendChild(controls);
   // Mobile only (≤ 700 px — matches the .ge-editor-body column-stack
   // breakpoint): the right panel becomes a transformed bottom-sheet,
