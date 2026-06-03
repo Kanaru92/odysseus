@@ -30,6 +30,7 @@ const MENUS = [
     { label: 'Redo', click: '#ge-redo', sc: 'Ctrl+Shift+Z' },
     { sep: true },
     { label: 'Fill (Content-Aware)', click: '#ge-content-fill' },
+    { label: 'Fill with Pattern…', click: '#ge-fill-pattern-active' },
     { sep: true },
     { label: 'History…', click: '#ge-history-btn' },
     { sep: true },

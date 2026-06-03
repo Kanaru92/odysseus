@@ -4017,6 +4017,40 @@ function _fillActiveLayer(color) {
   composite();
 }
 
+// Edit ▸ Fill with Pattern — tile a chosen pattern into the active layer, clipped
+// to the current wand selection if one exists, honouring lock-transparency.
+function _fillActiveLayerWithPattern() {
+  const layer = activeLayer();
+  if (!layer || layer.locked) return;
+  _openPatternPicker(null).then((res) => {
+    if (!res) return;
+    const cur = activeLayer();
+    if (!cur || cur.locked) return;
+    const tile = _patternTile(res.patternId, res.scale);
+    const ctx = cur.ctx, w = cur.canvas.width, h = cur.canvas.height;
+    const pat = tile && ctx.createPattern(tile, 'repeat');
+    if (!pat) return;
+    _saveState('Fill with pattern');
+    let snap = null;
+    if (cur.lockAlpha) { snap = document.createElement('canvas'); snap.width = w; snap.height = h; snap.getContext('2d').drawImage(cur.canvas, 0, 0); }
+    ctx.save();
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = 1;
+    if (state.wandMask && state.wandMask.width === w && state.wandMask.height === h) {
+      const tmp = document.createElement('canvas'); tmp.width = w; tmp.height = h;
+      const tctx = tmp.getContext('2d');
+      tctx.fillStyle = pat; tctx.fillRect(0, 0, w, h);
+      tctx.globalCompositeOperation = 'destination-in'; tctx.drawImage(state.wandMask, 0, 0);
+      ctx.drawImage(tmp, 0, 0);
+    } else {
+      ctx.fillStyle = pat; ctx.fillRect(0, 0, w, h);
+    }
+    if (snap) { ctx.globalCompositeOperation = 'destination-in'; ctx.drawImage(snap, 0, 0); }
+    ctx.restore();
+    composite();
+  });
+}
+
 // Stamp Visible (Ctrl+Alt+Shift+E) — flatten all visible layers into a NEW layer
 // on top, leaving the originals intact. Reuses the shared layer renderer.
 function _stampVisible() {
@@ -6290,6 +6324,11 @@ function _buildEditor(container) {
 
   // Fill-layer creation. Hidden buttons exist only so the Layer menu can relay-
   // click them by id (same pattern as New Layer); the menu items are the real UI.
+  {
+    let _fpBtn = document.getElementById('ge-fill-pattern-active');
+    if (!_fpBtn) { _fpBtn = document.createElement('button'); _fpBtn.id = 'ge-fill-pattern-active'; _fpBtn.type = 'button'; _fpBtn.style.display = 'none'; (document.getElementById('gallery-editor-container') || document.body).appendChild(_fpBtn); }
+    _fpBtn.addEventListener('click', () => _fillActiveLayerWithPattern());
+  }
   for (const [id, kind] of [['ge-fill-solid', 'solid'], ['ge-fill-gradient', 'gradient'], ['ge-fill-pattern', 'pattern']]) {
     let btn = document.getElementById(id);
     if (!btn) {
