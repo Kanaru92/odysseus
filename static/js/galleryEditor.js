@@ -2190,6 +2190,8 @@ function _buildDraftPayload() {
         fx: l.fx || null,
         text: l.text || null,
         fill: l.fill || null,
+        // Adjustment-layer stack (non-destructive) — lost on reload without this.
+        adjLayers: (l.adjLayers && l.adjLayers.length) ? JSON.parse(JSON.stringify(l.adjLayers)) : null,
         // Smart Object: pristine source + applied transform (+ optional link).
         isSmart: !!l.isSmart,
         smartXf: l.isSmart ? l.smartXf : null,
@@ -2381,6 +2383,7 @@ function _restoreDraft(draft) {
       if (s.fx) layer.fx = s.fx;       // layer effects (Blending Options)
       if (s.text) layer.text = s.text; // editable text field
       if (s.fill) layer.fill = s.fill; // re-editable fill spec
+      if (s.adjLayers && s.adjLayers.length) layer.adjLayers = JSON.parse(JSON.stringify(s.adjLayers)); // adjustment-layer stack
       // Smart Object: rehydrate the applied transform + decode the pristine
       // source (an extra async image, counted in `pending`). The baked
       // layer.canvas still restores from s.dataUrl so the doc renders meanwhile.
@@ -6942,10 +6945,13 @@ function _saveProject() {
         fx: l.fx || null,
         text: l.text || null,
         fill: l.fill || null,
+        // Non-destructive stacks — adjustment layers + smart-filter stack.
+        adjLayers: (l.adjLayers && l.adjLayers.length) ? JSON.parse(JSON.stringify(l.adjLayers)) : null,
         // Smart Object: pristine source + applied transform (+ optional link).
         isSmart: !!l.isSmart,
         smartXf: l.isSmart ? l.smartXf : null,
         sourceUrl: (l.isSmart && l.sourceCanvas) ? l.sourceCanvas.toDataURL('image/png') : null,
+        smartFilters: l.smartFilters || null,
         linked: l.linked || null,
       };
     }),
@@ -7377,6 +7383,8 @@ export function openEditor(imageUrl, imageId, presetSize, displayName, draftId) 
   try { window.__geCompositeCalls = () => _compositeCalls; } catch {} // dev: composite-render counter (rAF-coalesce check)
   try { window.__geComposite = () => composite(); } catch {} // dev: force a synchronous composite (tests)
   try { window.__geRenderLayers = (cv) => _renderLayersTo(cv.getContext('2d'), cv); } catch {} // dev: render the layer stack into a test canvas
+  try { window.__geBuildDraft = () => _buildDraftPayload(); } catch {} // dev: serialize the draft payload (persistence round-trip tests)
+  try { window.__geRestoreDraft = (p) => _restoreDraft(p); } catch {} // dev: restore a draft payload (persistence round-trip tests)
   if (state.persistTimer) { clearTimeout(state.persistTimer); state.persistTimer = null; }
   state.persistDirty = false;
 
