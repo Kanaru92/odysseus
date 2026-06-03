@@ -2884,17 +2884,19 @@ const _cloneStrokeTo = _strokePipeline.cloneStrokeTo;
 function _bakeLayerOffsetForPaint() {
   const layer = activeLayer() || _activeParentLayer();
   if (!layer || layer.isGroup || !layer.canvas) return;
-  const off = state.layerOffsets.get(layer.id);
-  if (!off) return;
-  const ox = Math.round(off.x), oy = Math.round(off.y);
-  if (ox === 0 && oy === 0) return;
   // Only when painting the layer's PIXELS — mask sub-layers / layer-mask edits /
   // inpaint masks are full-image (offset 0) and must not be baked.
   if (_getActiveMaskLayer()) return;
   if (state.layerMaskEdit && layer.layerMask) return;
   if (state.tool === 'inpaint') return;
-  const w = layer.canvas.width, h = layer.canvas.height;
-  const bake = (cv) => { if (!cv) return cv; const n = document.createElement('canvas'); n.width = w; n.height = h; n.getContext('2d').drawImage(cv, ox, oy); return n; };
+  const off = state.layerOffsets.get(layer.id) || { x: 0, y: 0 };
+  const ox = Math.round(off.x), oy = Math.round(off.y);
+  const dw = state.imgWidth, dh = state.imgHeight;
+  // Normalize the paint target to a DOC-SIZED canvas at offset 0 so paint lands
+  // anywhere on the document — covers both a moved layer (non-zero offset) AND a
+  // content-sized layer left by a transform. No-op when already doc-aligned.
+  if (ox === 0 && oy === 0 && layer.canvas.width === dw && layer.canvas.height === dh) return;
+  const bake = (cv) => { if (!cv) return cv; const n = document.createElement('canvas'); n.width = dw; n.height = dh; n.getContext('2d').drawImage(cv, ox, oy); return n; };
   layer.canvas = bake(layer.canvas); layer.ctx = layer.canvas.getContext('2d');
   if (layer.layerMask) layer.layerMask = bake(layer.layerMask);
   if (layer.masks) for (const m of layer.masks) { m.canvas = bake(m.canvas); m.ctx = m.canvas.getContext('2d'); }

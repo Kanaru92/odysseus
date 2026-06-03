@@ -36,6 +36,29 @@ import {
   attachSpinRepeat,
 } from '../build/transform-popup.js';
 
+// Bounding box of a canvas's non-transparent pixels (or null if empty / too
+// large to scan). Lets a transform wrap the layer's CONTENT rather than its
+// full doc-sized canvas.
+function _contentBounds(cv) {
+  try {
+    const w = cv.width, h = cv.height;
+    if (!w || !h || w * h > 8192 * 8192) return null;
+    const d = cv.getContext('2d').getImageData(0, 0, w, h).data;
+    let minX = w, minY = h, maxX = -1, maxY = -1;
+    for (let y = 0; y < h; y++) {
+      let i = (y * w) * 4 + 3;
+      for (let x = 0; x < w; x++, i += 4) {
+        if (d[i] > 8) {
+          if (x < minX) minX = x; if (x > maxX) maxX = x;
+          if (y < minY) minY = y; if (y > maxY) maxY = y;
+        }
+      }
+    }
+    if (maxX < minX) return null; // fully transparent
+    return { x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1 };
+  } catch { return null; }
+}
+
 export function createTransformSession({
   activeLayer, saveState, composite, fitZoom, drawTransformHandles,
   showCanvasLoading, hideCanvasLoading, undo, uiModule,
@@ -61,8 +84,22 @@ export function createTransformSession({
     // Strictly gated on isSmart so the normal-layer path is byte-identical.
     const smart = !!(layer.isSmart && layer.sourceCanvas && layer.smartXf);
     const srcCanvas = smart ? layer.sourceCanvas : layer.canvas;
-    state.transformOrigW = srcCanvas.width;
-    state.transformOrigH = srcCanvas.height;
+    // Crop the transform to the layer's CONTENT bounds (non-transparent pixels)
+    // so the box wraps the artwork instead of the whole doc-sized canvas (the
+    // "box around the entire canvas" problem for text / partially-painted layers).
+    // Only when content is a strict sub-region; full-canvas layers + Smart Objects
+    // (which re-derive from their source) are left whole.
+    let _cbx = 0, _cby = 0, _cropped = false;
+    if (!smart) {
+      const cb = _contentBounds(srcCanvas);
+      if (cb && (cb.w < srcCanvas.width || cb.h < srcCanvas.height)) {
+        _cbx = cb.x; _cby = cb.y; _cropped = true;
+        state.transformOrigW = cb.w; state.transformOrigH = cb.h;
+      } else { state.transformOrigW = srcCanvas.width; state.transformOrigH = srcCanvas.height; }
+    } else {
+      state.transformOrigW = srcCanvas.width;
+      state.transformOrigH = srcCanvas.height;
+    }
     if (smart) {
       // Seed the pending transform with the already-applied one so the first
       // frame shows the current state, and confirm re-derives from source.
@@ -83,15 +120,15 @@ export function createTransformSession({
     state.transformOrigCanvas = document.createElement('canvas');
     state.transformOrigCanvas.width = state.transformOrigW;
     state.transformOrigCanvas.height = state.transformOrigH;
-    state.transformOrigCanvas.getContext('2d').drawImage(srcCanvas, 0, 0);
+    state.transformOrigCanvas.getContext('2d').drawImage(srcCanvas, -_cbx, -_cby); // crop to content
     // Snapshot the raster layer mask too so it can be transformed in lockstep
     // with the pixels — otherwise it keeps its old size and clips the wrong
     // region after a scale/rotate (matched to the pending W×H box in reapply).
     if (layer.layerMask) {
       state.transformOrigMask = document.createElement('canvas');
-      state.transformOrigMask.width = layer.layerMask.width;
-      state.transformOrigMask.height = layer.layerMask.height;
-      state.transformOrigMask.getContext('2d').drawImage(layer.layerMask, 0, 0);
+      state.transformOrigMask.width = state.transformOrigW;
+      state.transformOrigMask.height = state.transformOrigH;
+      state.transformOrigMask.getContext('2d').drawImage(layer.layerMask, -_cbx, -_cby); // crop to same content box
     } else {
       state.transformOrigMask = null;
     }
@@ -103,9 +140,15 @@ export function createTransformSession({
       const cy = curOff.y + layer.canvas.height / 2;
       state.transformOrigOffset = { x: cx - state.transformOrigW / 2, y: cy - state.transformOrigH / 2 };
     } else {
-      state.transformOrigOffset = { ...curOff };
+      state.transformOrigOffset = { x: curOff.x + _cbx, y: curOff.y + _cby };
     }
     saveState();
+    // Bake the content crop into the live layer now so the handles wrap the
+    // content from the first frame (reapply resizes layer.canvas to the content +
+    // recenters the offset; pending == orig, so it's a 1:1 re-placement — visually
+    // identical, but now off + canvas/2 equals the content centre that all the
+    // handle/drag math already assumes).
+    if (_cropped) { try { reapplyTransform(); } catch {} }
     // Fit canvas to viewport so the corner handles are visible —
     // without this, a layer larger than the viewport leaves the grab
     // markers off-screen. Skipped in silent (Move-tool) mode so selecting
