@@ -8,6 +8,7 @@ import spinnerModule from './spinner.js';
 import { attachColorPicker, isColorPickerOpen, closeColorPicker } from './colorPicker.js';
 import { gradientOverlay } from './editor/fx/layer-style-gradient-overlay.js';
 import { getPattern as _getPattern, getPatterns as _getPatterns, definePattern as _definePattern, defaultPatternId as _defaultPatternId } from './editor/patterns/pattern-store.js';
+import { FILTERS as _FILTERS } from './editor/filters/filters.js';
 import { webgpuStatus as _webgpuStatus } from './editor/render/webgpu-backend.js';
 import { dismissSymmetryGizmo as _dismissSymmetryGizmo } from './editor/symmetry-gizmo.js';
 import { satin } from './editor/fx/layer-style-satin.js';
@@ -623,6 +624,95 @@ function _openPatternPicker(initial) {
     overlay.addEventListener('click', (e) => { if (e.target === overlay) finish(null); });
     document.addEventListener('keydown', onKey, true);
   });
+}
+
+// Smart Filters manager — a non-destructive filter stack on a Smart Object.
+// Filters re-apply from the pristine source on every rebake (see smart-object.js
+// applySmartFilterStack), so they can be toggled, reordered, re-amounted, and
+// removed without ever degrading the original pixels. A normal layer is
+// auto-converted to a Smart Object first (PS behaviour).
+function _openSmartFilters() {
+  let layer = _activeParentLayer();
+  if (!layer) { try { uiModule.showToast('Select a layer'); } catch {} return; }
+  if (layer.isGroup) { try { uiModule.showToast('Groups can’t hold Smart Filters'); } catch {} return; }
+  if (!layer.isSmart) { _smartObject.convertToSmart(); layer = _activeParentLayer(); if (!layer || !layer.isSmart) return; }
+  if (!layer.smartFilters) layer.smartFilters = [];
+
+  let overlay = document.getElementById('ge-smartfx-overlay');
+  if (overlay) overlay.remove();
+  overlay = document.createElement('div');
+  overlay.id = 'ge-smartfx-overlay';
+  overlay.className = 'modal';
+  overlay.style.cssText = 'position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:1000;background:rgba(0,0,0,0.45);pointer-events:auto;';
+  overlay.innerHTML = `
+    <div class="ge-prompt-card" style="background:#26262b;border:1px solid rgba(255,255,255,0.14);border-radius:10px;padding:18px;min-width:380px;max-width:460px;color:#eee;box-shadow:0 18px 48px rgba(0,0,0,0.55);">
+      <div style="font-weight:600;margin-bottom:10px;">Smart Filters — ${(layer.name || 'Layer')}</div>
+      <div id="ge-smartfx-list" style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px;max-height:300px;overflow:auto;"></div>
+      <div style="display:flex;gap:8px;align-items:center;border-top:1px solid rgba(255,255,255,0.1);padding-top:12px;">
+        <select id="ge-smartfx-add-type" style="flex:1;">${_FILTERS.map((f) => `<option value="${f.id}">${f.name}</option>`).join('')}</select>
+        <button id="ge-smartfx-add" class="ge-btn ge-btn-primary">Add</button>
+      </div>
+      <div style="display:flex;justify-content:flex-end;margin-top:14px;">
+        <button id="ge-smartfx-close" class="ge-btn">Close</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  const listEl = overlay.querySelector('#ge-smartfx-list');
+  const rebake = () => { try { _smartObject.rebakeSmart(layer); } catch {} composite(); _renderLayerPanel(); };
+  const uid = () => 'sf-' + (state._smartFxSeq = (state._smartFxSeq || 0) + 1);
+
+  const render = () => {
+    listEl.innerHTML = '';
+    if (!layer.smartFilters.length) {
+      const e = document.createElement('div');
+      e.style.cssText = 'opacity:0.55;font-size:12px;padding:8px 0;';
+      e.textContent = 'No smart filters yet. Add one below — it applies non-destructively.';
+      listEl.appendChild(e);
+      return;
+    }
+    layer.smartFilters.forEach((f, i) => {
+      const meta = _FILTERS.find((x) => x.id === f.type) || { name: f.type, amount: false };
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;flex-direction:column;gap:4px;background:#1d1d22;border:1px solid rgba(255,255,255,0.1);border-radius:6px;padding:8px;';
+      const top = document.createElement('div');
+      top.style.cssText = 'display:flex;align-items:center;gap:8px;';
+      top.innerHTML = `
+        <input type="checkbox" ${f.enabled === false ? '' : 'checked'} title="Toggle filter">
+        <span style="flex:1;font-size:13px;${f.enabled === false ? 'opacity:0.5;' : ''}">${meta.name}</span>
+        <button class="ge-btn ge-btn-sm" data-act="up" title="Move up" ${i === 0 ? 'disabled' : ''}>↑</button>
+        <button class="ge-btn ge-btn-sm" data-act="down" title="Move down" ${i === layer.smartFilters.length - 1 ? 'disabled' : ''}>↓</button>
+        <button class="ge-btn ge-btn-sm" data-act="del" title="Remove">✕</button>`;
+      row.appendChild(top);
+      top.querySelector('input').addEventListener('change', (e) => { _saveState('Toggle smart filter'); f.enabled = e.target.checked; rebake(); render(); });
+      top.querySelector('[data-act=up]').addEventListener('click', () => { if (i > 0) { _saveState('Reorder smart filter'); const a = layer.smartFilters; [a[i - 1], a[i]] = [a[i], a[i - 1]]; rebake(); render(); } });
+      top.querySelector('[data-act=down]').addEventListener('click', () => { const a = layer.smartFilters; if (i < a.length - 1) { _saveState('Reorder smart filter'); [a[i + 1], a[i]] = [a[i], a[i + 1]]; rebake(); render(); } });
+      top.querySelector('[data-act=del]').addEventListener('click', () => { _saveState('Remove smart filter'); layer.smartFilters.splice(i, 1); rebake(); render(); });
+      if (meta.amount) {
+        const amtRow = document.createElement('label');
+        amtRow.style.cssText = 'display:flex;align-items:center;gap:8px;font-size:11px;opacity:0.85;';
+        const v = f.amount != null ? f.amount : 50;
+        amtRow.innerHTML = `Amount <input type="range" min="0" max="100" value="${v}" style="flex:1;"><span style="width:32px;text-align:right;">${v}</span>`;
+        const sl = amtRow.querySelector('input'); const sv = amtRow.querySelector('span');
+        sl.addEventListener('mousedown', () => { _saveState('Adjust smart filter'); }); // pre-drag snapshot → one undo step
+        sl.addEventListener('input', () => { f.amount = parseInt(sl.value, 10); sv.textContent = sl.value; rebake(); });
+        row.appendChild(amtRow);
+      }
+      listEl.appendChild(row);
+    });
+  };
+  render();
+  overlay.querySelector('#ge-smartfx-add').addEventListener('click', () => {
+    const type = overlay.querySelector('#ge-smartfx-add-type').value;
+    _saveState('Add smart filter');
+    layer.smartFilters.push({ id: uid(), type, amount: 50, enabled: true });
+    rebake(); render();
+  });
+  const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); close(); } };
+  function close() { overlay.remove(); document.removeEventListener('keydown', onKey, true); if (_activePromptClose === close) _activePromptClose = null; }
+  _activePromptClose = close;
+  overlay.querySelector('#ge-smartfx-close').addEventListener('click', close);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+  document.addEventListener('keydown', onKey, true);
 }
 
 // _layerFilterString + _fxFilterToSlider live in editor/fx/filter-string.js
@@ -1999,6 +2089,7 @@ function _snapshotState() {
         isSmart: !!l.isSmart,
         smartXf: l.isSmart && l.smartXf ? { ...l.smartXf } : null,
         sourceCanvas: l.isSmart ? (l.sourceCanvas || null) : null,
+        smartFilters: l.smartFilters ? JSON.parse(JSON.stringify(l.smartFilters)) : null, // non-destructive filter stack
         linked: l.linked || null,
       };
     }),
@@ -2103,6 +2194,7 @@ function _buildDraftPayload() {
         isSmart: !!l.isSmart,
         smartXf: l.isSmart ? l.smartXf : null,
         sourceUrl: (l.isSmart && l.sourceCanvas) ? l.sourceCanvas.toDataURL('image/png') : null,
+        smartFilters: l.smartFilters || null, // non-destructive filter stack (plain JSON)
         linked: l.linked || null,
         // Inpaint / paint mask sub-layers + which one is active — mirror the undo
         // snapshot so mask work survives a draft reload (previously dropped).
@@ -2295,6 +2387,7 @@ function _restoreDraft(draft) {
       if (s.isSmart) {
         layer.isSmart = true;
         layer.smartXf = s.smartXf || null;
+        layer.smartFilters = s.smartFilters || null; // non-destructive stack (baked into dataUrl; kept for re-editing)
         layer.linked = s.linked || null;
         if (s.sourceUrl) {
           const sc = document.createElement('canvas');
@@ -2454,6 +2547,7 @@ function _restoreState(snap) {
     layer.isSmart = !!s.isSmart;
     layer.smartXf = s.smartXf || null;
     layer.sourceCanvas = s.isSmart ? (s.sourceCanvas || null) : null;
+    layer.smartFilters = s.smartFilters ? JSON.parse(JSON.stringify(s.smartFilters)) : null;
     layer.linked = s.linked || null;
     // Restore mask sub-layers — rebuild each mask's canvas from the
     // snapshot's imageData. We don't reuse old mask canvases (snapshot
@@ -5510,6 +5604,7 @@ function _buildEditor(container) {
     ['ge-smart-convert', () => _smartObject.convertToSmart()],
     ['ge-smart-replace', () => _smartObject.replaceContents()],
     ['ge-smart-rasterize', () => _smartObject.rasterize()],
+    ['ge-smart-filters', () => _openSmartFilters()],
     ['ge-smart-link', () => _promptLinkUrl()],
     ['ge-smart-update-linked', () => _smartObject.updateLinked()],
     ['ge-export-as-trigger', () => _promptExportAs()],

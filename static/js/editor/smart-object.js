@@ -18,6 +18,26 @@
  *           renderLayerPanel?:()=>void, uiModule?:object }} deps
  */
 import { state } from './state.js';
+import { applyFilter } from './filters/filters.js';
+
+// Apply a smart layer's non-destructive filter stack onto its freshly-rebaked
+// pixels. Because rebakeSmart always re-derives layer.canvas from the pristine
+// source FIRST, re-running this after any stack edit (toggle/reorder/amount/
+// remove) reproduces the exact result with no cumulative degradation — that's
+// what makes Smart Filters non-destructive.
+function applySmartFilterStack(layer) {
+  const fx = layer && layer.smartFilters;
+  if (!fx || !fx.length || !layer.ctx) return;
+  const W = layer.canvas.width, H = layer.canvas.height;
+  if (!W || !H) return;
+  let img = null;
+  for (const f of fx) {
+    if (!f || f.enabled === false) continue;
+    if (!img) img = layer.ctx.getImageData(0, 0, W, H);
+    try { applyFilter(img, f.type, f.amount != null ? f.amount : 50, f.opts); } catch {}
+  }
+  if (img) layer.ctx.putImageData(img, 0, 0);
+}
 
 function cloneCanvas(src) {
   const c = document.createElement('canvas');
@@ -57,6 +77,7 @@ export function createSmartObject({ activeLayer, saveState, composite, renderLay
     layer.ctx.clearRect(0, 0, finalW, finalH);
     layer.ctx.drawImage(tmp, 0, 0);
     state.layerOffsets.set(layer.id, { x: Math.round(cx - finalW / 2), y: Math.round(cy - finalH / 2) });
+    applySmartFilterStack(layer); // non-destructive filter stack on top of the rebaked pixels
   }
 
   function convertToSmart() {

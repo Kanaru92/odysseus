@@ -61,6 +61,7 @@ const MENUS = [
     { label: 'Replace Contents…', click: '#ge-smart-replace' },
     { label: 'Place Linked Image…', click: '#ge-smart-link' },
     { label: 'Update Linked Contents', click: '#ge-smart-update-linked' },
+    { label: 'Smart Filters…', click: '#ge-smart-filters' },
     { label: 'Rasterize Layer', click: '#ge-smart-rasterize' },
     { sep: true },
     { label: 'Stamp Visible', key: 'ctrl+alt+shift+e', sc: 'Ctrl+Alt+Shift+E' },
