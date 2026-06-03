@@ -191,6 +191,14 @@ export function wireDocTabs({ composite, renderLayerPanel, createLayer, fitZoom,
   captureInto(first);
   docs.push(first);
   renderTabs();
+  // Let the editor rename the ACTIVE doc tab after the fact — the blank-canvas
+  // name prompt resolves asynchronously, AFTER this slot was seeded with the
+  // placeholder display name, so its result must be pushed back in here.
+  state.renameActiveDoc = (name) => {
+    if (!name || !docs[active]) return;
+    docs[active].name = name;
+    renderTabs();
+  };
   // Keep the active tab's zoom% label fresh as the view changes.
   window.addEventListener('ge:composited', () => {
     if (renaming) return; // don't clobber the inline rename input

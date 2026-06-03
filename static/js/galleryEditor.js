@@ -7299,6 +7299,10 @@ export function openEditor(imageUrl, imageId, presetSize, displayName, draftId) 
       // Title the document from the dialog before the first persist.
       state.draftName = name || 'Untitled';
       _setEditTabLabel(state.draftName);
+      // The doc tab was seeded with the placeholder name before this prompt
+      // resolved — push the chosen name into the active tab so it isn't stuck
+      // showing "New canvas".
+      try { state.renameActiveDoc?.(state.draftName); } catch {}
       composite();
       _renderLayerPanel();
       _fitZoom();
