@@ -99,6 +99,24 @@ export function defaultPatternId() {
  * don't mutate the stored tile). Returns the new pattern's id. In-session only
  * for now (not persisted across reloads).
  */
+/**
+ * Re-register a user pattern under a SPECIFIC id (used when restoring a saved
+ * document so fill layers / pattern overlays that reference 'u-N' resolve again).
+ * No-op if the id already exists. Also advances _userSeq past numeric ids so a
+ * later definePattern() can't collide.
+ */
+export function registerUserPattern(id, name, srcCanvas) {
+  if (!id || !srcCanvas || !srcCanvas.width || !srcCanvas.height) return null;
+  if (getPattern(id)) return id;
+  const c = document.createElement('canvas');
+  c.width = srcCanvas.width; c.height = srcCanvas.height;
+  c.getContext('2d').drawImage(srcCanvas, 0, 0);
+  _user.push({ id, name: name || id, canvas: c });
+  const n = parseInt(String(id).replace(/^u-/, ''), 10);
+  if (Number.isFinite(n) && n > _userSeq) _userSeq = n;
+  return id;
+}
+
 export function definePattern(name, srcCanvas) {
   if (!srcCanvas || !srcCanvas.width || !srcCanvas.height) return null;
   const c = document.createElement('canvas');

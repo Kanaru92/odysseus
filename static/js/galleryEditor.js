@@ -7,7 +7,8 @@ import dragSortModule from './dragSort.js';
 import spinnerModule from './spinner.js';
 import { attachColorPicker, isColorPickerOpen, closeColorPicker } from './colorPicker.js';
 import { gradientOverlay } from './editor/fx/layer-style-gradient-overlay.js';
-import { getPattern as _getPattern, getPatterns as _getPatterns, definePattern as _definePattern, defaultPatternId as _defaultPatternId } from './editor/patterns/pattern-store.js';
+import { getPattern as _getPattern, getPatterns as _getPatterns, definePattern as _definePattern, defaultPatternId as _defaultPatternId, registerUserPattern as _registerUserPattern } from './editor/patterns/pattern-store.js';
+import { getLut as _getLut, registerLut as _registerLut } from './editor/fx/lut.js';
 import { FILTERS as _FILTERS } from './editor/filters/filters.js';
 import { webgpuStatus as _webgpuStatus } from './editor/render/webgpu-backend.js';
 import { dismissSymmetryGizmo as _dismissSymmetryGizmo } from './editor/symmetry-gizmo.js';
@@ -2180,6 +2181,128 @@ function _schedulePersist() {
   state.persistTimer = setTimeout(() => { state.persistTimer = null; _persistDraft(); }, PERSIST_DEBOUNCE_MS);
 }
 
+// Auxiliary (non-layer) document state that must survive reload but isn't tied to
+// a single layer: saved selection channels, the animation timeline, referenced
+// LUT cubes, and user-defined patterns. Serialized into BOTH the auto-draft and
+// the .geproj project, restored once by _restoreAux. Each piece was previously
+// lost on reload (confirmed by the full-editor audit).
+function _serializeAux() {
+  const aux = {};
+  // Saved selection channels (Save Sel / Load Sel) — mask canvas → dataURL.
+  try {
+    const chans = state.selectionChannels || {};
+    const out = {};
+    for (const name of Object.keys(chans)) {
+      const ch = chans[name];
+      if (ch && ch.canvas) out[name] = { layerId: ch.layerId || null, dataUrl: ch.canvas.toDataURL('image/png') };
+    }
+    if (Object.keys(out).length) { aux.selectionChannels = out; aux.selectionChannelSeq = state.selectionChannelSeq || 0; }
+  } catch {}
+  // Animation timeline (frames/cels/frameMap/fps/loop/onion) — cels reference
+  // layerIds, so a plain JSON clone is safe (no canvas refs in the model).
+  try { if (state.anim && _animSerialize) { const a = _animSerialize(); if (a) aux.anim = a; } } catch {}
+  // Referenced 3D-LUT cubes (Color Lookup adjustment) — keyed by lutId.
+  try { const luts = _serializeUsedLuts(); if (luts && Object.keys(luts).length) aux.luts = luts; } catch {}
+  // User-defined patterns referenced by a fill layer / pattern overlay.
+  try { const pats = _serializeUsedPatterns(); if (pats && pats.length) aux.patterns = pats; } catch {}
+  return aux;
+}
+function _restoreAux(data) {
+  if (!data) return;
+  // Selection channels — decode each mask dataURL back into a canvas (async, but
+  // independent of the doc render so we don't gate readiness on it).
+  try {
+    if (data.selectionChannels) {
+      state.selectionChannels = {};
+      state.selectionChannelSeq = data.selectionChannelSeq || 0;
+      for (const name of Object.keys(data.selectionChannels)) {
+        const c = data.selectionChannels[name];
+        if (!c || !c.dataUrl) continue;
+        const cv = document.createElement('canvas');
+        state.selectionChannels[name] = { canvas: cv, layerId: c.layerId || null };
+        const img = new Image();
+        img.onload = () => { cv.width = img.naturalWidth || img.width; cv.height = img.naturalHeight || img.height; cv.getContext('2d').drawImage(img, 0, 0); };
+        img.src = c.dataUrl;
+      }
+    }
+  } catch {}
+  // User patterns first (so fill/overlay re-render can resolve them), then LUTs,
+  // then the animation timeline (relinking cels to restored layer ids).
+  try { if (data.patterns) _restoreUsedPatterns(data.patterns); } catch {}
+  try { if (data.luts) _restoreUsedLuts(data.luts); } catch {}
+  try { if (data.anim && _animDeserialize) _animDeserialize(data.anim); } catch {}
+}
+
+// ── Animation timeline persistence ([9]) ── the model is plain data (cels hold
+// layerIds, which _restoreDraft preserves), so a JSON clone round-trips it.
+function _animSerialize() { try { return state.anim ? JSON.parse(JSON.stringify(state.anim)) : null; } catch { return null; } }
+function _animDeserialize(a) { if (a && typeof a === 'object') { state.anim = a; try { if (_anim && _anim.refresh) _anim.refresh(); } catch {} } }
+
+// ── Referenced 3D-LUT cubes ([2]) ── Color Lookup adjLayers keep only a lutId;
+// the grid lives in an in-memory store, so serialize the used cubes by id.
+function _usedLutIds() {
+  const ids = new Set();
+  for (const l of state.layers) for (const a of (l.adjLayers || [])) {
+    if (a && a.type === 'color-lookup' && a.params && a.params.lutId) ids.add(a.params.lutId);
+  }
+  return ids;
+}
+function _serializeUsedLuts() {
+  const out = {};
+  for (const id of _usedLutIds()) {
+    const lut = _getLut(id);
+    if (!lut || !lut.data) continue;
+    out[id] = { name: (_getLut(id) && lut.title) || id, size: lut.size, data: Array.from(lut.data), domainMin: lut.domainMin, domainMax: lut.domainMax, title: lut.title };
+  }
+  return out;
+}
+function _restoreUsedLuts(luts) {
+  for (const id of Object.keys(luts || {})) {
+    const s = luts[id];
+    if (!s || !s.data) continue;
+    try { _registerLut({ size: s.size, data: Float32Array.from(s.data), domainMin: s.domainMin || [0, 0, 0], domainMax: s.domainMax || [1, 1, 1], title: s.title }, { id, name: s.name }); } catch {}
+  }
+}
+
+// ── User-defined patterns ([6]) ── 'u-N' patterns live only in memory; serialize
+// any referenced by a pattern fill layer or Pattern Overlay style so they survive.
+function _usedUserPatternIds() {
+  const ids = new Set();
+  for (const l of state.layers) {
+    if (l.fill && l.fill.type === 'pattern' && /^u-/.test(l.fill.patternId || '')) ids.add(l.fill.patternId);
+    const po = l.fx && l.fx.patternOverlay;
+    if (po && po.enabled && /^u-/.test(po.patternId || '')) ids.add(po.patternId);
+  }
+  return ids;
+}
+function _serializeUsedPatterns() {
+  const out = [];
+  for (const id of _usedUserPatternIds()) {
+    const p = _getPattern(id);
+    if (p && p.canvas) out.push({ id, name: p.name || id, dataUrl: p.canvas.toDataURL('image/png') });
+  }
+  return out;
+}
+function _restoreUsedPatterns(arr) {
+  let pending = 0;
+  for (const p of (arr || [])) {
+    if (!p || !p.dataUrl) continue;
+    pending++;
+    const img = new Image();
+    img.onload = () => {
+      const cv = document.createElement('canvas');
+      cv.width = img.naturalWidth || img.width; cv.height = img.naturalHeight || img.height;
+      cv.getContext('2d').drawImage(img, 0, 0);
+      try { _registerUserPattern(p.id, p.name, cv); } catch {}
+      // Re-render any fill layers using this pattern, then composite once all decoded.
+      try { for (const l of state.layers) if (l.fill && l.fill.type === 'pattern' && l.fill.patternId === p.id) _renderFillLayer(l); } catch {}
+      if (--pending === 0) { try { composite(); } catch {} }
+    };
+    img.onerror = () => { if (--pending === 0) { try { composite(); } catch {} } };
+    img.src = p.dataUrl;
+  }
+}
+
 function _buildDraftPayload() {
   return {
     v: 2,
@@ -2236,6 +2359,7 @@ function _buildDraftPayload() {
         activeMaskId: l.activeMaskId || null,
       };
     }),
+    ..._serializeAux(),
   };
 }
 
@@ -2370,6 +2494,7 @@ function _restoreDraft(draft) {
     _initCanvasFromDims(data.imgWidth, data.imgHeight);
     state.layers = [];
     state.layerOffsets.clear();
+    _restoreAux(data); // selection channels / animation / LUTs / user patterns (layerIds preserved on restore)
     // Each NON-group layer image + each layer mask image is an async load.
     let pending = data.layers.filter((s) => !s.isGroup).length +
       data.layers.filter((s) => s.layerMask).length +
@@ -2381,6 +2506,7 @@ function _restoreDraft(draft) {
         if (s.isGroup) state.layers[idx] = { id: s.id, name: s.name || 'Group',
           isGroup: true, visible: s.visible !== false,
           opacity: typeof s.opacity === 'number' ? s.opacity : 1, collapsed: !!s.collapsed,
+          locked: !!s.locked, groupId: s.groupId || null, // parity with the main restore branch
           blendMode: s.blendMode || 'pass-through' };
       });
       state.nextLayerId = data.nextLayerId || state.nextLayerId;
@@ -2467,7 +2593,7 @@ function _restoreDraft(draft) {
           mkimg.src = ms.dataUrl;
           layer.masks.push({ id: ms.id, name: ms.name, canvas: mkc, ctx: mkctx, visible: ms.visible !== false });
         }
-        layer.activeMaskId = s.activeMaskId || (layer.masks[0] && layer.masks[0].id) || null;
+        layer.activeMaskId = (s.activeMaskId !== undefined) ? s.activeMaskId : ((layer.masks[0] && layer.masks[0].id) || null); // honor an explicit null (parent-pixels mode)
       }
     });
     state.nextLayerId = data.nextLayerId || (state.layers.reduce((m, l) => Math.max(m, l.id || 0), 0) + 1);
@@ -2614,7 +2740,7 @@ function _restoreState(snap) {
     if (s.text) layer.text = JSON.parse(JSON.stringify(s.text)); else delete layer.text;
     if (s.fill) layer.fill = JSON.parse(JSON.stringify(s.fill)); else delete layer.fill;
     if (s.fx) layer.fx = JSON.parse(JSON.stringify(s.fx)); else delete layer.fx;
-    layer.activeMaskId = s.activeMaskId || (layer.masks[0]?.id ?? null);
+    layer.activeMaskId = (s.activeMaskId !== undefined) ? s.activeMaskId : (layer.masks[0]?.id ?? null); // honor an explicit null (parent-pixels mode)
     layer._adjFinal = null;
     layer._adjFinalKey = null;
     layer._stagedAdj = null;
@@ -7008,6 +7134,7 @@ function _buildProjectPayload() {
         activeMaskId: l.activeMaskId || null,
       };
     }),
+    ..._serializeAux(),
   };
 }
 function _saveProject() {
@@ -7437,6 +7564,9 @@ export function openEditor(imageUrl, imageId, presetSize, displayName, draftId) 
   state.symActive = false; state.symGizmoArmed = false;
   state.symCx = null; state.symCy = null; state.symAngle = 0;
   state.brushSymmetry = 'none';
+  // Same class of cross-document leak: guides are doc-px, grid/view-rotation are
+  // per-document view state. Reset them so they don't carry into the next image.
+  state.guides = []; state.guidesVisible = true; state.showGrid = false; state.viewRotation = 0;
   window.__galleryEditLive = true;
   try { window.__geGoldenDiff = _goldenDiff; } catch {} // dev: GPU-vs-CPU golden diff
   try { window.__geWebGPUStatus = _webgpuStatus; } catch {} // dev: WebGPU compute backend status (real-hardware check)
