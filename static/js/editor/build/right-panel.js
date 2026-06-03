@@ -67,6 +67,17 @@ export function buildRightPanel({ controlsHTML, layerPanelHTML }) {
     brushSize: state.brushSize,
     wandTolerance: state.wandTolerance,
   });
+  // Persist each disclosure section's collapsed state across editor reopens /
+  // reloads (PS-style panels that remember whether they're open). Restore the
+  // saved state on build, then save on every toggle.
+  try {
+    controls.querySelectorAll('details[id]').forEach((d) => {
+      const k = 'ge-panel-open:' + d.id;
+      const saved = localStorage.getItem(k);
+      if (saved === '1') d.open = true; else if (saved === '0') d.open = false;
+      d.addEventListener('toggle', () => { try { localStorage.setItem(k, d.open ? '1' : '0'); } catch {} });
+    });
+  } catch {}
   rightPanel.appendChild(controls);
   // Mobile only (≤ 700 px — matches the .ge-editor-body column-stack
   // breakpoint): the right panel becomes a transformed bottom-sheet,
