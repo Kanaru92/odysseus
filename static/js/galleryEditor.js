@@ -7140,7 +7140,7 @@ export function closeEditor() {
   if (state.aiInflight) { for (const ac of state.aiInflight) { try { ac.abort(); } catch {} } state.aiInflight.clear(); }
   // Remove any floated panel windows (they may be parented to document.body when
   // the editor container was unavailable, so the innerHTML clear below misses them).
-  try { document.querySelectorAll('.ge-float-panel').forEach((el) => el.remove()); } catch {}
+  try { document.querySelectorAll('.ge-float-panel, .ge-icon-flyout').forEach((el) => el.remove()); } catch {}
   _setEditTabLabel(null);
   _unmountEditorLoading();
   state.editorOpen = false;

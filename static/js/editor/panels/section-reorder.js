@@ -131,6 +131,84 @@ export function wireSectionReorder(root) {
     dockBtn.addEventListener('click', dockBack);
   };
 
+  // ---- Collapse-to-icon (PS "Collapse to Icons") ----
+  // A minimized section is parked in a hidden holder + represented by an icon
+  // chip in a tray; clicking the chip pops it open as a transient flyout (click
+  // again / click-away to close); Restore (or double-click the chip) returns it
+  // to the stack. The chip set persists across reopens.
+  const MIN_KEY = 'ge-section-mini';
+  let tray = null, holder = null;
+  const ensureTrayHolder = () => {
+    if (!tray) {
+      tray = document.createElement('div');
+      tray.className = 'ge-icon-tray';
+      tray.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px;padding:2px 0 6px;';
+      const first = root.querySelector(SEL);
+      if (first && first.parentNode) first.parentNode.insertBefore(tray, first); else root.appendChild(tray);
+    }
+    if (!holder) { holder = document.createElement('div'); holder.className = 'ge-icon-holder'; holder.style.display = 'none'; root.appendChild(holder); }
+  };
+  const persistMini = () => {
+    try { localStorage.setItem(MIN_KEY, JSON.stringify(Array.from(document.querySelectorAll(SEL)).filter((s) => s._iconChip).map((s) => s.id))); } catch {}
+  };
+  let openFlyout = null;
+  const outside = (e) => {
+    if (!openFlyout) return;
+    if (openFlyout.win.contains(e.target) || (e.target.closest && e.target.closest('.ge-icon-chip'))) return;
+    closeFlyout();
+  };
+  const closeFlyout = () => {
+    if (!openFlyout) return;
+    const { sec, win } = openFlyout;
+    if (sec.parentNode === win.querySelector('.ge-flyout-body')) holder.appendChild(sec); // park back
+    else if (holder) holder.appendChild(sec);
+    win.remove(); openFlyout = null;
+    document.removeEventListener('pointerdown', outside, true);
+  };
+  const minimizeToIcon = (sec, opts) => {
+    if (sec._iconChip) return;
+    ensureTrayHolder();
+    const anchor = sec.previousSibling, home = sec.parentNode;
+    const title = (sec.querySelector('summary')?.textContent || 'Panel').replace(/[∷⤢⊟]/g, '').trim();
+    holder.appendChild(sec);
+    const chip = document.createElement('button');
+    chip.type = 'button'; chip.className = 'ge-icon-chip';
+    chip.title = title + ' — click to open · double-click to restore';
+    chip.textContent = (title[0] || '?').toUpperCase();
+    chip.style.cssText = 'width:26px;height:26px;border-radius:5px;border:1px solid rgba(255,255,255,0.18);background:rgba(255,255,255,0.05);color:#bfe3ff;font-size:12px;font-weight:600;cursor:pointer;';
+    tray.appendChild(chip);
+    sec._iconChip = chip;
+    const restore = () => {
+      closeFlyout();
+      if (anchor && anchor.parentNode === home) home.insertBefore(sec, anchor.nextSibling); else if (home) home.appendChild(sec);
+      chip.remove(); sec._iconChip = null; persistMini();
+    };
+    chip.addEventListener('dblclick', (e) => { e.preventDefault(); restore(); });
+    chip.addEventListener('click', (e) => {
+      e.preventDefault();
+      if (openFlyout && openFlyout.sec === sec) { closeFlyout(); return; }
+      closeFlyout();
+      const win = document.createElement('div');
+      win.className = 'ge-icon-flyout';
+      win.style.cssText = 'position:fixed;z-index:320;width:240px;background:#26262b;border:1px solid rgba(255,255,255,0.18);border-radius:8px;box-shadow:0 14px 40px rgba(0,0,0,0.55);color:#eee;';
+      const head = document.createElement('div');
+      head.style.cssText = 'display:flex;align-items:center;gap:6px;padding:5px 8px;font-size:11px;font-weight:600;background:rgba(255,255,255,0.06);border-radius:8px 8px 0 0;';
+      head.innerHTML = `<span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${title}</span>`;
+      const rb = document.createElement('button'); rb.type = 'button'; rb.className = 'ge-btn ge-btn-sm'; rb.textContent = 'Restore'; rb.title = 'Restore to the panel';
+      rb.addEventListener('click', restore);
+      head.appendChild(rb); win.appendChild(head);
+      const body = document.createElement('div'); body.className = 'ge-flyout-body'; body.style.cssText = 'padding:8px;max-height:60vh;overflow:auto;';
+      sec.open = true; body.appendChild(sec); win.appendChild(body);
+      (document.getElementById('gallery-editor-container') || document.body).appendChild(win);
+      const cr = chip.getBoundingClientRect();
+      win.style.left = Math.max(8, cr.left - 248) + 'px'; // flyout toward the canvas (left of the rail)
+      win.style.top = Math.min(window.innerHeight - 80, Math.max(8, cr.top)) + 'px';
+      openFlyout = { sec, win };
+      setTimeout(() => document.addEventListener('pointerdown', outside, true), 0);
+    });
+    if (!opts || !opts.silent) persistMini();
+  };
+
   for (const sec of secs) {
     const sum = sec.querySelector('summary');
     if (!sum || sum.querySelector('.ge-dock-grip')) continue;
@@ -151,6 +229,14 @@ export function wireSectionReorder(root) {
     pop.style.cssText = 'cursor:pointer;opacity:0.45;margin-left:6px;font-size:11px;user-select:none;';
     sum.appendChild(pop);
     pop.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); popOut(sec); });
+    // Collapse-to-icon button (PS "Collapse to Icons").
+    const mini = document.createElement('span');
+    mini.className = 'ge-dock-mini';
+    mini.textContent = '⊟';
+    mini.title = 'Collapse to icon';
+    mini.style.cssText = 'cursor:pointer;opacity:0.45;margin-left:6px;font-size:11px;user-select:none;';
+    sum.appendChild(mini);
+    mini.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); minimizeToIcon(sec); });
     grip.addEventListener('pointerdown', (e) => {
       e.preventDefault(); e.stopPropagation();
       grip.style.cursor = 'grabbing';
@@ -190,6 +276,14 @@ export function wireSectionReorder(root) {
     if (Array.isArray(savedF)) for (const f of savedF) {
       const el = byId.get(f.id);
       if (el && !el._floatWin) popOut(el, f);
+    }
+  } catch {}
+  // Restore minimized-to-icon sections from a previous session.
+  try {
+    const savedM = JSON.parse(localStorage.getItem(MIN_KEY) || '[]');
+    if (Array.isArray(savedM)) for (const id of savedM) {
+      const el = byId.get(id);
+      if (el && !el._iconChip && !el._floatWin) minimizeToIcon(el, { silent: true });
     }
   } catch {}
 }
