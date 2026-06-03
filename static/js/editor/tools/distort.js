@@ -51,6 +51,11 @@ export function createDistortTool({ activeLayer, saveState, composite }) {
     const a = rot * Math.PI / 180, cs = Math.cos(a), sn = Math.sin(a);
     const cenX = canvas.offsetLeft + canvas.width * z / 2;
     const cenY = canvas.offsetTop + canvas.height * z / 2;
+    // Pan is a CSS translate applied AFTER the rotate — add it to the final point
+    // so handles track the canvas when panned (previously detached).
+    const aEl = canvas.parentElement;
+    const panX = aEl ? (parseFloat(aEl.dataset.panX || '0') || 0) : 0;
+    const panY = aEl ? (parseFloat(aEl.dataset.panY || '0') || 0) : 0;
     for (let i = 0; i < handles.length; i++) {
       const c = state.distortCorners[i];
       let px = canvas.offsetLeft + (c.x + off.x) * z;
@@ -60,8 +65,8 @@ export function createDistortTool({ activeLayer, saveState, composite }) {
         px = cenX + dx * cs - dy * sn;
         py = cenY + dx * sn + dy * cs;
       }
-      handles[i].style.left = px + 'px';
-      handles[i].style.top = py + 'px';
+      handles[i].style.left = (px + panX) + 'px';
+      handles[i].style.top = (py + panY) + 'px';
     }
   }
 

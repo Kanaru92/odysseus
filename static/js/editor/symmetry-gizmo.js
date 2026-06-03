@@ -23,7 +23,12 @@ function area() { return state.mainCanvas && state.mainCanvas.parentElement; }
 
 function screenOf(docX, docY) {
   const c = state.mainCanvas, z = state.zoom || 1;
-  return { x: c.offsetLeft + docX * z, y: c.offsetTop + docY * z };
+  // The canvas is panned via a CSS transform (translate3d) that offsetLeft/Top
+  // don't include — add the pan so the handles track the canvas when panned.
+  const a = c.parentElement;
+  const px = a ? (parseFloat(a.dataset.panX || '0') || 0) : 0;
+  const py = a ? (parseFloat(a.dataset.panY || '0') || 0) : 0;
+  return { x: c.offsetLeft + docX * z + px, y: c.offsetTop + docY * z + py };
 }
 
 function place() {

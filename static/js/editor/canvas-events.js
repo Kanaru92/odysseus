@@ -177,6 +177,10 @@ export function wireCanvasEvents({ canvasArea, beginDraw, continueDraw, endDraw:
     state.mainCanvas.style.transformOrigin = 'center center';
     state.mainCanvas.style.transform = t;
     if (state.transformOverlay) { state.transformOverlay.style.transformOrigin = 'center center'; state.transformOverlay.style.transform = t; }
+    // Pan is a CSS transform that fires no composite — notify view-tracking
+    // overlays (navigator viewport, symmetry gizmo, distort/pcrop handles) so they
+    // follow the canvas instead of detaching.
+    try { window.dispatchEvent(new Event('ge:composited')); } catch {}
   };
   state.mainCanvas.addEventListener('touchstart', (e) => {
     e.preventDefault();
@@ -252,6 +256,7 @@ export function wireCanvasEvents({ canvasArea, beginDraw, continueDraw, endDraw:
     state.mainCanvas.style.transformOrigin = 'center center';
     state.mainCanvas.style.transform = t;
     if (state.transformOverlay) { state.transformOverlay.style.transformOrigin = 'center center'; state.transformOverlay.style.transform = t; }
+    try { window.dispatchEvent(new Event('ge:composited')); } catch {} // keep overlays/navigator tracking the pan
   };
   canvasArea.addEventListener('pointerdown', (e) => {
     if (state.tool === 'lasso') return;

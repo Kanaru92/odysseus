@@ -20,12 +20,16 @@ export function createPerspectiveCropTool({ activeLayer, composite, applyCrop })
     if (!canvas || !state.pcropCorners) return;
     const z = state.zoom || 1;
     const rot = state.viewRotation || 0;
+    // Pan is a CSS translate offsetLeft/Top don't include — add it so handles
+    // track the canvas when panned.
+    const aEl = canvas.parentElement;
+    const panX = aEl ? (parseFloat(aEl.dataset.panX || '0') || 0) : 0;
+    const panY = aEl ? (parseFloat(aEl.dataset.panY || '0') || 0) : 0;
     if (!rot) {
-      // Fast path (no view rotation) — unchanged behaviour.
       for (let i = 0; i < handles.length; i++) {
         const c = state.pcropCorners[i];
-        handles[i].style.left = (canvas.offsetLeft + c.x * z) + 'px';
-        handles[i].style.top = (canvas.offsetTop + c.y * z) + 'px';
+        handles[i].style.left = (canvas.offsetLeft + c.x * z + panX) + 'px';
+        handles[i].style.top = (canvas.offsetTop + c.y * z + panY) + 'px';
       }
       return;
     }
@@ -40,8 +44,8 @@ export function createPerspectiveCropTool({ activeLayer, composite, applyCrop })
       const c = state.pcropCorners[i];
       const dx = (c.x - canvas.width / 2) * z, dy = (c.y - canvas.height / 2) * z;
       const rx = dx * cos - dy * sin, ry = dx * sin + dy * cos;
-      handles[i].style.left = (ccx + rx) + 'px';
-      handles[i].style.top = (ccy + ry) + 'px';
+      handles[i].style.left = (ccx + rx + panX) + 'px';
+      handles[i].style.top = (ccy + ry + panY) + 'px';
     }
   }
   function onMove(e) {
