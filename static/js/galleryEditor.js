@@ -7269,6 +7269,13 @@ export function openEditor(imageUrl, imageId, presetSize, displayName, draftId) 
   state.lassoActive = false;
   state.layerMaskEdit = false; // don't leak mask-edit / rubylith across documents
   state.maskOverlay = null;
+  // Don't leak paint-symmetry across documents: symActive/symCx/symCy are doc-px
+  // and survive on the state singleton, so a new (smaller) doc would silently
+  // mirror its first stroke across a stale, possibly off-canvas centre with no
+  // gizmo visible. Reset placement + the brushSymmetry select so they agree.
+  state.symActive = false; state.symGizmoArmed = false;
+  state.symCx = null; state.symCy = null; state.symAngle = 0;
+  state.brushSymmetry = 'none';
   window.__galleryEditLive = true;
   try { window.__geGoldenDiff = _goldenDiff; } catch {} // dev: GPU-vs-CPU golden diff
   try { window.__geWebGPUStatus = _webgpuStatus; } catch {} // dev: WebGPU compute backend status (real-hardware check)

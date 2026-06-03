@@ -106,11 +106,15 @@ export function armSymmetryGizmo() {
     state.symCy = Math.max(0, Math.min(state.imgHeight, (ev.clientY - r.top) / z));
     place();
   });
-  // Drag knob → set symAngle from the centre.
+  // Drag knob → set symAngle from the centre. Convert the cursor through the
+  // SAME basis as the centre drag (the live mainCanvas viewport rect) — mixing
+  // screenOf (offset/content space) with the host viewport rect diverges by the
+  // scroll offset once the zoomed canvas area scrolls, making the knob jump.
+  // Zoom is uniform, so the atan2 of doc-space deltas is the correct screen angle.
   dragHandle(rotH, (ev) => {
-    const p = screenOf(state.symCx, state.symCy);
-    const area0 = host.getBoundingClientRect();
-    state.symAngle = Math.atan2((ev.clientY - area0.top) - p.y, (ev.clientX - area0.left) - p.x);
+    const r = state.mainCanvas.getBoundingClientRect(), z = state.zoom || 1;
+    const mx = (ev.clientX - r.left) / z, my = (ev.clientY - r.top) / z;
+    state.symAngle = Math.atan2(my - state.symCy, mx - state.symCx);
     place();
   });
 
