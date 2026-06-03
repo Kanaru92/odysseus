@@ -125,7 +125,10 @@ export function createBrushEngine(preset) {
     const key = `${Math.max(1, Math.round(size))}|${type}${rt.dualTipImage ? '|img' : ''}`;
     let t = secCache.get(key);
     if (t) { secCache.delete(key); secCache.set(key, t); return t; }
-    t = makeTip({ type, size, hardness: rt.dualHardness != null ? rt.dualHardness : 1, color: '#ffffff', image: rt.dualTipImage || null });
+    // 'soft' must actually be soft — there's no dual-hardness slider, so a default
+    // hardness of 1 made it identical to 'round'. Give the soft tip a soft edge.
+    const dualHard = type === 'soft' ? 0.5 : (rt.dualHardness != null ? rt.dualHardness : 1);
+    t = makeTip({ type, size, hardness: dualHard, color: '#ffffff', image: rt.dualTipImage || null });
     secCache.set(key, t);
     if (secCache.size > 48) secCache.delete(secCache.keys().next().value);
     return t;

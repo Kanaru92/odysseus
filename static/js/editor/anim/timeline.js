@@ -89,7 +89,7 @@ export function createTimeline(anim, container) {
     // Toggles.
     loopBtn = btn('Loop', 'Loop playback', () => { const a = state.anim; a.loop = !a.loop; a.pingpong = false; render(); });
     bar.appendChild(loopBtn);
-    pingBtn = btn('Ping', 'Ping-pong playback', () => { const a = state.anim; a.pingpong = !a.pingpong; render(); });
+    pingBtn = btn('Ping', 'Ping-pong playback', () => { const a = state.anim; a.pingpong = !a.pingpong; if (a.pingpong) a.loop = false; render(); }); // mutually exclusive with Loop
     bar.appendChild(pingBtn);
     onionBtn = btn('Onion', 'Onion skin (light table)', () => anim.toggleOnion());
     bar.appendChild(onionBtn);

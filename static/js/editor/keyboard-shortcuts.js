@@ -438,7 +438,7 @@ export function wireKeyboardShortcuts(deps) {
       e.preventDefault();
       state.airbrush = !state.airbrush;
       const cb = document.getElementById('ge-brush-airbrush');
-      if (cb) cb.checked = state.airbrush;
+      if (cb) { cb.checked = state.airbrush; cb.dispatchEvent(new Event('change', { bubbles: true })); } // drive the options-bar mirror
       if (uiModule) uiModule.showToast(state.airbrush ? 'Airbrush on' : 'Airbrush off');
       return;
     }

@@ -55,6 +55,21 @@ export function createBucketTool({ activeLayer, saveState, composite }) {
         tctx.fillRect(0, 0, w, h);
         tctx.globalCompositeOperation = 'destination-in';
         tctx.drawImage(mask, 0, 0);
+        // Confine the fill to the active selection too (marquee/lasso/wand), like
+        // the gradient + shape tools do — PS clips bucket fill to the selection.
+        let selCv = null;
+        if (state.wandMask && state.wandMask.width) {
+          selCv = document.createElement('canvas'); selCv.width = w; selCv.height = h;
+          const selOff = state.layerOffsets.get(state.wandLayerId) || { x: 0, y: 0 };
+          selCv.getContext('2d').drawImage(state.wandMask, selOff.x - off.x, selOff.y - off.y);
+        } else if (state.lassoPoints && state.lassoPoints.length >= 3) {
+          selCv = document.createElement('canvas'); selCv.width = w; selCv.height = h;
+          const mx = selCv.getContext('2d'); mx.fillStyle = '#fff'; mx.beginPath();
+          const pts = state.lassoPoints; mx.moveTo(pts[0].x - off.x, pts[0].y - off.y);
+          for (let i = 1; i < pts.length; i++) mx.lineTo(pts[i].x - off.x, pts[i].y - off.y);
+          mx.closePath(); mx.fill();
+        }
+        if (selCv) { tctx.globalCompositeOperation = 'destination-in'; tctx.drawImage(selCv, 0, 0); tctx.globalCompositeOperation = 'source-over'; }
         ctx.save();
         ctx.globalCompositeOperation = 'source-over';
         ctx.globalAlpha = 1;

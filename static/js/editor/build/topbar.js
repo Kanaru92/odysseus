@@ -52,7 +52,7 @@ export function buildTopbar() {
       <span class="ge-topbar-sep"></span>
     </div>
     <div class="ge-topbar-right">
-      <span class="ge-canvas-size" id="ge-canvas-size" title="Canvas size" hidden></span>
+      <span class="ge-canvas-size" id="ge-canvas-size" title="Canvas size"></span>
       <!--
         Hidden relay registry for the app menu bar's Image menu. The visible
         "Image ▾" trigger button was removed (it duplicated the menu bar); the

@@ -1123,6 +1123,10 @@ function _maskFromSelection() {
   const layer = activeLayer();
   if (!layer) return;
   if (!state.wandMask) { uiModule?.showToast?.('Make a selection first (wand / quick-select / colour-range)'); return; }
+  // The selection mask is layer-LOCAL to state.wandLayerId. If it was made on a
+  // different layer, aligning it to THIS layer needs the offset delta; warn if the
+  // layers differ so we don't silently produce a misaligned mask.
+  if (state.wandLayerId && state.wandLayerId !== layer.id) { uiModule?.showToast?.('Selection is on another layer'); return; }
   _saveState(layer.layerMask ? 'Mask from selection' : 'Add mask from selection');
   const m = document.createElement('canvas');
   m.width = layer.canvas.width; m.height = layer.canvas.height;
@@ -1227,6 +1231,13 @@ function _openFxMenu() {
   };
   // Deep-clone so nested defaults (e.g. gradientOverlay.stops[]) aren't shared across layers.
   for (const k in defaults) if (!fx[k]) fx[k] = JSON.parse(JSON.stringify(defaults[k]));
+  // Heal a restored gradientOverlay whose nested stops[] is missing/short — the
+  // top-level backfill above won't (the key exists), and the render reads
+  // stops[0]/[1].color unconditionally, which would throw and abort the whole panel.
+  if (!fx.gradientOverlay || !Array.isArray(fx.gradientOverlay.stops) || fx.gradientOverlay.stops.length < 2) {
+    fx.gradientOverlay = fx.gradientOverlay || {};
+    fx.gradientOverlay.stops = JSON.parse(JSON.stringify(defaults.gradientOverlay.stops));
+  }
   const pop = document.createElement('div');
   pop.id = 'ge-fx-popup';
   pop.className = 'ge-fx-popup'; // so closeEditor's '.ge-fx-popup' scrub removes it (was id-only → leaked)
@@ -4519,6 +4530,13 @@ function _runMagicWand(cx, cy, mode = 'replace', opts = {}) {
       ec.save();
       ec.globalCompositeOperation = 'destination-out';
       ec.drawImage(mask, 0, 0); // difference
+      ec.restore();
+      state.wandMask._ants = null;
+    } else if (compatible && mode === 'intersect') {
+      const ec = state.wandMask.getContext('2d');
+      ec.save();
+      ec.globalCompositeOperation = 'destination-in';
+      ec.drawImage(mask, 0, 0); // base ∩ candidate
       ec.restore();
       state.wandMask._ants = null;
     } else {

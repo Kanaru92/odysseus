@@ -19,6 +19,7 @@
  */
 import { state } from '../state.js';
 import { canvasCoords } from '../canvas-coords.js';
+import { modeFromEvent } from '../selection/mask-ops.js';
 
 export function createWandTool({ activeLayer, saveState, composite, wandHits, runMagicWand }) {
   return {
@@ -29,8 +30,9 @@ export function createWandTool({ activeLayer, saveState, composite, wandHits, ru
       // Persistent toggle sets the default mode; Shift forces add, Alt
       // forces subtract regardless of the toggle (modifiers always win).
       let mode = state.wandMode || 'replace';
-      if (e.shiftKey) mode = 'add';
-      else if (e.altKey) mode = 'subtract';
+      // Modifiers override the toggle: Shift=add, Alt=subtract, Shift+Alt=intersect.
+      const mod = modeFromEvent(e);
+      if (mod !== 'replace') mode = mod;
       // Click INSIDE the existing selection with no modifier → deselect.
       if (mode === 'replace' && wandHits(coords.x, coords.y)) {
         saveState();

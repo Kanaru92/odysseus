@@ -451,6 +451,28 @@ export function createLayerPanelRenderer(deps) {
     delBtn?.addEventListener('click', async () => {
       const l = _activeLayerOrGroup();
       if (!l) return;
+      // Multi-selection: delete every selected layer (+ group members), like the
+      // visibility/opacity/blend batch ops already do (and like Photoshop).
+      const selIds = (state.selectedLayerIds || []).filter((id) => state.layers.some((x) => x.id === id));
+      if (selIds.length > 1) {
+        const toDelete = new Set();
+        for (const id of selIds) {
+          toDelete.add(id);
+          const lyr = state.layers.find((x) => x.id === id);
+          if (lyr && lyr.isGroup) for (const m of state.layers) if (m.groupId === id) toDelete.add(m.id);
+        }
+        if (toDelete.size >= state.layers.length) { uiModule?.showToast?.('Can’t delete all layers'); return; }
+        saveState('Delete layers');
+        state.layers = state.layers.filter((x) => !toDelete.has(x.id));
+        toDelete.forEach((id) => state.layerOffsets.delete(id));
+        state.selectedLayerIds = [];
+        if (!state.layers.some((x) => x.id === state.activeLayerId)) {
+          const survivor = state.layers.find((x) => !x.isGroup) || state.layers[0];
+          state.activeLayerId = survivor ? survivor.id : null;
+        }
+        composite(); render();
+        return;
+      }
       if (state.layers.length <= 1) { uiModule?.showToast?.('Can’t delete the only layer'); return; }
       const i = state.layers.findIndex((x) => x.id === l.id);
       if (i < 0) return;
