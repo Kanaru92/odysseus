@@ -44,6 +44,17 @@ export function wireSectionReorder(root) {
       localStorage.setItem(LS_KEY, JSON.stringify(ids));
     } catch {}
   };
+  // Persist which panels are floated + their window positions (restored on build).
+  const FLOAT_KEY = 'ge-section-floats';
+  const persistFloats = () => {
+    try {
+      const floats = [];
+      document.querySelectorAll(SEL).forEach((s) => {
+        if (s._floatWin) floats.push({ id: s.id, left: s._floatWin.style.left, top: s._floatWin.style.top });
+      });
+      localStorage.setItem(FLOAT_KEY, JSON.stringify(floats));
+    } catch {}
+  };
 
   // Drag a floating window by its title bar (document-level move/up so the drag
   // doesn't drop when the cursor leaves the small bar).
@@ -62,6 +73,7 @@ export function wireSectionReorder(root) {
         document.removeEventListener('pointermove', mv);
         document.removeEventListener('pointerup', up);
         document.removeEventListener('pointercancel', up);
+        persistFloats(); // remember the new float position
       };
       document.addEventListener('pointermove', mv);
       document.addEventListener('pointerup', up);
@@ -73,7 +85,7 @@ export function wireSectionReorder(root) {
   // The live section node is MOVED (listeners/canvas preserved). The float is
   // appended to the editor container so closeEditor's teardown disposes it.
   let cascade = 0;
-  const popOut = (sec) => {
+  const popOut = (sec, pos) => {
     if (sec._floatWin) return;
     const home = sec.parentNode, anchor = sec.previousSibling;
     const title = (sec.querySelector('summary')?.textContent || 'Panel').replace(/[∷⤢]/g, '').trim();
@@ -96,12 +108,15 @@ export function wireSectionReorder(root) {
     const c = (cascade++ % 6) * 22;
     win.style.left = Math.round(window.innerWidth * 0.45 + c) + 'px';
     win.style.top = (84 + c) + 'px';
+    if (pos) { if (pos.left) win.style.left = pos.left; if (pos.top) win.style.top = pos.top; }
     sec._floatWin = win;
     dragFloat(win, bar);
+    persistFloats();
     dockBtn.addEventListener('click', () => {
       if (anchor && anchor.parentNode === home) home.insertBefore(sec, anchor.nextSibling);
       else if (home) home.appendChild(sec);
       win.remove(); sec._floatWin = null;
+      persistFloats();
     });
   };
 
@@ -157,4 +172,13 @@ export function wireSectionReorder(root) {
       document.addEventListener('pointercancel', onUp);
     });
   }
+
+  // Restore any panels that were floating in a previous session (+ position).
+  try {
+    const savedF = JSON.parse(localStorage.getItem(FLOAT_KEY) || '[]');
+    if (Array.isArray(savedF)) for (const f of savedF) {
+      const el = byId.get(f.id);
+      if (el && !el._floatWin) popOut(el, f);
+    }
+  } catch {}
 }
