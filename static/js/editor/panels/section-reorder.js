@@ -58,7 +58,7 @@ export function wireSectionReorder(root) {
 
   // Drag a floating window by its title bar (document-level move/up so the drag
   // doesn't drop when the cursor leaves the small bar).
-  const dragFloat = (win, handle) => {
+  const dragFloat = (win, handle, onEnd) => {
     handle.addEventListener('pointerdown', (e) => {
       if (e.target.closest('button')) return;
       e.preventDefault();
@@ -73,7 +73,7 @@ export function wireSectionReorder(root) {
         document.removeEventListener('pointermove', mv);
         document.removeEventListener('pointerup', up);
         document.removeEventListener('pointercancel', up);
-        persistFloats(); // remember the new float position
+        if (onEnd) onEnd(); else persistFloats(); // drop-to-dock or remember position
       };
       document.addEventListener('pointermove', mv);
       document.addEventListener('pointerup', up);
@@ -110,14 +110,25 @@ export function wireSectionReorder(root) {
     win.style.top = (84 + c) + 'px';
     if (pos) { if (pos.left) win.style.left = pos.left; if (pos.top) win.style.top = pos.top; }
     sec._floatWin = win;
-    dragFloat(win, bar);
-    persistFloats();
-    dockBtn.addEventListener('click', () => {
+    const dockBack = () => {
       if (anchor && anchor.parentNode === home) home.insertBefore(sec, anchor.nextSibling);
       else if (home) home.appendChild(sec);
       win.remove(); sec._floatWin = null;
       persistFloats();
+    };
+    // Drag-drop-to-dock: releasing the float with its centre over the right panel
+    // re-docks it (PS-style); otherwise just remember the new position.
+    dragFloat(win, bar, () => {
+      const panel = document.querySelector('.ge-right-panel') || document.querySelector('.ge-controls');
+      if (panel) {
+        const wr = win.getBoundingClientRect(), pr = panel.getBoundingClientRect();
+        const cx = wr.left + wr.width / 2, cy = wr.top + wr.height / 2;
+        if (cx >= pr.left && cx <= pr.right && cy >= pr.top && cy <= pr.bottom) { dockBack(); return; }
+      }
+      persistFloats();
     });
+    persistFloats();
+    dockBtn.addEventListener('click', dockBack);
   };
 
   for (const sec of secs) {
