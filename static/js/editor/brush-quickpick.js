@@ -13,6 +13,9 @@
  */
 import { state } from './state.js';
 import { BRUSH_PRESETS } from './brush/presets.js';
+import { createBrushEngine } from './brush/index.js';
+import { getPreset } from './brush/presets.js';
+import { makeNoiseGrain } from './brush/grain-textures.js';
 
 export function createBrushQuickPick() {
   let panel = null;
@@ -24,31 +27,54 @@ export function createBrushQuickPick() {
     return el ? el.textContent : '';
   };
 
-  // Draw a representative left→right tapering stroke for a preset's tip.
+  // Faithful per-preset thumbnail: render a tapering sample stroke with the REAL
+  // brush engine so each preset's tip + grain/texture + scatter + spacing + shape
+  // shows (previously every thumb only varied by tipType, so grainy/scattered
+  // brushes looked identical). Falls back to a simple tapering stroke on any error.
   function renderThumb(cv, preset) {
     const w = cv.width, h = cv.height;
     const ctx = cv.getContext('2d');
     ctx.clearRect(0, 0, w, h);
     const cy = h / 2;
-    const n = 26;
-    const rMax = h * 0.34;
-    const tip = preset.tipType || 'round';
+    try {
+      const p = getPreset(preset.id) || preset;
+      if (p.grainKind === 'noise' && !p._grainCanvas) p._grainCanvas = makeNoiseGrain(128, 128);
+      const eng = createBrushEngine({
+        ...p,
+        grain: p.grain || p._grainCanvas || null,
+        grainDepth: p.grainDepth != null ? p.grainDepth : 1,
+        scatter: p.scatter, spacing: p.spacing, ratio: p.ratio,
+      });
+      const tip = p.tipType || 'round';
+      const rt = {
+        size: Math.max(5, Math.min(h * 0.85, 16)),
+        opacity: 1, flow: 1, color: '#ebebeb',
+        hardness: tip === 'gaussian' ? 0.3 : tip === 'soft' ? 0.55 : 0.9,
+        symmetry: 'none', symN: 6, angleFollow: !!p.angleFollow, tiltAngle: false, tiltAz: 0,
+        brushBlend: 'source-over', colorJitter: 0, sizeJitter: p.sizeJitter || 0, flowJitter: 0,
+        lockAlpha: false, erase: false,
+      };
+      const pts = [], n = 30;
+      for (let i = 0; i <= n; i++) {
+        const t = i / n;
+        pts.push({ x: 5 + t * (w - 10), y: cy + Math.sin(t * Math.PI) * 2, pressure: 0.12 + 0.88 * Math.sin(t * Math.PI) });
+      }
+      eng.begin(ctx, rt);
+      for (let i = 1; i < pts.length; i++) eng.segment(ctx, pts[i - 1], pts[i], rt);
+      eng.end();
+      return;
+    } catch { ctx.clearRect(0, 0, w, h); }
+    // Fallback — simple tapering falloff stroke.
+    const n = 26, rMax = h * 0.34, tip = preset.tipType || 'round';
     for (let i = 0; i < n; i++) {
-      const t = i / (n - 1);
-      // Pressure-like taper at both ends for a brushy look.
-      const taper = Math.sin(t * Math.PI);
-      const x = 4 + t * (w - 8);
-      const r = Math.max(0.6, rMax * (0.35 + 0.65 * taper));
-      let alpha = 0.9;
-      if (tip === 'soft' || tip === 'gaussian') alpha = 0.5 + 0.4 * taper;
+      const t = i / (n - 1), taper = Math.sin(t * Math.PI);
+      const x = 4 + t * (w - 8), r = Math.max(0.6, rMax * (0.35 + 0.65 * taper));
+      const alpha = (tip === 'soft' || tip === 'gaussian') ? 0.5 + 0.4 * taper : 0.9;
       const g = ctx.createRadialGradient(x, cy, 0, x, cy, r);
-      if (tip === 'gaussian') { g.addColorStop(0, `rgba(235,235,235,${alpha})`); g.addColorStop(0.5, `rgba(235,235,235,${alpha * 0.5})`); g.addColorStop(1, 'rgba(235,235,235,0)'); }
-      else if (tip === 'soft') { g.addColorStop(0, `rgba(235,235,235,${alpha})`); g.addColorStop(0.7, `rgba(235,235,235,${alpha * 0.6})`); g.addColorStop(1, 'rgba(235,235,235,0)'); }
-      else { g.addColorStop(0, `rgba(235,235,235,${alpha})`); g.addColorStop(0.85, `rgba(235,235,235,${alpha})`); g.addColorStop(1, 'rgba(235,235,235,0)'); }
-      ctx.fillStyle = g;
-      ctx.beginPath();
-      ctx.arc(x, cy, r, 0, Math.PI * 2);
-      ctx.fill();
+      g.addColorStop(0, `rgba(235,235,235,${alpha})`);
+      g.addColorStop(tip === 'gaussian' ? 0.5 : tip === 'soft' ? 0.7 : 0.85, `rgba(235,235,235,${alpha * (tip === 'round' ? 1 : 0.5)})`);
+      g.addColorStop(1, 'rgba(235,235,235,0)');
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, cy, r, 0, Math.PI * 2); ctx.fill();
     }
   }
 
