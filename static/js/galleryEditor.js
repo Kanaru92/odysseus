@@ -4218,6 +4218,7 @@ function _runMagicWand(cx, cy, mode = 'replace', opts = {}) {
     } else {
       state.wandMask = mask;
       state.wandLayerId = targetLayerId;
+      state.lassoPoints = []; // a fresh wand selection replaces any lasso/marquee polygon (no overlap)
     }
     composite();
     _syncToolClearIndicators();
@@ -4241,6 +4242,7 @@ function _runColorRange() {
   state.wandLayerId = layer.id;
   state.wandLastSeed = null;
   state.wandMaskVisible = true;
+  state.lassoPoints = []; // replace any existing lasso/marquee polygon
   composite();
   _syncToolClearIndicators();
 }
@@ -4263,7 +4265,7 @@ function _quickSelectAt(cx, cy) {
   const mask = _floodFillMask(src, w, h, lx, ly, state.wandTolerance);
   if (!mask) return;
   if (compatible) { state.wandMask.getContext('2d').drawImage(mask, 0, 0); state.wandMask._ants = null; } // union → invalidate ants cache
-  else { state.wandMask = mask; state.wandLayerId = layer.id; }
+  else { state.wandMask = mask; state.wandLayerId = layer.id; state.lassoPoints = []; }
   state.wandMaskVisible = true;
   state.wandLastSeed = null;
   composite();

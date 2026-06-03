@@ -48,6 +48,11 @@ export function createLassoTool({ composite, drawLassoOverlay, syncToolClearIndi
 
   return {
     begin(e) {
+      // A fresh freehand selection replaces any existing mask-based selection
+      // (marquee / wand / color-range) unless a combine modifier is held — without
+      // this, a lasso drawn after a marquee left BOTH selections visible (the
+      // "two overlapping selections" bug).
+      if (!e.shiftKey && !e.altKey) { state.wandMask = null; state.wandLayerId = null; }
       state.lassoPoints = [];
       state.lassoActive = true;
       const coords = canvasCoords(e, state.mainCanvas);
