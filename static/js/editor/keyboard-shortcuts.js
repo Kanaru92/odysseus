@@ -66,7 +66,7 @@ export function wireKeyboardShortcuts(deps) {
     buildLassoMask, drawLassoOverlay,
     swapColors, defaultColors, toggleMaskView, runCommand,
     activeLayer, uiModule, renderLayerPanel, fillActiveLayer, stampVisible,
-    confirmDistort, cancelDistort,
+    confirmDistort, cancelDistort, applyPcrop,
     polyLassoClose, polyLassoCancel,
     magLassoClose, magLassoCancel,
     addManagedListener,
@@ -129,9 +129,10 @@ export function wireKeyboardShortcuts(deps) {
     if (e.key === 'Enter' && state.magLassoActive && magLassoClose) {
       e.preventDefault(); magLassoClose(); return;
     }
-    if (e.key === 'Enter' && (state.transformActive || state.distortActive)) {
+    if (e.key === 'Enter' && (state.transformActive || state.distortActive || state.pcropActive)) {
       e.preventDefault();
-      if (state.distortActive && confirmDistort) confirmDistort();
+      if (state.pcropActive && applyPcrop) applyPcrop();
+      else if (state.distortActive && confirmDistort) confirmDistort();
       else confirmTransform();
       return;
     }

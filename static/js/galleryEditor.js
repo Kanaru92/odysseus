@@ -1229,6 +1229,7 @@ function _openFxMenu() {
   for (const k in defaults) if (!fx[k]) fx[k] = JSON.parse(JSON.stringify(defaults[k]));
   const pop = document.createElement('div');
   pop.id = 'ge-fx-popup';
+  pop.className = 'ge-fx-popup'; // so closeEditor's '.ge-fx-popup' scrub removes it (was id-only → leaked)
   pop.style.cssText = 'position:fixed;z-index:200;right:18px;top:84px;background:#2a2a2e;border:1px solid rgba(255,255,255,0.16);border-radius:8px;padding:10px 12px;box-shadow:0 12px 32px rgba(0,0,0,0.55);font-size:12px;color:#eee;min-width:236px;';
   const row = (key, label, extra) => `<label style="display:flex;align-items:center;gap:6px;margin:5px 0;cursor:pointer;">
       <input type="checkbox" data-fx="${key}" ${fx[key].enabled ? 'checked' : ''}><span>${label}</span>
@@ -5971,6 +5972,10 @@ function _buildEditor(container) {
     if (fgEl) { fgEl.value = state.color; fgEl.dispatchEvent(new Event('input', { bubbles: true })); }
     if (bgEl) { bgEl.value = state.bgColor; bgEl.dispatchEvent(new Event('input', { bubbles: true })); }
   }
+  // Seed BOTH swatches from state on (re)open — the BG input is rebuilt as
+  // #ffffff each time, so without this it desyncs from a retained state.bgColor.
+  if (!state.bgColor) state.bgColor = '#ffffff';
+  _syncColorSwatches();
   function _swapColors() {
     const fg = state.color;
     state.color = state.bgColor || '#ffffff';
@@ -6418,7 +6423,7 @@ function _buildEditor(container) {
 
   // Eyedropper sample size (point / 3×3 / 5×5 average).
   const _eyeSample = document.getElementById('ge-eyedropper-sample');
-  _eyeSample?.addEventListener('change', () => { state.eyedropperSampleSize = parseInt(_eyeSample.value, 10) || 1; });
+  if (_eyeSample) { _eyeSample.value = String(state.eyedropperSampleSize || 1); _eyeSample.addEventListener('change', () => { state.eyedropperSampleSize = parseInt(_eyeSample.value, 10) || 1; }); }
   const _eyeSource = document.getElementById('ge-eyedropper-source');
   if (_eyeSource) { _eyeSource.value = state.eyedropperSampleSource || 'all'; _eyeSource.addEventListener('change', () => { state.eyedropperSampleSource = _eyeSource.value || 'all'; }); }
   // Clone tool source: Layer (clone) vs Pattern (stamp) + pattern chooser.
@@ -6747,6 +6752,7 @@ function _buildEditor(container) {
     stampVisible: () => _stampVisible(),
     confirmDistort: () => { _distortTool.commit(); composite(); },
     cancelDistort: () => _distortTool.cancel(),
+    applyPcrop: () => { try { _pcropTool.apply(); } catch {} },
     polyLassoClose: () => _polyLassoTool.close(),
     polyLassoCancel: () => _polyLassoTool.cancel(),
     magLassoClose: () => _magLassoTool.close(),

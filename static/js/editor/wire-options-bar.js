@@ -27,7 +27,7 @@ const TOOL_NAMES = {
 const PROXIES = {
   brush: [
     { label: 'Size', sel: '.ge-size-slider', kind: 'size' },
-    { label: 'Hardness', id: 'ge-brush-softness', suffix: '%' },
+    { label: 'Softness', id: 'ge-brush-softness', suffix: '%' },
     { label: 'Mode', id: 'ge-brush-blend', control: 'select' },
     { label: 'Opacity', id: 'ge-brush-opacity', suffix: '%' },
     { label: 'Flow', id: 'ge-brush-flow', suffix: '%' },
@@ -40,13 +40,13 @@ const PROXIES = {
     { label: 'Size', sel: '.ge-size-slider', kind: 'size' },
     { label: 'Opacity', id: 'ge-eraser-opacity', suffix: '%' },
     { label: 'Flow', id: 'ge-eraser-flow', suffix: '%' },
-    { label: 'Hardness', id: 'ge-eraser-softness', suffix: '%' },
+    { label: 'Softness', id: 'ge-eraser-softness', suffix: '%' },
   ],
   clone: [
     { label: 'Size', sel: '.ge-size-slider', kind: 'size' },
     { label: 'Opacity', id: 'ge-clone-opacity', suffix: '%' },
     { label: 'Flow', id: 'ge-clone-flow', suffix: '%' },
-    { label: 'Hardness', id: 'ge-clone-softness', suffix: '%' },
+    { label: 'Softness', id: 'ge-clone-softness', suffix: '%' },
   ],
   wand: [
     { label: 'Mode', kind: 'buttons', sel: '.ge-wand-mode-btn', attr: 'data-wand-mode' },

@@ -73,7 +73,10 @@ const REGISTRY = {
   ok:        colorTabPanel('ok'),
   swatches:  colorTabPanel('swatches'),
   layers:    sectionPanel('.ge-layers'),
-  brush:     sectionPanel('#ge-brush-section'),
+  // The Brush Settings section is TOOL-bound (shown via inline display only when
+  // the Brush tool is active), so a .ge-hidden toggle can't show it and would
+  // latently hide it. Drive it by selecting the Brush tool instead.
+  brush:     relayPanel('#ge-brush-section', '.ge-tool-btn[data-tool="brush"]'),
   history:   relayPanel('#ge-history-panel', '#ge-history-btn'),
   histogram: sectionPanel('#ge-histogram-section'),
   navigator: sectionPanel('#ge-navigator-section'),
@@ -101,7 +104,7 @@ export function wireWindowMenu(bar) {
   // panels (ok, swatches, history, actions, timeline) are excluded — their
   // state is owned elsewhere. Restore the saved visibility before the first
   // checkmark refresh; the click handler below saves on every toggle.
-  const PERSIST = new Set(['color', 'layers', 'brush', 'histogram', 'navigator', 'toolbar', 'options']);
+  const PERSIST = new Set(['color', 'layers', 'histogram', 'navigator', 'toolbar', 'options']); // not 'brush' — it's tool-bound, not a persistable panel
   for (const item of live) {
     const key = item.dataset.relayPanel;
     if (!PERSIST.has(key)) continue;

@@ -116,7 +116,7 @@ export function createBrushQuickPick() {
 
     // Size + Hardness sliders (remotes of the canonical inputs).
     panel.appendChild(mkSlider('Size', () => document.querySelector('.ge-size-slider'), { size: true }));
-    panel.appendChild(mkSlider('Hardness', () => document.getElementById('ge-brush-softness'), { suffix: '%' }));
+    panel.appendChild(mkSlider('Softness', () => document.getElementById('ge-brush-softness'), { suffix: '%' }));
 
     // Search box.
     const search = document.createElement('input');
