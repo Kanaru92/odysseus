@@ -40,7 +40,9 @@ function readOpts() {
   return {
     type,
     mode: (modeBtn && modeBtn.dataset.gradMode) || 'fg-bg',
-    opacity: Math.max(0, Math.min(1, (parseInt(op && op.value) || 100) / 100)),
+    // NB: don't use `|| 100` — that swallows a legitimate 0 (slider min). Coerce
+    // explicitly so opacity 0 paints transparent, not 100%.
+    opacity: (() => { const v = op ? parseInt(op.value, 10) : 100; return Math.max(0, Math.min(1, (Number.isFinite(v) ? v : 100) / 100)); })(),
   };
 }
 

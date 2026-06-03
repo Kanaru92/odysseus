@@ -491,6 +491,16 @@ export function createLayerPanelRenderer(deps) {
       copy.ctx.drawImage(layer.canvas, 0, 0);
       copy.opacity = layer.opacity;
       copy.visible = layer.visible;
+      // Carry the non-destructive layer properties too (PS Duplicate Layer keeps
+      // blend mode, clip, locks, colour label, effects, fill spec, editable text).
+      copy.blendMode = layer.blendMode || 'source-over';
+      copy.clipped = !!layer.clipped;
+      copy.lockAlpha = !!layer.lockAlpha;
+      copy.locked = !!layer.locked;
+      copy.colorLabel = layer.colorLabel || null;
+      if (layer.fx) copy.fx = JSON.parse(JSON.stringify(layer.fx));
+      if (layer.fill) copy.fill = JSON.parse(JSON.stringify(layer.fill));
+      if (layer.text) copy.text = JSON.parse(JSON.stringify(layer.text));
       const srcOff = state.layerOffsets.get(layer.id) || { x: 0, y: 0 };
       state.layerOffsets.set(copy.id, { x: srcOff.x, y: srcOff.y });
       if (Array.isArray(layer.masks) && layer.masks.length) {
@@ -1180,13 +1190,17 @@ export function createLayerPanelRenderer(deps) {
           intent.movedId = movedId;
 
           const prevActive = state.activeLayerId;
+          // Snapshot BEFORE mutating (the documented "saveState runs FIRST" contract)
+          // so Ctrl+Z restores the pre-drag order; drop the snapshot if nothing moved.
+          saveState('Reorder layers');
           if (reorderLayersFromVisual(orderedIds, intent)) {
             if (state.layers.some((l) => l.id === prevActive)) {
               state.activeLayerId = prevActive; // preserve selection
             }
-            saveState();
             render();    // re-render so indent / membership styling updates
             composite();
+          } else {
+            try { state.undoStack.pop(); } catch {}
           }
         },
       });

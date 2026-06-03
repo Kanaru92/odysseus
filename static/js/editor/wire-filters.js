@@ -36,9 +36,34 @@ export function wireFilters({ activeLayer, saveState, composite }) {
     ? { shadow: state.bgColor || '#000000', highlight: state.color || '#ffffff' }
     : undefined);
 
+  // Confine a filtered result to the active selection: where the (layer-local)
+  // wandMask is partially/fully unselected, blend the filtered pixels back toward
+  // the pre-filter pixels by (1 - coverage). No selection → unchanged.
+  function maskToSelection(l, beforeImg, afterImg) {
+    if (!state.wandMask || state.wandLayerId !== l.id) return afterImg;
+    let md;
+    try {
+      const mc = document.createElement('canvas');
+      mc.width = l.canvas.width; mc.height = l.canvas.height;
+      mc.getContext('2d').drawImage(state.wandMask, 0, 0); // wandMask is layer-local to wandLayerId
+      md = mc.getContext('2d').getImageData(0, 0, mc.width, mc.height).data;
+    } catch { return afterImg; }
+    const a = afterImg.data, b = beforeImg.data;
+    for (let i = 0; i < a.length; i += 4) {
+      const m = md[i + 3] / 255;
+      if (m >= 0.999) continue;
+      const inv = 1 - m;
+      a[i] = a[i] * m + b[i] * inv;
+      a[i + 1] = a[i + 1] * m + b[i + 1] * inv;
+      a[i + 2] = a[i + 2] * m + b[i + 2] * inv;
+      a[i + 3] = a[i + 3] * m + b[i + 3] * inv;
+    }
+    return afterImg;
+  }
+
   function snapshot() {
     const l = activeLayer();
-    if (!l) { orig = null; origLayerId = null; origLayer = null; return; }
+    if (!l || l.locked) { orig = null; origLayerId = null; origLayer = null; return; } // locked → no filter (matches other tools)
     orig = l.ctx.getImageData(0, 0, l.canvas.width, l.canvas.height);
     origLayerId = l.id;
     origLayer = l;
@@ -79,6 +104,7 @@ export function wireFilters({ activeLayer, saveState, composite }) {
       if (gen !== previewGen) return;                 // superseded by a newer preview
       const cur = activeLayer();
       if (!orig || !cur || cur.id !== targetId) return; // layer/tool changed mid-flight
+      maskToSelection(cur, orig, out); // confine the preview to the active selection
       cur.ctx.putImageData(out, 0, 0);
       cur._pixVer = (cur._pixVer || 0) + 1; // preview is async + skips saveState; invalidate the fx-cache
       applied = false;
@@ -87,13 +113,14 @@ export function wireFilters({ activeLayer, saveState, composite }) {
   }
   function apply() {
     const l = activeLayer();
-    if (!orig || !l || l.id !== origLayerId) return;
+    if (!orig || !l || l.id !== origLayerId || l.locked) return;
     previewGen++; // invalidate any in-flight async preview so it can't land after the bake
     l.ctx.putImageData(orig, 0, 0); // restore so the undo point = pre-filter
     saveState('Filter');
     const { type, amount } = opts();
     const img = l.ctx.getImageData(0, 0, l.canvas.width, l.canvas.height);
     applyFilter(img, type, amount, extraOpts(type));
+    maskToSelection(l, orig, img); // confine the bake to the active selection
     l.ctx.putImageData(img, 0, 0);
     applied = true;
     orig = null; origLayer = null; // committed; next change re-snapshots

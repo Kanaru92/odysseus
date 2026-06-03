@@ -101,6 +101,10 @@ export function mergeLayerDownAtIndex(idx) {
     lower.ctx.drawImage(upperSrc, dx, dy);
     lower.ctx.restore();
   }
+  // The destination now holds raster pixels (text/fill merged in). Drop its
+  // editable text/fill models, else double-clicking re-renders ONLY the text/fill
+  // and wipes the merged-in content (data loss).
+  delete lower.text; delete lower.fill;
   state.layers.splice(idx, 1);
   state.layerOffsets.delete(upper.id);
   state.activeLayerId = lower.id;
@@ -158,6 +162,7 @@ export function wireMergeButtons({ saveState, createLayer, renderLayerPanel, com
     base.ctx.drawImage(tmp, 0, 0);
     base.layerMask = null; base.fx = null; base.adjLayers = [];
     base._adjFinal = null; base._adjCache = null; delete base.maskEnabled;
+    delete base.text; delete base.fill; // flattened raster — drop editable models (else re-edit wipes it)
     base.blendMode = 'source-over'; base.opacity = 1; base.groupId = null;
     for (const l of state.layers) { if (l !== base) state.layerOffsets.delete(l.id); }
     state.layerOffsets.set(base.id, { x: 0, y: 0 });

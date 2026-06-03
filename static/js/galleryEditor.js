@@ -2868,10 +2868,11 @@ function _eyedropperPick(e) {
   const hex = '#' + [r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('');
   state.color = hex;
   if (state.container) {
-    state.container.querySelectorAll('.ge-color-picker').forEach((el) => {
-      el.value = hex;
-      el.dispatchEvent(new Event('input', { bubbles: true }));
-    });
+    // Eyedropper sets the FOREGROUND only (PS behaviour). '.ge-color-picker' is on
+    // BOTH the FG and BG swatches, so target the FG input specifically — dispatching
+    // on the BG swatch used to clobber state.bgColor on every pick.
+    const fgEl = state.container.querySelector('.ge-fg-color') || state.container.querySelector('.ge-color-picker');
+    if (fgEl) { fgEl.value = hex; fgEl.dispatchEvent(new Event('input', { bubbles: true })); }
   }
 }
 
@@ -6255,9 +6256,11 @@ function _buildEditor(container) {
     if (lbl) lbl.textContent = _liqS.value + '%';
   });
 
-  // Smudge strength label.
+  // Smudge strength — write state too, else strengthVal()'s state.smudgeStrength
+  // fast-path (pinned by any preset) makes the slider a dead label-only control.
   const _smudgeS = document.getElementById('ge-smudge-strength');
   _smudgeS?.addEventListener('input', () => {
+    state.smudgeStrength = Math.max(0, Math.min(1, (parseInt(_smudgeS.value, 10) || 60) / 100));
     const lbl = document.getElementById('ge-smudge-strength-label');
     if (lbl) lbl.textContent = _smudgeS.value + '%';
   });
