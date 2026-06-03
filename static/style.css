@@ -23156,6 +23156,9 @@ input.settings-select::placeholder { color: color-mix(in srgb, var(--fg) 35%, tr
    stays in the DOM as the canonical source the top-bar remote proxies; we just
    don't show the duplicate here. */
 .ge-control-row.ge-dup-top { display: none !important; }
+/* Selection refine ops + Save/Load now live in the Refine Selection dialog
+   (Select ▸ Refine Selection), so they're hidden from the tool panel. */
+.ge-control-row.ge-moved-to-refine { display: none !important; }
 .ge-control-row label {
   flex-shrink: 0;
   opacity: 0.7;

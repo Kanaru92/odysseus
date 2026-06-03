@@ -71,6 +71,7 @@ const MENUS = [
     { label: 'Deselect', key: 'ctrl+shift+d' },
     { label: 'Inverse', key: 'ctrl+alt+i' },
     { sep: true },
+    { label: 'Refine Selection…', click: '#ge-select-mask-trigger' },
     { label: 'Color Range (foreground)…', click: '#ge-color-range' },
   ] },
   { title: 'Filter', items: [

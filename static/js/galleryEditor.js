@@ -3227,6 +3227,93 @@ function _promptCheckerboard() {
   document.addEventListener('keydown', onKey, true);
 }
 
+// Refine Selection — a themed modal that gathers the selection-refinement
+// controls (Feather / Edge stroke / Smooth / Contrast / Shift) + Save/Load
+// Selection into one workspace, so they live here instead of cluttering the
+// tool panel. Each control RELAYS to the already-wired canonical input/button
+// (wire-selection-controls.js); this surface owns no state — the handlers it
+// drives all operate on the current selection (state.wandMask).
+function _openSelectMask() {
+  let overlay = document.getElementById('ge-select-mask-overlay');
+  if (overlay) overlay.remove();
+  overlay = document.createElement('div');
+  overlay.id = 'ge-select-mask-overlay';
+  overlay.className = 'modal';
+  const hasSel = !!(state.wandMask || (state.lassoPoints && state.lassoPoints.length));
+  const featCanon = document.getElementById('ge-wand-feather');
+  const growCanon = document.getElementById('ge-wand-grow');
+  const fv = featCanon ? featCanon.value : '0';
+  const gv = growCanon ? growCanon.value : '0';
+  const rowCss = 'display:flex;align-items:center;gap:8px;margin:8px 0;font-size:12px;';
+  const btnRow = 'display:flex;gap:6px;flex-wrap:wrap;margin:10px 0;';
+  overlay.innerHTML = `
+    <div class="ge-prompt-card" style="background:#26262b;border:1px solid rgba(255,255,255,0.14);border-radius:10px;padding:18px;min-width:300px;max-width:340px;color:#eee;box-shadow:0 18px 48px rgba(0,0,0,0.55);">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+        <div style="font-weight:600;">Refine Selection</div>
+        <button id="ge-sm-close" class="ge-btn ge-btn-sm" title="Close (Esc)">✕</button>
+      </div>
+      <div id="ge-sm-nosel" style="display:${hasSel ? 'none' : 'block'};font-size:11px;opacity:0.6;margin-bottom:8px;">No active selection — make one with a selection tool first.</div>
+      <label style="${rowCss}"><span style="min-width:74px;opacity:0.7;">Feather</span>
+        <input id="ge-sm-feather" type="range" min="0" max="200" value="${fv}" style="flex:1;min-width:0;">
+        <span id="ge-sm-feather-val" style="min-width:34px;text-align:right;opacity:0.85;">${fv}px</span></label>
+      <label style="${rowCss}"><span style="min-width:74px;opacity:0.7;">Edge stroke</span>
+        <input id="ge-sm-grow" type="range" min="-40" max="40" value="${gv}" style="flex:1;min-width:0;">
+        <span id="ge-sm-grow-val" style="min-width:34px;text-align:right;opacity:0.85;">${gv}px</span></label>
+      <div style="${btnRow}">
+        <button class="ge-btn ge-btn-sm" id="ge-sm-smooth" title="Round off jagged selection edges">Smooth</button>
+        <button class="ge-btn ge-btn-sm" id="ge-sm-contrast" title="Harden the selection edge">Contrast</button>
+        <button class="ge-btn ge-btn-sm" id="ge-sm-shift-in" title="Contract the edge 2px">Shift −</button>
+        <button class="ge-btn ge-btn-sm" id="ge-sm-shift-out" title="Expand the edge 2px">Shift +</button>
+      </div>
+      <div style="border-top:1px solid rgba(255,255,255,0.1);margin:12px 0 8px;"></div>
+      <div style="display:flex;gap:6px;align-items:center;">
+        <select id="ge-sm-channel" title="Saved selections" style="flex:1;min-width:0;font-size:11px;background:#1c1c1f;color:#eee;border:1px solid #444;border-radius:4px;padding:3px;"></select>
+        <button class="ge-btn ge-btn-sm" id="ge-sm-save" title="Save the current selection">Save</button>
+        <button class="ge-btn ge-btn-sm" id="ge-sm-load" title="Load the chosen selection">Load</button>
+      </div>
+      <div style="display:flex;justify-content:flex-end;margin-top:14px;">
+        <button id="ge-sm-done" class="ge-btn ge-btn-primary ge-btn-sm">Done</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  const $ = (id) => overlay.querySelector('#' + id);
+  const relay = (id) => document.getElementById(id)?.click();
+  // Feather / Edge-stroke relay to the canonical sliders (which recomposite).
+  const drive = (canonId, valEl, suffix) => (e) => {
+    const c = document.getElementById(canonId);
+    if (c) { c.value = e.target.value; c.dispatchEvent(new Event('input', { bubbles: true })); }
+    if (valEl) valEl.textContent = e.target.value + suffix;
+  };
+  $('ge-sm-feather').addEventListener('input', drive('ge-wand-feather', $('ge-sm-feather-val'), 'px'));
+  $('ge-sm-grow').addEventListener('input', drive('ge-wand-grow', $('ge-sm-grow-val'), 'px'));
+  $('ge-sm-smooth').addEventListener('click', () => relay('ge-wand-smooth'));
+  $('ge-sm-contrast').addEventListener('click', () => relay('ge-wand-contrast'));
+  $('ge-sm-shift-in').addEventListener('click', () => relay('ge-wand-shift-in'));
+  $('ge-sm-shift-out').addEventListener('click', () => relay('ge-wand-shift-out'));
+  // Mirror the saved-selection channel list; Save/Load relay to the canonical
+  // controls (Load first syncs the chosen channel into the canonical select).
+  const chan = $('ge-sm-channel');
+  const syncChannels = () => {
+    const src = document.getElementById('ge-sel-channel');
+    chan.innerHTML = src ? src.innerHTML : '<option value="">(no saved selections)</option>';
+    if (src) chan.value = src.value;
+  };
+  syncChannels();
+  $('ge-sm-save').addEventListener('click', () => { relay('ge-sel-save'); syncChannels(); });
+  $('ge-sm-load').addEventListener('click', () => {
+    const src = document.getElementById('ge-sel-channel');
+    if (src) src.value = chan.value;
+    relay('ge-sel-load');
+  });
+  const close = () => { overlay.remove(); document.removeEventListener('keydown', onKey, true); _activePromptClose = null; };
+  _activePromptClose = close; // let the Escape hard guard dismiss this modal
+  const onKey = (e) => { if (e.key === 'Escape' || e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); close(); } };
+  $('ge-sm-close').addEventListener('click', close);
+  $('ge-sm-done').addEventListener('click', close);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+  document.addEventListener('keydown', onKey, true);
+}
+
 // Themed prompt for Image Size: W / H with an optional aspect lock + an
 // interpolation method selector. Self-contained overlay (no shared markup) so
 // it can't regress the new-canvas dialog.
@@ -5030,6 +5117,13 @@ function _buildEditor(container) {
   _imageSizeTrigger.hidden = true;
   _imageSizeTrigger.addEventListener('click', () => _promptImageSize());
   container.appendChild(_imageSizeTrigger);
+  // Hidden relay target for the Select menu's "Refine Selection…" item + the
+  // selection tools' options-bar button.
+  const _selectMaskTrigger = document.createElement('button');
+  _selectMaskTrigger.id = 'ge-select-mask-trigger';
+  _selectMaskTrigger.hidden = true;
+  _selectMaskTrigger.addEventListener('click', () => _openSelectMask());
+  container.appendChild(_selectMaskTrigger);
   // Hidden relay targets for the Layer menu's Smart Object items.
   for (const [id, fn] of [
     ['ge-smart-convert', () => _smartObject.convertToSmart()],

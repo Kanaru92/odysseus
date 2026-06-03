@@ -130,7 +130,7 @@ export function controlsHTML({ color, brushSize, wandTolerance }) {
         <label>Feather <span id="ge-lasso-feather-label">0px</span></label>
         <input type="range" id="ge-lasso-feather" min="0" max="200" value="0" title="Soften the selection edge — feathers the mask alpha." />
       </div>
-      <div class="ge-control-row ge-eraser-row ge-sel-refine" id="ge-lasso-refine-grow" style="display:none;">
+      <div class="ge-control-row ge-eraser-row ge-sel-refine ge-moved-to-refine" id="ge-lasso-refine-grow" style="display:none;">
         <span class="ge-eraser-preview" id="ge-lasso-grow-preview" aria-hidden="true"></span>
         <label>Edge stroke <span id="ge-lasso-grow-label">0px</span></label>
         <input type="range" id="ge-lasso-grow" min="-40" max="40" value="0" title="Expand (+) or contract (−) the selection before baking." />
@@ -172,12 +172,12 @@ export function controlsHTML({ color, brushSize, wandTolerance }) {
         <label>Feather <span id="ge-wand-feather-label">0px</span></label>
         <input type="range" id="ge-wand-feather" min="0" max="200" value="0" title="Soften the selection edge — feathers the mask alpha." />
       </div>
-      <div class="ge-control-row ge-eraser-row ge-sel-refine" id="ge-wand-refine-grow" style="display:none;">
+      <div class="ge-control-row ge-eraser-row ge-sel-refine ge-moved-to-refine" id="ge-wand-refine-grow" style="display:none;">
         <span class="ge-eraser-preview" id="ge-wand-grow-preview" aria-hidden="true"></span>
         <label>Edge stroke <span id="ge-wand-grow-label">0px</span></label>
         <input type="range" id="ge-wand-grow" min="-40" max="40" value="0" title="Expand (+) or contract (−) the selection before baking." />
       </div>
-      <div class="ge-control-row ge-actions" id="ge-wand-refine-ops" style="margin-top:2px;flex-wrap:wrap;gap:var(--ge-s2,4px);" title="Refine the active selection (Select & Mask).">
+      <div class="ge-control-row ge-actions ge-moved-to-refine" id="ge-wand-refine-ops" style="margin-top:2px;flex-wrap:wrap;gap:var(--ge-s2,4px);" title="Refine the active selection — now in Select ▸ Refine Selection.">
         <button type="button" class="ge-btn ge-btn-sm" id="ge-wand-smooth" title="Smooth — round off jagged/staircased selection edges">Smooth</button>
         <button type="button" class="ge-btn ge-btn-sm" id="ge-wand-contrast" title="Contrast — harden the selection edge">Contrast</button>
         <button type="button" class="ge-btn ge-btn-sm" id="ge-wand-shift-in" title="Shift the selection edge inward (contract 2px)">Shift −</button>
@@ -208,7 +208,7 @@ export function controlsHTML({ color, brushSize, wandTolerance }) {
           To Mask
         </button>
       </div>
-      <div class="ge-control-row ge-actions" style="margin-top:4px;gap:4px;align-items:center;">
+      <div class="ge-control-row ge-actions ge-moved-to-refine" style="margin-top:4px;gap:4px;align-items:center;">
         <select id="ge-sel-channel" title="Saved selections" style="flex:1;min-width:0;font-size:11px;background:#1c1c1f;color:#eee;border:1px solid #444;border-radius:4px;padding:2px;"><option value="">(no saved selections)</option></select>
         <button class="ge-btn ge-btn-sm" id="ge-sel-save" title="Save the current selection to a channel">Save Sel</button>
         <button class="ge-btn ge-btn-sm" id="ge-sel-load" title="Load the chosen saved selection">Load Sel</button>
