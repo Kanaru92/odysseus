@@ -33,8 +33,20 @@ function applySmartFilterStack(layer) {
   let img = null;
   for (const f of fx) {
     if (!f || f.enabled === false) continue;
+    const op = f.opacity != null ? f.opacity : 100;
+    if (op <= 0) continue; // fully transparent → this filter contributes nothing
     if (!img) img = layer.ctx.getImageData(0, 0, W, H);
-    try { applyFilter(img, f.type, f.amount != null ? f.amount : 50, f.opts); } catch {}
+    if (op >= 100) {
+      try { applyFilter(img, f.type, f.amount != null ? f.amount : 50, f.opts); } catch {}
+    } else {
+      // Per-filter opacity: blend the filtered result back over its input. Each
+      // filter's output (at its opacity) becomes the next filter's input, so the
+      // stack composes as expected.
+      const before = new Uint8ClampedArray(img.data);
+      try { applyFilter(img, f.type, f.amount != null ? f.amount : 50, f.opts); } catch {}
+      const after = img.data, t = op / 100;
+      for (let i = 0; i < after.length; i++) after[i] = before[i] + (after[i] - before[i]) * t;
+    }
   }
   if (img) layer.ctx.putImageData(img, 0, 0);
 }

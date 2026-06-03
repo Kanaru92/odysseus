@@ -704,6 +704,22 @@ function _openSmartFilters() {
         sl.addEventListener('change', () => { amtSaved = false; });
         row.appendChild(amtRow);
       }
+      // Per-filter opacity (blends the filter's result over its input) — applies
+      // to every filter, mirrors PS smart-filter blending options.
+      {
+        const opRow = document.createElement('label');
+        opRow.style.cssText = 'display:flex;align-items:center;gap:8px;font-size:11px;opacity:0.85;';
+        const ov = f.opacity != null ? f.opacity : 100;
+        opRow.innerHTML = `Opacity <input type="range" min="0" max="100" value="${ov}" style="flex:1;"><span style="width:32px;text-align:right;">${ov}</span>`;
+        const ol = opRow.querySelector('input'); const osv = opRow.querySelector('span');
+        let opSaved = false;
+        const opSnap = () => { if (!opSaved) { _saveState('Filter opacity'); opSaved = true; } };
+        ol.addEventListener('pointerdown', opSnap);
+        ol.addEventListener('keydown', opSnap);
+        ol.addEventListener('input', () => { opSnap(); f.opacity = parseInt(ol.value, 10); osv.textContent = ol.value; rebake(); });
+        ol.addEventListener('change', () => { opSaved = false; });
+        row.appendChild(opRow);
+      }
       listEl.appendChild(row);
     });
   };
@@ -711,7 +727,7 @@ function _openSmartFilters() {
   overlay.querySelector('#ge-smartfx-add').addEventListener('click', () => {
     const type = overlay.querySelector('#ge-smartfx-add-type').value;
     _saveState('Add smart filter');
-    const entry = { id: uid(), type, amount: 50, enabled: true };
+    const entry = { id: uid(), type, amount: 50, opacity: 100, enabled: true };
     // Gradient Map needs colours (BG→FG) or it always maps black→white. Capture
     // the current FG/BG at add time (the destructive path passes them live).
     if (type === 'gradient-map') entry.opts = { shadow: state.bgColor || '#000000', highlight: state.color || '#ffffff' };
