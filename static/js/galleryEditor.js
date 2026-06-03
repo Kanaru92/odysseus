@@ -10,6 +10,7 @@ import { gradientOverlay } from './editor/fx/layer-style-gradient-overlay.js';
 import { satin } from './editor/fx/layer-style-satin.js';
 import { bevelEmboss } from './editor/fx/layer-style-bevel.js';
 import { strokeStyle } from './editor/fx/layer-style-stroke.js';
+import { guidedRefineSelection } from './editor/fx/guided-refine.js';
 import modalManager from './modalManager.js';
 import { canvasCoords as _canvasCoords } from './editor/canvas-coords.js';
 import { drawCheckerboard as _drawCheckerboard, setChecker, checkerConfig, CHECKER_SIZES, CHECKER_PRESETS } from './editor/checkerboard.js';
@@ -3253,6 +3254,9 @@ function _openSelectMask() {
         <button id="ge-sm-close" class="ge-btn ge-btn-sm" title="Close (Esc)">✕</button>
       </div>
       <div id="ge-sm-nosel" style="display:${hasSel ? 'none' : 'block'};font-size:11px;opacity:0.6;margin-bottom:8px;">No active selection — make one with a selection tool first.</div>
+      <label style="${rowCss}"><span style="min-width:74px;opacity:0.7;" title="Edge-aware: snaps the selection to the image's real edges within this radius (guided-filter matting).">Radius</span>
+        <input id="ge-sm-radius" type="range" min="0" max="50" value="0" style="flex:1;min-width:0;">
+        <span id="ge-sm-radius-val" style="min-width:34px;text-align:right;opacity:0.85;">0px</span></label>
       <label style="${rowCss}"><span style="min-width:74px;opacity:0.7;">Feather</span>
         <input id="ge-sm-feather" type="range" min="0" max="200" value="${fv}" style="flex:1;min-width:0;">
         <span id="ge-sm-feather-val" style="min-width:34px;text-align:right;opacity:0.85;">${fv}px</span></label>
@@ -3290,6 +3294,33 @@ function _openSelectMask() {
   $('ge-sm-contrast').addEventListener('click', () => relay('ge-wand-contrast'));
   $('ge-sm-shift-in').addEventListener('click', () => relay('ge-wand-shift-in'));
   $('ge-sm-shift-out').addEventListener('click', () => relay('ge-wand-shift-out'));
+  // Edge-aware Radius (guided-filter matting): snapshot the selection on open so
+  // re-dragging Radius re-refines from the ORIGINAL (never compounding); the
+  // first refine pushes one undo step. Radius 0 restores the original.
+  let _refineBase = null, _refineSaved = false;
+  const _captureBase = () => {
+    if (_refineBase || !state.wandMask) return;
+    const c = document.createElement('canvas'); c.width = state.wandMask.width; c.height = state.wandMask.height;
+    c.getContext('2d').drawImage(state.wandMask, 0, 0); _refineBase = c;
+  };
+  _captureBase();
+  const _applyRefine = (radius) => {
+    if (!state.wandMask) return;
+    _captureBase();
+    if (!_refineSaved) { try { _saveState('Refine edges'); } catch {} _refineSaved = true; }
+    const mw = state.wandMask.width, mh = state.wandMask.height;
+    const wctx = state.wandMask.getContext('2d');
+    if (radius <= 0) { wctx.clearRect(0, 0, mw, mh); wctx.drawImage(_refineBase, 0, 0); state.wandMask._ants = null; composite(); return; }
+    const mdata = _refineBase.getContext('2d').getImageData(0, 0, mw, mh).data;
+    const g = document.createElement('canvas'); g.width = mw; g.height = mh;
+    g.getContext('2d').drawImage(state.mainCanvas, 0, 0, mw, mh);
+    const gdata = g.getContext('2d').getImageData(0, 0, mw, mh).data;
+    const out = guidedRefineSelection(mdata, gdata, mw, mh, radius);
+    wctx.putImageData(new ImageData(out, mw, mh), 0, 0);
+    state.wandMask._ants = null; composite();
+  };
+  $('ge-sm-radius').addEventListener('input', (e) => { $('ge-sm-radius-val').textContent = e.target.value + 'px'; });
+  $('ge-sm-radius').addEventListener('change', (e) => { const v = +e.target.value; $('ge-sm-radius-val').textContent = v + 'px'; _applyRefine(v); });
   // Mirror the saved-selection channel list; Save/Load relay to the canonical
   // controls (Load first syncs the chosen channel into the canonical select).
   const chan = $('ge-sm-channel');
