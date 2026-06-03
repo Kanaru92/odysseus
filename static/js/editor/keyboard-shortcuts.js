@@ -52,6 +52,7 @@
  */
 import { state } from './state.js';
 import { copyMerged, pasteInPlace } from './clipboard-ops.js';
+import { nextGroupedTool } from './panels/tool-flyout.js';
 
 export function wireKeyboardShortcuts(deps) {
   const {
@@ -68,9 +69,10 @@ export function wireKeyboardShortcuts(deps) {
     confirmDistort, cancelDistort,
     polyLassoClose, polyLassoCancel,
     magLassoClose, magLassoCancel,
+    addManagedListener,
   } = deps;
 
-  document.addEventListener('keydown', (e) => {
+  const _onKeyDown = (e) => {
     if (!state.editorOpen) return;
     // Arrow keys nudge the active layer when the Move tool is active: 1px, or
     // 10px with Shift (PS-style nudge). Skips text fields and active
@@ -453,7 +455,14 @@ export function wireKeyboardShortcuts(deps) {
     }
     const toolId = toolKeyMap[e.key.toLowerCase()];
     if (toolId) {
-      const toolBtn = toolbar.querySelector(`[data-tool="${toolId}"]`);
+      // Shift+<tool key> cycles through that slot's sub-tools (industry-standard,
+      // e.g. Shift+L → Lasso → Polygonal → Magnetic). Plain key picks the slot.
+      let target = toolId;
+      if (e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        const nx = nextGroupedTool(state.tool, toolId);
+        if (nx) target = nx;
+      }
+      const toolBtn = toolbar.querySelector(`[data-tool="${target}"]`);
       if (toolBtn) toolBtn.click();
     }
     // Bracket keys for brush size — ±10% multiplier mirrors the
@@ -536,5 +545,10 @@ export function wireKeyboardShortcuts(deps) {
       if (e.key === 'c') { e.preventDefault(); lassoCopyToLayer(); }
       if (e.key === 'm') { e.preventDefault(); lassoToMask(); }
     }
-  });
+  };
+  // Register via the editor's managed-listener system so it's removed on close
+  // (the handler closes over `toolbar`; left attached it would retain the whole
+  // toolbar DOM across reopens). Falls back to a raw listener if not provided.
+  if (addManagedListener) addManagedListener(document, 'keydown', _onKeyDown);
+  else document.addEventListener('keydown', _onKeyDown);
 }

@@ -114,29 +114,48 @@ export function wireToolFlyouts(toolbar) {
     }
     (document.getElementById('gallery-editor-container') || document.body).appendChild(win);
     const r = anchorBtn.getBoundingClientRect();
-    win.style.left = Math.round(r.right + 6) + 'px';
-    win.style.top = Math.min(window.innerHeight - win.offsetHeight - 8, Math.max(8, r.top)) + 'px';
+    // Default to the right of the rail; if that overflows the viewport (narrow
+    // window / right-docked rail), flip to the left of the slot, then clamp.
+    let left = r.right + 6;
+    if (left + win.offsetWidth > window.innerWidth - 8) left = r.left - win.offsetWidth - 6;
+    if (left < 8) left = 8;
+    win.style.left = Math.round(left) + 'px';
+    win.style.top = Math.round(Math.min(window.innerHeight - win.offsetHeight - 8, Math.max(8, r.top))) + 'px';
     openFly = win;
     setTimeout(() => document.addEventListener('pointerdown', onOutside, true), 0);
   };
 
   // --- Open triggers: right-click + press-and-hold ---
-  let longFired = false, pressTimer = null, pressX = 0, pressY = 0;
+  let longFired = false, pressTimer = null, expireTimer = null, pressX = 0, pressY = 0;
   const cancelPress = () => { if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; } };
+  // Clear the click-swallow flag. Used on a fresh press and on gestures that
+  // end with NO trailing toolbar click (pointercancel from a scroll, or a
+  // release off the rail) — otherwise a stale flag could swallow a later
+  // programmatic .click() relay (keyboard shortcut / menu).
+  const clearLong = () => { longFired = false; if (expireTimer) { clearTimeout(expireTimer); expireTimer = null; } };
   for (const rec of groups) {
     for (const b of rec.btns) {
       b.addEventListener('contextmenu', (e) => { e.preventDefault(); openFlyout(rec, rec.shown || b); });
       b.addEventListener('pointerdown', (e) => {
         if (e.button !== 0) return;
-        longFired = false; pressX = e.clientX; pressY = e.clientY;
+        clearLong(); pressX = e.clientX; pressY = e.clientY;
         cancelPress();
-        pressTimer = setTimeout(() => { longFired = true; openFlyout(rec, rec.shown || b); }, 450);
+        pressTimer = setTimeout(() => {
+          pressTimer = null;
+          longFired = true;
+          openFlyout(rec, rec.shown || b);
+          // Bound the flag's lifetime so it can never outlive this gesture: the
+          // real trailing click fires within a few ms (and the capture handler
+          // clears it); this timeout covers a press that ends with no click.
+          if (expireTimer) clearTimeout(expireTimer);
+          expireTimer = setTimeout(() => { longFired = false; expireTimer = null; }, 700);
+        }, 450);
       });
       b.addEventListener('pointermove', (e) => {
         if (pressTimer && (Math.abs(e.clientX - pressX) > 6 || Math.abs(e.clientY - pressY) > 6)) cancelPress();
       });
-      b.addEventListener('pointerup', cancelPress);
-      b.addEventListener('pointercancel', cancelPress);
+      b.addEventListener('pointerup', cancelPress);              // keep longFired so the trailing click is swallowed
+      b.addEventListener('pointercancel', () => { cancelPress(); clearLong(); });
       b.addEventListener('pointerleave', cancelPress);
     }
   }
@@ -145,7 +164,7 @@ export function wireToolFlyouts(toolbar) {
   // button's own bubble-phase select handler, so stopImmediatePropagation here
   // prevents the tool switch without touching that handler.
   toolbar.addEventListener('click', (e) => {
-    if (longFired) { longFired = false; e.stopImmediatePropagation(); e.preventDefault(); }
+    if (longFired) { clearLong(); e.stopImmediatePropagation(); e.preventDefault(); }
   }, true);
 
   // --- Promote the active member to the visible slot (keyboard/menu selects
@@ -158,4 +177,19 @@ export function wireToolFlyouts(toolbar) {
   });
   obs.observe(toolbar, { attributes: true, attributeFilter: ['class'], subtree: true });
   toolbar._flyoutObserver = obs;
+}
+
+/**
+ * Next sub-tool in the group reached by a tool key — for industry-standard
+ * Shift+key cycling through a slot's members. `keyToolId` is the tool the key
+ * maps to (always a group's first member). Cycles from `currentTool` if it's
+ * already in that group, otherwise starts at the group's first member. Returns
+ * null if the key doesn't belong to a group.
+ */
+export function nextGroupedTool(currentTool, keyToolId) {
+  const g = GROUPS.find((grp) => grp.members.includes(keyToolId));
+  if (!g) return null;
+  const i = g.members.indexOf(currentTool);
+  if (i === -1) return g.members[0];
+  return g.members[(i + 1) % g.members.length];
 }

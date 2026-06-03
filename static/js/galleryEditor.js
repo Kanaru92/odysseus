@@ -6072,6 +6072,7 @@ function _buildEditor(container) {
   // editor/keyboard-shortcuts.js.
   wireKeyboardShortcuts({
     toolbar, toolKeyMap: _toolKeyMap,
+    addManagedListener: _addManagedListener,
     composite, saveState: _saveState, undo, redo,
     toggleShortcuts: _toggleShortcuts,
     confirmTransform: _confirmTransform,
@@ -7145,6 +7146,9 @@ export function closeEditor() {
   // Remove any floated panel windows (they may be parented to document.body when
   // the editor container was unavailable, so the innerHTML clear below misses them).
   try { document.querySelectorAll('.ge-float-panel, .ge-icon-flyout, .ge-tool-flyout').forEach((el) => el.remove()); } catch {}
+  // Disconnect the tool-flyout MutationObserver so it isn't left observing a
+  // detached toolbar subtree across reopens.
+  try { state.container?.querySelector('.ge-toolbar')?._flyoutObserver?.disconnect(); } catch {}
   _setEditTabLabel(null);
   _unmountEditorLoading();
   state.editorOpen = false;
