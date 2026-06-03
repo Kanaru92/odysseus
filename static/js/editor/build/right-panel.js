@@ -250,5 +250,65 @@ export function buildRightPanel({ controlsHTML, layerPanelHTML }) {
     document.addEventListener('mouseup', onPanelUp);
   });
 
+  // --- Float-out for the Layers + Color panels (PS-style undock) ---
+  // A small ⤢ button in each panel's header pops it into a draggable window
+  // (the live node is MOVED, so its listeners survive); "Dock" returns it to its
+  // home slot. Floated windows are cleaned up by closeEditor's .ge-float-panel sweep.
+  function makeFloatable(panel, title, headerSel) {
+    if (!panel) return;
+    const home = panel.parentNode;
+    const anchor = panel.previousSibling;
+    const headerHost = panel.querySelector(headerSel) || panel;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.title = 'Float / dock this panel';
+    btn.textContent = '⤢';
+    btn.style.cssText = 'background:none;border:none;color:var(--fg);opacity:0.5;cursor:pointer;font-size:12px;line-height:1;padding:0 4px;margin-left:auto;flex:0 0 auto;';
+    headerHost.appendChild(btn);
+    let win = null;
+    const dock = () => {
+      if (!win) return;
+      panel.style.cssText = panel.dataset.geSavedCss || '';
+      if (anchor && anchor.parentNode === home) home.insertBefore(panel, anchor.nextSibling);
+      else if (home) home.insertBefore(panel, home.firstChild);
+      win.remove(); win = null;
+    };
+    const float = () => {
+      if (win) { dock(); return; }
+      win = document.createElement('div');
+      win.className = 'ge-float-panel';
+      win.style.cssText = 'position:fixed;z-index:300;width:280px;background:#26262b;border:1px solid rgba(255,255,255,0.16);border-radius:8px;box-shadow:0 14px 40px rgba(0,0,0,0.55);color:#eee;left:' + Math.round(window.innerWidth * 0.42) + 'px;top:90px;';
+      const bar = document.createElement('div');
+      bar.style.cssText = 'display:flex;align-items:center;gap:6px;padding:5px 8px;cursor:grab;background:rgba(255,255,255,0.06);border-radius:8px 8px 0 0;font-size:11px;font-weight:600;';
+      bar.innerHTML = `<span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${title}</span>`;
+      const db = document.createElement('button');
+      db.type = 'button'; db.className = 'ge-btn ge-btn-sm'; db.textContent = 'Dock'; db.title = 'Dock back into the panel';
+      bar.appendChild(db);
+      win.appendChild(bar);
+      const body = document.createElement('div');
+      body.style.cssText = 'padding:6px;max-height:72vh;overflow:auto;';
+      panel.dataset.geSavedCss = panel.style.cssText;
+      panel.style.cssText = 'max-height:none;flex:1 1 auto;display:flex;flex-direction:column;';
+      body.appendChild(panel);
+      win.appendChild(body);
+      (state.container || document.body).appendChild(win);
+      bar.addEventListener('pointerdown', (e) => {
+        if (e.target.closest('button')) return;
+        e.preventDefault();
+        const r = win.getBoundingClientRect(), ox = r.left, oy = r.top, sx = e.clientX, sy = e.clientY;
+        const mv = (ev) => {
+          win.style.left = Math.max(0, Math.min(window.innerWidth - 60, ox + ev.clientX - sx)) + 'px';
+          win.style.top = Math.max(0, Math.min(window.innerHeight - 30, oy + ev.clientY - sy)) + 'px';
+        };
+        const up = () => { document.removeEventListener('pointermove', mv); document.removeEventListener('pointerup', up); };
+        document.addEventListener('pointermove', mv); document.addEventListener('pointerup', up);
+      });
+      db.addEventListener('click', dock);
+    };
+    btn.addEventListener('click', float);
+  }
+  try { makeFloatable(layerPanel, 'Layers', '.ge-layers-header'); } catch {}
+  try { makeFloatable(controls.querySelector('#ge-color-panel'), 'Color', '.ge-color-tabs'); } catch {}
+
   return { rightPanel, controls, layerPanel, panelResize };
 }
