@@ -67,6 +67,7 @@ import {
   buildMergedMaskCanvas as _buildMergedMaskCanvasImpl,
 } from './editor/composite-helpers.js';
 import { buildToolbar as _buildToolbar } from './editor/build/toolbar.js';
+import { wireToolFlyouts as _wireToolFlyouts } from './editor/panels/tool-flyout.js';
 import { buildTopbar as _buildTopbar } from './editor/build/topbar.js';
 import { buildOptionsBar as _buildOptionsBar } from './editor/build/options-bar.js';
 import { createOptionsBar } from './editor/wire-options-bar.js';
@@ -5196,6 +5197,9 @@ function _buildEditor(container) {
   const editorBody = document.createElement('div');
   editorBody.className = 'ge-editor-body';
   editorBody.appendChild(toolbar);
+  // PS-style sub-tool flyouts: group related tools (lassos, wand/quick-select,
+  // crop/perspective-crop, heal/red-eye, brush/mixer) into one slot each.
+  try { _wireToolFlyouts(toolbar); } catch (_) {}
 
   // Canvas area (center)
   const canvasArea = document.createElement('div');
@@ -7140,7 +7144,7 @@ export function closeEditor() {
   if (state.aiInflight) { for (const ac of state.aiInflight) { try { ac.abort(); } catch {} } state.aiInflight.clear(); }
   // Remove any floated panel windows (they may be parented to document.body when
   // the editor container was unavailable, so the innerHTML clear below misses them).
-  try { document.querySelectorAll('.ge-float-panel, .ge-icon-flyout').forEach((el) => el.remove()); } catch {}
+  try { document.querySelectorAll('.ge-float-panel, .ge-icon-flyout, .ge-tool-flyout').forEach((el) => el.remove()); } catch {}
   _setEditTabLabel(null);
   _unmountEditorLoading();
   state.editorOpen = false;
