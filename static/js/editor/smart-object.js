@@ -84,6 +84,7 @@ export function createSmartObject({ activeLayer, saveState, composite, renderLay
     const layer = activeLayer();
     if (!layer) { uiModule?.showToast?.('Select a layer'); return; }
     if (layer.isGroup) { uiModule?.showToast?.('Groups can’t be Smart Objects'); return; }
+    if (layer.locked) { uiModule?.showToast?.('Layer locked'); return; }
     if (layer.isSmart) { uiModule?.showToast?.('Already a Smart Object'); return; }
     saveState('Convert to Smart Object');
     layer.sourceCanvas = cloneCanvas(layer.canvas);

@@ -136,11 +136,18 @@ export function createBrushEngine(preset) {
   // intersection, the dominant PS "Multiply" dual-brush look). Returns a shared
   // scratch canvas valid until the next call — fine because the caller consumes
   // it (across its symmetry copies) before stamping the next dab.
+  const DUAL_CAP = 1024; // ceiling for the per-dab modulation buffer; large brushes
+  // build at the cap and scale up on draw (texture detail past ~1k px isn't
+  // visible) — without this a 5000px dual brush allocates ~100MB per dab.
   function dualModulatedTip(tip, w, h, rt) {
-    const W = Math.max(1, Math.ceil(w)), H = Math.max(1, Math.ceil(h));
+    const cap = Math.min(1, DUAL_CAP / Math.max(1, Math.ceil(Math.max(w, h))));
+    const W = Math.max(1, Math.round(w * cap)), H = Math.max(1, Math.round(h * cap));
     if (!dualA) { dualA = document.createElement('canvas'); dualAx = dualA.getContext('2d'); dualB = document.createElement('canvas'); dualBx = dualB.getContext('2d'); }
-    dualA.width = W; dualA.height = H;   // (re)assigning width clears the bitmap
-    dualB.width = W; dualB.height = H;
+    // Reuse the scratch across same-size dabs (the common case in a stroke):
+    // reassigning width clears + reallocates the backing store, so only do that
+    // when the dims actually change; otherwise just clear the existing bitmap.
+    if (dualA.width !== W || dualA.height !== H) { dualA.width = W; dualA.height = H; dualB.width = W; dualB.height = H; }
+    else { dualAx.clearRect(0, 0, W, H); dualBx.clearRect(0, 0, W, H); }
     dualAx.drawImage(tip, 0, 0, W, H);
     const dsize = Math.max(1, Math.min(W, H) * clamp01(rt.dualScale != null ? rt.dualScale : 0.35));
     const dtip = secTipFor(dsize, rt);

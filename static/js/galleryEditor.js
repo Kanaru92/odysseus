@@ -635,6 +635,7 @@ function _openSmartFilters() {
   let layer = _activeParentLayer();
   if (!layer) { try { uiModule.showToast('Select a layer'); } catch {} return; }
   if (layer.isGroup) { try { uiModule.showToast('Groups can’t hold Smart Filters'); } catch {} return; }
+  if (layer.locked) { try { uiModule.showToast('Layer locked'); } catch {} return; }
   if (!layer.isSmart) { _smartObject.convertToSmart(); layer = _activeParentLayer(); if (!layer || !layer.isSmart) return; }
   if (!layer.smartFilters) layer.smartFilters = [];
 
@@ -693,8 +694,14 @@ function _openSmartFilters() {
         const v = f.amount != null ? f.amount : 50;
         amtRow.innerHTML = `Amount <input type="range" min="0" max="100" value="${v}" style="flex:1;"><span style="width:32px;text-align:right;">${v}</span>`;
         const sl = amtRow.querySelector('input'); const sv = amtRow.querySelector('span');
-        sl.addEventListener('mousedown', () => { _saveState('Adjust smart filter'); }); // pre-drag snapshot → one undo step
-        sl.addEventListener('input', () => { f.amount = parseInt(sl.value, 10); sv.textContent = sl.value; rebake(); });
+        // Snapshot exactly once per interaction (mouse drag, touch, OR arrow-key)
+        // so every modality yields a single, consistent undo step.
+        let amtSaved = false;
+        const snapOnce = () => { if (!amtSaved) { _saveState('Adjust smart filter'); amtSaved = true; } };
+        sl.addEventListener('pointerdown', snapOnce);
+        sl.addEventListener('keydown', snapOnce);
+        sl.addEventListener('input', () => { snapOnce(); f.amount = parseInt(sl.value, 10); sv.textContent = sl.value; rebake(); });
+        sl.addEventListener('change', () => { amtSaved = false; });
         row.appendChild(amtRow);
       }
       listEl.appendChild(row);
@@ -704,7 +711,11 @@ function _openSmartFilters() {
   overlay.querySelector('#ge-smartfx-add').addEventListener('click', () => {
     const type = overlay.querySelector('#ge-smartfx-add-type').value;
     _saveState('Add smart filter');
-    layer.smartFilters.push({ id: uid(), type, amount: 50, enabled: true });
+    const entry = { id: uid(), type, amount: 50, enabled: true };
+    // Gradient Map needs colours (BG→FG) or it always maps black→white. Capture
+    // the current FG/BG at add time (the destructive path passes them live).
+    if (type === 'gradient-map') entry.opts = { shadow: state.bgColor || '#000000', highlight: state.color || '#ffffff' };
+    layer.smartFilters.push(entry);
     rebake(); render();
   });
   const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); close(); } };
