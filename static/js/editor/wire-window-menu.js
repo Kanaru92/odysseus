@@ -96,6 +96,22 @@ export function wireWindowMenu(bar) {
   }
   const live = items.filter((it) => it.isConnected && REGISTRY[it.dataset.relayPanel]);
 
+  // Persist show/hide for the docked sections so a hidden panel stays hidden
+  // across reopens / reloads (PS remembers panel visibility). Tab/floating
+  // panels (ok, swatches, history, actions, timeline) are excluded — their
+  // state is owned elsewhere. Restore the saved visibility before the first
+  // checkmark refresh; the click handler below saves on every toggle.
+  const PERSIST = new Set(['color', 'layers', 'brush', 'histogram', 'navigator', 'toolbar', 'options']);
+  for (const item of live) {
+    const key = item.dataset.relayPanel;
+    if (!PERSIST.has(key)) continue;
+    let saved = null; try { saved = localStorage.getItem('ge-panel-vis:' + key); } catch {}
+    if (saved == null) continue;
+    const def = REGISTRY[key];
+    if (saved === '0' && def.isVisible()) def.toggle();
+    else if (saved === '1' && !def.isVisible()) def.toggle();
+  }
+
   const setMark = (item, on) => {
     const m = item.querySelector('.ge-menu-check');
     if (m) m.textContent = on ? MARKER : '';
@@ -119,6 +135,9 @@ export function wireWindowMenu(bar) {
       // Re-read after the toggle so the marker reflects the new live state
       // (the menu is already closing, so this is for the next open).
       setMark(item, def.isVisible());
+      if (PERSIST.has(item.dataset.relayPanel)) {
+        try { localStorage.setItem('ge-panel-vis:' + item.dataset.relayPanel, def.isVisible() ? '1' : '0'); } catch {}
+      }
     });
   });
 
