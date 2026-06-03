@@ -112,6 +112,7 @@ export function createSmartObject({ activeLayer, saveState, composite, renderLay
   function rasterize() {
     const layer = activeLayer();
     if (!layer || !layer.isSmart) { uiModule?.showToast?.('Not a Smart Object'); return; }
+    if (layer.locked) { uiModule?.showToast?.('Layer locked'); return; }
     saveState('Rasterize Smart Object');
     delete layer.sourceCanvas;
     layer.sourceW = layer.sourceH = null;
@@ -124,6 +125,7 @@ export function createSmartObject({ activeLayer, saveState, composite, renderLay
   function replaceContents() {
     const layer = activeLayer();
     if (!layer || !layer.isSmart) { uiModule?.showToast?.('Convert to a Smart Object first'); return; }
+    if (layer.locked) { uiModule?.showToast?.('Layer locked'); return; }
     const input = document.createElement('input');
     input.type = 'file'; input.accept = 'image/*';
     input.style.display = 'none';
@@ -202,6 +204,7 @@ export function createSmartObject({ activeLayer, saveState, composite, renderLay
   function updateLinked() {
     const layer = activeLayer();
     if (!layer || !layer.linked || !layer.linked.url) { uiModule?.showToast?.('No linked source'); return; }
+    if (layer.locked) { uiModule?.showToast?.('Layer locked'); return; }
     _loadInto(layer, layer.linked.url, 'Update Linked', true);
   }
 

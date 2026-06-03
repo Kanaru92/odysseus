@@ -115,6 +115,7 @@ export function wireKeyboardShortcuts(deps) {
       e.preventDefault();
       const lyr = activeLayer && activeLayer();
       if (lyr) {
+        if (saveState) saveState(lyr.lockAlpha ? 'Unlock transparency' : 'Lock transparency'); // undoable
         lyr.lockAlpha = !lyr.lockAlpha;
         if (renderLayerPanel) renderLayerPanel();
         if (uiModule) uiModule.showToast(lyr.lockAlpha ? 'Transparency locked' : 'Transparency unlocked');

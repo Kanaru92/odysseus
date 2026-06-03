@@ -1080,7 +1080,7 @@ function _toggleMaskView() {
 // mask bakes nothing (pixels are already unmasked) — it's just discarded.
 function _bakeLayerMask() {
   const layer = activeLayer();
-  if (!layer || !layer.layerMask) return;
+  if (!layer || !layer.layerMask || layer.locked) return; // Apply Mask destroys pixels — respect the lock
   _saveState('Apply layer mask');
   if (layer.maskEnabled !== false) {
     const baked = _applyLayerMask(layer.canvas, layer.layerMask);
@@ -4338,7 +4338,7 @@ function _runMagicWand(cx, cy, mode = 'replace', opts = {}) {
     return;
   }
   const layer = activeLayer();
-  if (!layer || layer.locked) return;
+  if (!layer) return; // wand is selection-only (never mutates layer pixels) — works on locked layers
   // If an active mask sub-layer is selected, the wand operates on the
   // MASK pixels rather than the parent layer's pixels — lets the user
   // click inside / outside an existing mask to select that region for
@@ -5736,7 +5736,7 @@ function _buildEditor(container) {
     if (state.tool === 'maglasso' && state.magLassoActive) { e.preventDefault(); _magLassoTool.close(); }
     // Double-click a text layer to re-edit it (Type is no longer write-once).
     const al = activeLayer();
-    if (al && al.text && !state.textEditingLayerId) { e.preventDefault(); _saveState('Edit text'); _syncTypeControls(al.text); _openTextEditor(al); }
+    if (al && al.text && !al.locked && !state.textEditingLayerId) { e.preventDefault(); _saveState('Edit text'); _syncTypeControls(al.text); _openTextEditor(al); }
     // Double-click a fill layer to re-apply the current colours to its spec.
     else if (al && al.fill && !al.text) { e.preventDefault(); _editFillLayer(al); }
   });

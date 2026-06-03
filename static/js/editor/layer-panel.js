@@ -574,6 +574,7 @@ export function createLayerPanelRenderer(deps) {
     lockAlphaBtn?.addEventListener('click', () => {
       const layer = _activeLayerOrGroup();
       if (!layer || layer.isGroup) { uiModule?.showToast?.('Select a layer first'); return; }
+      saveState(layer.lockAlpha ? 'Unlock transparency' : 'Lock transparency'); // undoable like Lock/Clip
       layer.lockAlpha = !layer.lockAlpha;
       render();
       uiModule?.showToast?.(layer.lockAlpha ? 'Transparency locked' : 'Transparency unlocked');
@@ -981,6 +982,7 @@ export function createLayerPanelRenderer(deps) {
           mergeBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>';
           mergeBtn.addEventListener('click', (e) => {
             e.stopPropagation();
+            if (layer.locked) { uiModule?.showToast?.('Layer locked'); return; } // bake mutates pixels
             // Bake just this adjustment into layer.canvas, then drop it.
             saveState(`Merge ${adjLayerLabel(adj.type)}`);
             const baked = applyAdjustment(layer.canvas, adj);
