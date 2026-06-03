@@ -1,13 +1,18 @@
 /**
  * Paint Bucket — click to flood-fill the contiguous similar-colour region under
  * the cursor with the foreground colour (tolerance-based). Reuses the shared
- * flood-fill (tools/flood-fill.js) to compute the region mask, then paints the
- * FG colour through that mask onto the active layer. Honours the layer's
- * lock-transparency. A single-click tool (no drag). Original code.
+ * flood-fill to compute the region mask, then paints the FG colour through that
+ * mask onto the active layer. Honours the layer's lock-transparency. A single-
+ * click tool (no drag). Original code.
+ *
+ * The flood runs OFF the main thread (filter-worker-client → Web Worker, with a
+ * synchronous fallback) so a large/high-res fill doesn't freeze the UI; a
+ * generation guard drops a stale fill if the user clicks again, and the result
+ * is re-validated against the active layer before painting.
  */
 import { state } from '../state.js';
 import { canvasCoords } from '../canvas-coords.js';
-import { floodFillMask } from './flood-fill.js';
+import { runFloodAsync } from '../filter-worker-client.js';
 
 function cloneCanvas(src) {
   const c = document.createElement('canvas');
@@ -26,29 +31,38 @@ export function createBucketTool({ activeLayer, saveState, composite }) {
       const w = layer.canvas.width, h = layer.canvas.height;
       const sx = Math.floor(c.x - off.x), sy = Math.floor(c.y - off.y);
       if (sx < 0 || sy < 0 || sx >= w || sy >= h) return;
-      const ctx = layer.ctx;
-      const img = ctx.getImageData(0, 0, w, h);
+      const img = layer.ctx.getImageData(0, 0, w, h);
       const raw = parseInt((document.getElementById('ge-bucket-tolerance') || {}).value, 10);
       const tol = Number.isFinite(raw) ? Math.max(0, Math.min(100, raw)) : 30;
-      const mask = floodFillMask(img.data, w, h, sx, sy, tol);
-      if (!mask) return;
-      saveState('Fill');
-      const snap = layer.lockAlpha ? cloneCanvas(layer.canvas) : null;
-      // FG colour confined to the flood region.
-      const tmp = document.createElement('canvas');
-      tmp.width = w; tmp.height = h;
-      const tctx = tmp.getContext('2d');
-      tctx.fillStyle = state.color;
-      tctx.fillRect(0, 0, w, h);
-      tctx.globalCompositeOperation = 'destination-in';
-      tctx.drawImage(mask, 0, 0);
-      ctx.save();
-      ctx.globalCompositeOperation = 'source-over';
-      ctx.globalAlpha = 1;
-      ctx.drawImage(tmp, 0, 0);
-      if (snap) { ctx.globalCompositeOperation = 'destination-in'; ctx.drawImage(snap, 0, 0); }
-      ctx.restore();
-      composite();
+      // Off-thread flood; capture the FG colour + layer id at click time so a
+      // later colour/layer change can't corrupt this fill.
+      const gen = (state._bucketFloodGen = (state._bucketFloodGen || 0) + 1);
+      const targetId = layer.id, color = state.color;
+      runFloodAsync(img.data, w, h, sx, sy, tol).then((mask) => {
+        if (gen !== state._bucketFloodGen || !mask) return; // superseded / no region
+        const lyr = activeLayer();
+        // Re-validate: same active layer, still unlocked, same dimensions.
+        if (!lyr || lyr.id !== targetId || lyr.locked
+          || lyr.canvas.width !== w || lyr.canvas.height !== h) return;
+        const ctx = lyr.ctx;
+        saveState('Fill');
+        const snap = lyr.lockAlpha ? cloneCanvas(lyr.canvas) : null;
+        // FG colour confined to the flood region.
+        const tmp = document.createElement('canvas');
+        tmp.width = w; tmp.height = h;
+        const tctx = tmp.getContext('2d');
+        tctx.fillStyle = color;
+        tctx.fillRect(0, 0, w, h);
+        tctx.globalCompositeOperation = 'destination-in';
+        tctx.drawImage(mask, 0, 0);
+        ctx.save();
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.globalAlpha = 1;
+        ctx.drawImage(tmp, 0, 0);
+        if (snap) { ctx.globalCompositeOperation = 'destination-in'; ctx.drawImage(snap, 0, 0); }
+        ctx.restore();
+        composite();
+      });
     },
   };
 }
