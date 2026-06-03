@@ -245,7 +245,11 @@ export function createStrokePipeline({ activeLayer, getActiveMaskLayer, composit
     stamp.height = stampSize;
     const stampCtx = stamp.getContext('2d');
     const softness = Math.max(0, Math.min(1, state.cloneSoftness / 300));
-    const hardStop = stampRadius * (1 - softness);
+    // Inner (opaque) radius for the feather gradient. Clamp strictly below the
+    // outer radius: a radial gradient whose two circles are identical (r0===r1,
+    // which happens at softness 0 → hardStop===stampRadius) renders nothing per
+    // spec, so destination-in would erase the whole stamp (hard brush = invisible).
+    const hardStop = Math.min(stampRadius * (1 - softness), stampRadius - 0.5);
     ctx.save();
     ctx.globalAlpha = (state.cloneOpacity / 100) * (state.cloneFlow / 100);
     for (let i = 1; i <= steps; i++) {

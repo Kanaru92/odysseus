@@ -3833,6 +3833,18 @@ const _cloneTool = createCloneTool({
   saveState: _saveState,
   strokeTo: (x, y) => _strokeTo(x, y),
   showToast: (msg) => { if (uiModule) uiModule.showToast(msg); },
+  // Pattern Stamp source: the chosen pattern tiled across a doc-sized canvas.
+  makePatternSource: () => {
+    const tile = _patternTile(state.stampPatternId || _defaultPatternId(), state.stampPatternScale || 1);
+    if (!tile || !state.imgWidth || !state.imgHeight) return null;
+    const c = document.createElement('canvas');
+    c.width = state.imgWidth; c.height = state.imgHeight;
+    const cx = c.getContext('2d');
+    const pat = cx.createPattern(tile, 'repeat');
+    if (!pat) return null;
+    cx.fillStyle = pat; cx.fillRect(0, 0, c.width, c.height);
+    return c;
+  },
 });
 
 // Transform-tool drag interactions (handle picking, rotation, resize)
@@ -6131,6 +6143,22 @@ function _buildEditor(container) {
   _eyeSample?.addEventListener('change', () => { state.eyedropperSampleSize = parseInt(_eyeSample.value, 10) || 1; });
   const _eyeSource = document.getElementById('ge-eyedropper-source');
   if (_eyeSource) { _eyeSource.value = state.eyedropperSampleSource || 'all'; _eyeSource.addEventListener('change', () => { state.eyedropperSampleSource = _eyeSource.value || 'all'; }); }
+  // Clone tool source: Layer (clone) vs Pattern (stamp) + pattern chooser.
+  const _cloneSrc = document.getElementById('ge-clone-source');
+  const _clonePatBtn = document.getElementById('ge-clone-pattern-btn');
+  if (_cloneSrc) {
+    _cloneSrc.value = state.cloneSource || 'layer';
+    const syncCloneSrc = () => { if (_clonePatBtn) _clonePatBtn.style.display = (_cloneSrc.value === 'pattern') ? '' : 'none'; };
+    syncCloneSrc();
+    _cloneSrc.addEventListener('change', () => { state.cloneSource = _cloneSrc.value || 'layer'; syncCloneSrc(); });
+  }
+  if (_clonePatBtn) {
+    _clonePatBtn.addEventListener('click', () => {
+      _openPatternPicker({ patternId: state.stampPatternId, scale: state.stampPatternScale }).then((res) => {
+        if (res) { state.stampPatternId = res.patternId; state.stampPatternScale = res.scale; }
+      });
+    });
+  }
 
   // Crop "Delete cropped pixels" toggle (PS parity) — off keeps outside pixels.
   const _cropDel = document.getElementById('ge-crop-delete');

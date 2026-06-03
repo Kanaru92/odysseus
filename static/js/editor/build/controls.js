@@ -316,6 +316,14 @@ export function controlsHTML({ color, brushSize, wandTolerance }) {
       <p class="ge-section-hint" style="margin-top:0;">
         <strong class="ge-clone-hint-desktop">Alt-click</strong><strong class="ge-clone-hint-mobile">Double-tap</strong> to set source · drag to paint
       </p>
+      <div class="ge-control-row ge-tool-model-row">
+        <label>Source</label>
+        <select id="ge-clone-source" class="ge-tool-select" style="flex:1;min-width:0;" title="Clone from another part of the image, or stamp a tiled pattern.">
+          <option value="layer">Layer (clone)</option>
+          <option value="pattern">Pattern (stamp)</option>
+        </select>
+        <button type="button" class="ge-btn ge-btn-sm" id="ge-clone-pattern-btn" title="Choose the stamp pattern" style="display:none;">Pattern…</button>
+      </div>
       <div class="ge-control-row ge-eraser-row">
         <span class="ge-eraser-preview" id="ge-clone-preview-opacity" aria-hidden="true"></span>
         <label>Opacity <span id="ge-clone-opacity-label">100%</span></label>

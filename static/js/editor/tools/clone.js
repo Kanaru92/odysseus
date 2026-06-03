@@ -18,11 +18,28 @@
 import { state } from '../state.js';
 import { canvasCoords } from '../canvas-coords.js';
 
-export function createCloneTool({ activeLayer, saveState, strokeTo, showToast }) {
+export function createCloneTool({ activeLayer, saveState, strokeTo, showToast, makePatternSource }) {
   return {
     begin(e) {
       const layer = activeLayer();
       const coords = canvasCoords(e, state.mainCanvas);
+      // Pattern Stamp mode — no source pick needed; the source is the chosen
+      // pattern tiled across the document, sampled AT the cursor so it lays down
+      // aligned to the canvas (PS Pattern Stamp). Reuses the clone stamp loop.
+      if (state.cloneSource === 'pattern') {
+        if (!layer || layer.locked) return;
+        const snap = makePatternSource && makePatternSource();
+        if (!snap) { showToast('Choose a stamp pattern first'); return; }
+        saveState('Pattern stamp');
+        state.cloneSourceSnapshot = snap;
+        state.cloneStrokeStartX = coords.x; state.cloneStrokeStartY = coords.y;
+        state.cloneSourceX = coords.x; state.cloneSourceY = coords.y; // zero offset → aligned
+        state.cloneSourceLayerId = (layer && layer.id) || state.activeLayerId;
+        state.drawing = true;
+        state.lastX = coords.x; state.lastY = coords.y;
+        strokeTo(coords.x, coords.y);
+        return;
+      }
       // Mobile equivalent of Alt-click: double-tap in screen pixels.
       // Wider tolerances (500 ms, 40 px) than desktop because finger
       // taps drift more than mouse clicks.
