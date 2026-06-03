@@ -201,6 +201,15 @@ export function createGradientEditor() {
       mrow.appendChild(mLbl); mrow.appendChild(mid); mrow.appendChild(mVal);
       host.appendChild(mrow);
     }
+
+    // Dither — break up 8-bit gradient banding (applies to the whole gradient).
+    const drow = document.createElement('label');
+    drow.style.cssText = 'display:flex;align-items:center;gap:6px;font-size:11px;margin-top:6px;cursor:pointer;opacity:0.85;';
+    const dchk = document.createElement('input'); dchk.type = 'checkbox'; dchk.checked = !!state.gradDither;
+    dchk.addEventListener('change', () => { state.gradDither = !!dchk.checked; });
+    const dlbl = document.createElement('span'); dlbl.textContent = 'Dither (reduce banding)';
+    drow.appendChild(dchk); drow.appendChild(dlbl);
+    host.appendChild(drow);
   }
 
   return {

@@ -138,7 +138,11 @@ function paramFor(type, px, py, sx, sy, dx, dy, len2) {
 
 // Rasterise an angle/reflected/diamond gradient into a fresh canvas of size w×h
 // (in the target coordinate space). The axis is given in that same space.
-function rasterGradient(type, w, h, sx, sy, ex, ey, stops) {
+// Ordered (Bayer 4×4) dither offsets in ~[-0.5, 0.5) of one LUT step — breaks up
+// 8-bit gradient banding without visible noise (PS "Dither").
+const BAYER4 = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map((v) => (v + 0.5) / 16 - 0.5);
+
+function rasterGradient(type, w, h, sx, sy, ex, ey, stops, dither) {
   const cv = document.createElement('canvas');
   cv.width = Math.max(1, w | 0); cv.height = Math.max(1, h | 0);
   const ictx = cv.getContext('2d');
@@ -157,7 +161,8 @@ function rasterGradient(type, w, h, sx, sy, ex, ey, stops) {
   for (let y = 0; y < cv.height; y++) {
     for (let x = 0; x < cv.width; x++) {
       const t = paramFor(type, x + 0.5, y + 0.5, sx, sy, dx, dy, len2);
-      const li = (Math.max(0, Math.min(255, Math.round(t * 255)))) * 4;
+      const dth = dither ? BAYER4[((y & 3) << 2) | (x & 3)] : 0;
+      const li = (Math.max(0, Math.min(255, Math.round(t * 255 + dth)))) * 4;
       data[o] = LUT[li]; data[o + 1] = LUT[li + 1]; data[o + 2] = LUT[li + 2];
       data[o + 3] = Math.round(LUT[li + 3] * 255);
       o += 4;
@@ -207,10 +212,11 @@ export function createGradientTool({ activeLayer, saveState, composite }) {
     // a non-default midpoint, render linear/radial through the raster sampler
     // (which honours mid) instead of the native addColorStop path.
     const hasMid = stops.some((s) => s.mid != null && Math.abs(s.mid - 0.5) > 0.001 && s.mid > 0.001 && s.mid < 0.999);
+    const dither = !!state.gradDither;
     ctx.save();
     ctx.globalAlpha = opts.opacity;
     ctx.globalCompositeOperation = 'source-over';
-    if ((opts.type === 'linear' || opts.type === 'radial') && !hasMid) {
+    if ((opts.type === 'linear' || opts.type === 'radial') && !hasMid && !dither) {
       let grad;
       if (opts.type === 'radial') {
         const r = Math.max(1, Math.hypot(ex - sx, ey - sy));
@@ -235,7 +241,7 @@ export function createGradientTool({ activeLayer, saveState, composite }) {
       }
     } else {
       // angle / reflected / diamond — rasterised.
-      const raster = rasterGradient(opts.type, w, h, sx, sy, ex, ey, stops);
+      const raster = rasterGradient(opts.type, w, h, sx, sy, ex, ey, stops, dither);
       if (selMask) {
         const rctx = raster.getContext('2d');
         rctx.globalCompositeOperation = 'destination-in';
