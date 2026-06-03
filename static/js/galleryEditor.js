@@ -8,6 +8,7 @@ import spinnerModule from './spinner.js';
 import { attachColorPicker, isColorPickerOpen, closeColorPicker } from './colorPicker.js';
 import { gradientOverlay } from './editor/fx/layer-style-gradient-overlay.js';
 import { getPattern as _getPattern, getPatterns as _getPatterns, definePattern as _definePattern, defaultPatternId as _defaultPatternId } from './editor/patterns/pattern-store.js';
+import { webgpuStatus as _webgpuStatus } from './editor/render/webgpu-backend.js';
 import { satin } from './editor/fx/layer-style-satin.js';
 import { bevelEmboss } from './editor/fx/layer-style-bevel.js';
 import { strokeStyle } from './editor/fx/layer-style-stroke.js';
@@ -7074,6 +7075,7 @@ export function openEditor(imageUrl, imageId, presetSize, displayName, draftId) 
   state.maskOverlay = null;
   window.__galleryEditLive = true;
   try { window.__geGoldenDiff = _goldenDiff; } catch {} // dev: GPU-vs-CPU golden diff
+  try { window.__geWebGPUStatus = _webgpuStatus; } catch {} // dev: WebGPU compute backend status (real-hardware check)
   try { window.__geRenderLayers = (cv) => _renderLayersTo(cv.getContext('2d'), cv); } catch {} // dev: render the layer stack into a test canvas
   if (state.persistTimer) { clearTimeout(state.persistTimer); state.persistTimer = null; }
   state.persistDirty = false;

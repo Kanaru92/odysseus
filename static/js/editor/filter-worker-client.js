@@ -4,6 +4,7 @@
 // unavailable or error. Output is bit-identical either way.
 import { applyFilter } from './filters/filters.js';
 import { floodFillMask, visitedToMask } from './tools/flood-fill.js';
+import { gpuFilterAsync, gpuSupportsFilter } from './render/webgpu-backend.js';
 
 let _worker = null;
 let _failed = false;
@@ -51,6 +52,18 @@ export function filterWorkerAvailable() { return !!_ensure(); }
  * @returns {Promise<ImageData>}
  */
 export function runFilterAsync(img, type, amount, opts) {
+  // GPU compute fast path for eligible kernels (blur/gaussian). Self-gating:
+  // returns null when WebGPU is unavailable or its self-test fails, so we fall
+  // back to the worker/CPU path below — identical output, no correctness risk.
+  if (gpuSupportsFilter(type)) {
+    return gpuFilterAsync(img, type, amount, opts)
+      .then((out) => out || _runFilterCpuOrWorker(img, type, amount, opts))
+      .catch(() => _runFilterCpuOrWorker(img, type, amount, opts));
+  }
+  return _runFilterCpuOrWorker(img, type, amount, opts);
+}
+
+function _runFilterCpuOrWorker(img, type, amount, opts) {
   const w = _ensure();
   if (!w) { applyFilter(img, type, amount, opts); return Promise.resolve(img); }
   return new Promise((resolve) => {
