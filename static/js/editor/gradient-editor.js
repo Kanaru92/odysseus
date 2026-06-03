@@ -56,9 +56,32 @@ export function createGradientEditor() {
   let host = null;
   let selected = 0;
 
+  function mixStops(a, b, f) {
+    const ca = hex(a.color).slice(1), cb = hex(b.color).slice(1);
+    const ch = (j) => Math.round(parseInt(ca.slice(j, j + 2), 16) * (1 - f) + parseInt(cb.slice(j, j + 2), 16) * f);
+    const al = (a.alpha ?? 1) * (1 - f) + (b.alpha ?? 1) * f;
+    return `rgba(${ch(0)},${ch(2)},${ch(4)},${al.toFixed(3)})`;
+  }
   function cssGradient(srcStops) {
     const s = [...(srcStops || ensureGradStops())].sort((a, b) => a.pos - b.pos);
-    return 'linear-gradient(90deg,' + s.map((st) => `${rgbaOf(st)} ${Math.round(st.pos * 100)}%`).join(',') + ')';
+    const parts = [];
+    for (let i = 0; i < s.length; i++) {
+      const st = s[i];
+      parts.push(`${rgbaOf(st)} ${(st.pos * 100).toFixed(2)}%`);
+      const nx = s[i + 1];
+      const mid = (st.mid != null && st.mid > 0.001 && st.mid < 0.999) ? st.mid : 0.5;
+      // Insert sampled intermediate stops so the CSS preview matches the skewed
+      // (midpoint) blend the painted gradient produces.
+      if (nx && Math.abs(mid - 0.5) > 0.001) {
+        const k = Math.log(0.5) / Math.log(mid);
+        for (let j = 1; j < 8; j++) {
+          const lin = j / 8;
+          const f = Math.pow(lin, k);
+          parts.push(`${mixStops(st, nx, f)} ${((st.pos + lin * (nx.pos - st.pos)) * 100).toFixed(2)}%`);
+        }
+      }
+    }
+    return 'linear-gradient(90deg,' + parts.join(',') + ')';
   }
 
   function render() {
@@ -156,6 +179,28 @@ export function createGradientEditor() {
     del.addEventListener('click', () => { if (stops.length > 2) { stops.splice(selected, 1); selected = Math.max(0, selected - 1); state.gradUseCustom = true; render(); } });
     row.appendChild(color); row.appendChild(aLbl); row.appendChild(alpha); row.appendChild(aVal); row.appendChild(del);
     host.appendChild(row);
+
+    // Midpoint of the segment AFTER this stop — where the blend to the next stop
+    // reaches 50% (Photoshop/GIMP gradient midpoint). Only meaningful when a next
+    // stop exists.
+    if (selected < stops.length - 1) {
+      const mrow = document.createElement('div');
+      mrow.style.cssText = 'display:flex;align-items:center;gap:8px;font-size:11px;margin-top:4px;';
+      const mLbl = document.createElement('span'); mLbl.textContent = 'Midpoint'; mLbl.style.opacity = '0.65';
+      const mid = document.createElement('input');
+      mid.type = 'range'; mid.min = '5'; mid.max = '95';
+      mid.value = String(Math.round((sel.mid != null ? sel.mid : 0.5) * 100));
+      mid.title = 'Blend midpoint to the next stop';
+      mid.style.cssText = 'flex:1;min-width:60px;';
+      const mVal = document.createElement('span'); mVal.textContent = mid.value + '%'; mVal.style.cssText = 'min-width:34px;opacity:0.85;';
+      mid.addEventListener('input', () => {
+        sel.mid = clamp01(parseInt(mid.value, 10) / 100);
+        mVal.textContent = mid.value + '%';
+        state.gradUseCustom = true; render();
+      });
+      mrow.appendChild(mLbl); mrow.appendChild(mid); mrow.appendChild(mVal);
+      host.appendChild(mrow);
+    }
   }
 
   return {

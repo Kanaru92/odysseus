@@ -51,7 +51,7 @@ function readOpts() {
 function resolveStops(mode, fg, bg) {
   if (state.gradUseCustom && Array.isArray(state.gradStops) && state.gradStops.length >= 2) {
     return [...state.gradStops]
-      .map((st) => ({ pos: Math.max(0, Math.min(1, st.pos)), color: st.color, alpha: st.alpha == null ? 1 : st.alpha }))
+      .map((st) => ({ pos: Math.max(0, Math.min(1, st.pos)), color: st.color, alpha: st.alpha == null ? 1 : st.alpha, mid: st.mid }))
       .sort((a, b) => a.pos - b.pos);
   }
   if (mode === 'fg-transparent') {
@@ -81,7 +81,12 @@ function sampleStops(stops, t) {
     if (t <= stops[i].pos) {
       const a = stops[i - 1], b = stops[i];
       const span = b.pos - a.pos;
-      const f = span <= 0 ? 0 : (t - a.pos) / span;
+      let f = span <= 0 ? 0 : (t - a.pos) / span;
+      // Per-stop midpoint (a.mid, 0..1, default 0.5): the position within this
+      // segment where the blend reaches 50%. Power-skew f so f==mid → 0.5 (the
+      // Photoshop/GIMP gradient midpoint). 0.5 leaves it linear (no change).
+      const mid = (a.mid != null && a.mid > 0.001 && a.mid < 0.999) ? a.mid : 0.5;
+      if (mid !== 0.5) f = Math.pow(f, Math.log(0.5) / Math.log(mid));
       const ca = parseHex(a.color), cb = parseHex(b.color);
       return [
         Math.round(ca[0] + (cb[0] - ca[0]) * f),
@@ -110,6 +115,11 @@ function paramFor(type, px, py, sx, sy, dx, dy, len2) {
     // ramp is symmetric in both directions from the start line.
     const proj = ((px - sx) * dx + (py - sy) * dy) / (len2 || 1);
     return Math.min(1, Math.abs(proj));
+  }
+  if (type === 'radial') {
+    // Distance from the start (centre) over the drag length → 0..1.
+    const r = Math.sqrt(len2) || 1;
+    return Math.min(1, Math.hypot(px - sx, py - sy) / r);
   }
   if (type === 'diamond') {
     // Chebyshev / square-distance isolines, scaled by the drag length so the
@@ -193,10 +203,14 @@ export function createGradientTool({ activeLayer, saveState, composite }) {
   // coord space) when present. sx,sy→ex,ey is the drag axis in the target space.
   function paintGradient(ctx, w, h, sx, sy, ex, ey, opts, fg, bg, selMask) {
     const stops = resolveStops(opts.mode, fg, bg);
+    // Native canvas gradients can't skew per-segment midpoints — when any stop has
+    // a non-default midpoint, render linear/radial through the raster sampler
+    // (which honours mid) instead of the native addColorStop path.
+    const hasMid = stops.some((s) => s.mid != null && Math.abs(s.mid - 0.5) > 0.001 && s.mid > 0.001 && s.mid < 0.999);
     ctx.save();
     ctx.globalAlpha = opts.opacity;
     ctx.globalCompositeOperation = 'source-over';
-    if (opts.type === 'linear' || opts.type === 'radial') {
+    if ((opts.type === 'linear' || opts.type === 'radial') && !hasMid) {
       let grad;
       if (opts.type === 'radial') {
         const r = Math.max(1, Math.hypot(ex - sx, ey - sy));
