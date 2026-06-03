@@ -45,6 +45,66 @@ export function wireSectionReorder(root) {
     } catch {}
   };
 
+  // Drag a floating window by its title bar (document-level move/up so the drag
+  // doesn't drop when the cursor leaves the small bar).
+  const dragFloat = (win, handle) => {
+    handle.addEventListener('pointerdown', (e) => {
+      if (e.target.closest('button')) return;
+      e.preventDefault();
+      const r = win.getBoundingClientRect(), ox = r.left, oy = r.top, sx = e.clientX, sy = e.clientY;
+      handle.style.cursor = 'grabbing';
+      const mv = (ev) => {
+        win.style.left = Math.max(0, Math.min(window.innerWidth - 60, ox + ev.clientX - sx)) + 'px';
+        win.style.top = Math.max(0, Math.min(window.innerHeight - 30, oy + ev.clientY - sy)) + 'px';
+      };
+      const up = () => {
+        handle.style.cursor = 'grab';
+        document.removeEventListener('pointermove', mv);
+        document.removeEventListener('pointerup', up);
+        document.removeEventListener('pointercancel', up);
+      };
+      document.addEventListener('pointermove', mv);
+      document.addEventListener('pointerup', up);
+      document.addEventListener('pointercancel', up);
+    });
+  };
+
+  // Undock a section into a floating window; "Dock" returns it to its prior slot.
+  // The live section node is MOVED (listeners/canvas preserved). The float is
+  // appended to the editor container so closeEditor's teardown disposes it.
+  let cascade = 0;
+  const popOut = (sec) => {
+    if (sec._floatWin) return;
+    const home = sec.parentNode, anchor = sec.previousSibling;
+    const title = (sec.querySelector('summary')?.textContent || 'Panel').replace(/[∷⤢]/g, '').trim();
+    const win = document.createElement('div');
+    win.className = 'ge-float-panel';
+    win.style.cssText = 'position:fixed;z-index:300;width:240px;background:#26262b;border:1px solid rgba(255,255,255,0.16);border-radius:8px;box-shadow:0 14px 40px rgba(0,0,0,0.55);color:#eee;';
+    const bar = document.createElement('div');
+    bar.style.cssText = 'display:flex;align-items:center;gap:6px;padding:5px 8px;cursor:grab;background:rgba(255,255,255,0.06);border-radius:8px 8px 0 0;font-size:11px;font-weight:600;';
+    bar.innerHTML = `<span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${title}</span>`;
+    const dockBtn = document.createElement('button');
+    dockBtn.type = 'button'; dockBtn.className = 'ge-btn ge-btn-sm'; dockBtn.textContent = 'Dock'; dockBtn.title = 'Dock back into the panel';
+    bar.appendChild(dockBtn);
+    win.appendChild(bar);
+    const body = document.createElement('div');
+    body.style.cssText = 'padding:8px;max-height:60vh;overflow:auto;';
+    win.appendChild(body);
+    sec.open = true;
+    body.appendChild(sec); // move the live section into the float
+    (document.getElementById('gallery-editor-container') || document.body).appendChild(win);
+    const c = (cascade++ % 6) * 22;
+    win.style.left = Math.round(window.innerWidth * 0.45 + c) + 'px';
+    win.style.top = (84 + c) + 'px';
+    sec._floatWin = win;
+    dragFloat(win, bar);
+    dockBtn.addEventListener('click', () => {
+      if (anchor && anchor.parentNode === home) home.insertBefore(sec, anchor.nextSibling);
+      else if (home) home.appendChild(sec);
+      win.remove(); sec._floatWin = null;
+    });
+  };
+
   for (const sec of secs) {
     const sum = sec.querySelector('summary');
     if (!sum || sum.querySelector('.ge-dock-grip')) continue;
@@ -57,6 +117,14 @@ export function wireSectionReorder(root) {
     // The grip lives inside <summary>, which toggles the <details> on click —
     // swallow the grip's own click so dragging/grabbing it never toggles.
     grip.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); });
+    // Float (undock) button — pops the section into a draggable window.
+    const pop = document.createElement('span');
+    pop.className = 'ge-dock-pop';
+    pop.textContent = '⤢';
+    pop.title = 'Float this panel (undock)';
+    pop.style.cssText = 'cursor:pointer;opacity:0.45;margin-left:6px;font-size:11px;user-select:none;';
+    sum.appendChild(pop);
+    pop.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); popOut(sec); });
     grip.addEventListener('pointerdown', (e) => {
       e.preventDefault(); e.stopPropagation();
       grip.style.cursor = 'grabbing';
