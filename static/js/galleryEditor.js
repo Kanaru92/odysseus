@@ -2251,7 +2251,7 @@ function _restoreAux(data) {
 // ── Animation timeline persistence ([9]) ── the model is plain data (cels hold
 // layerIds, which _restoreDraft preserves), so a JSON clone round-trips it.
 function _animSerialize() { try { return state.anim ? JSON.parse(JSON.stringify(state.anim)) : null; } catch { return null; } }
-function _animDeserialize(a) { if (a && typeof a === 'object') { state.anim = a; try { if (_anim && _anim.refresh) _anim.refresh(); } catch {} } }
+function _animDeserialize(a) { if (a && typeof a === 'object') { state.anim = a; try { if (_timeline && _timeline.render) _timeline.render(); } catch {} } }
 
 // ── Referenced 3D-LUT cubes ([2]) ── Color Lookup adjLayers keep only a lutId;
 // the grid lives in an in-memory store, so serialize the used cubes by id.
