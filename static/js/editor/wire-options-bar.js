@@ -110,6 +110,7 @@ const PROXIES = {
   ],
   eyedropper: [
     { label: 'Sample', id: 'ge-eyedropper-sample', control: 'select' },
+    { label: 'Source', id: 'ge-eyedropper-source', control: 'select' },
   ],
   sharpen: [
     { label: 'Size', sel: '.ge-size-slider', kind: 'size' },

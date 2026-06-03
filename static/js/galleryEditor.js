@@ -2674,30 +2674,72 @@ function _beginDraw(e) {
 
 // Eyedropper — read the composited pixel under the cursor and set it as the
 // active brush color, reflecting it in the color-picker swatch(es).
+// Resolve the eyedropper's sample surface per `state.eyedropperSampleSource`:
+//  'all'     → the composited document (default)
+//  'current' → the active layer's own pixels
+//  'below'   → the active layer + everything beneath it, composited
+// Returns { ctx, w, h, off } in document space, or null.
+function _eyedropperSourceSurface() {
+  const src = state.eyedropperSampleSource || 'all';
+  if (src === 'current') {
+    const layer = activeLayer() || _activeParentLayer();
+    if (!layer || !layer.ctx) return null;
+    const off = state.layerOffsets.get(layer.id) || { x: 0, y: 0 };
+    return { ctx: layer.ctx, w: layer.canvas.width, h: layer.canvas.height, off };
+  }
+  if (src === 'below') {
+    const c = document.createElement('canvas');
+    c.width = state.imgWidth; c.height = state.imgHeight;
+    const ctx = c.getContext('2d');
+    for (const layer of state.layers) {
+      if (!layer.isGroup && layer.visible) {
+        let eff; try { eff = _effectiveLayerCanvas(layer); } catch { eff = layer.canvas; }
+        if (eff) {
+          const off = state.layerOffsets.get(layer.id) || { x: 0, y: 0 };
+          ctx.save();
+          ctx.globalAlpha = layer.opacity == null ? 1 : layer.opacity;
+          try { ctx.globalCompositeOperation = layer.blendMode || 'source-over'; } catch {}
+          ctx.drawImage(eff, off.x, off.y);
+          ctx.restore();
+        }
+      }
+      if (layer.id === state.activeLayerId) break; // include active + everything below
+    }
+    return { ctx, w: c.width, h: c.height, off: { x: 0, y: 0 } };
+  }
+  return { ctx: state.mainCtx, w: state.mainCanvas.width, h: state.mainCanvas.height, off: { x: 0, y: 0 } };
+}
+
 function _eyedropperPick(e) {
   if (!state.mainCtx || !state.mainCanvas) return;
+  const surf = _eyedropperSourceSurface();
+  if (!surf || !surf.ctx) return;
   const { x, y } = _canvasCoords(e, state.mainCanvas);
-  const cw = state.mainCanvas.width, ch = state.mainCanvas.height;
-  const px = Math.max(0, Math.min(cw - 1, Math.round(x)));
-  const py = Math.max(0, Math.min(ch - 1, Math.round(y)));
+  const cw = surf.w, ch = surf.h, sctx = surf.ctx;
+  const px = Math.max(0, Math.min(cw - 1, Math.round(x - surf.off.x)));
+  const py = Math.max(0, Math.min(ch - 1, Math.round(y - surf.off.y)));
+  const isAll = (state.eyedropperSampleSource || 'all') === 'all';
   const n = state.eyedropperSampleSize || 1;
-  let r, g, b;
+  let r, g, b, a;
   if (n <= 1) {
     let d;
-    try { d = state.mainCtx.getImageData(px, py, 1, 1).data; } catch { return; }
-    r = d[0]; g = d[1]; b = d[2];
+    try { d = sctx.getImageData(px, py, 1, 1).data; } catch { return; }
+    r = d[0]; g = d[1]; b = d[2]; a = d[3];
   } else {
     // N×N average — steadier picks off noisy / dithered areas (PS sample size).
     const half = (n - 1) >> 1;
     const x0 = Math.max(0, px - half), y0 = Math.max(0, py - half);
     const w = Math.min(cw, px + half + 1) - x0, h = Math.min(ch, py + half + 1) - y0;
     let d;
-    try { d = state.mainCtx.getImageData(x0, y0, w, h).data; } catch { return; }
-    let sr = 0, sg = 0, sb = 0;
+    try { d = sctx.getImageData(x0, y0, w, h).data; } catch { return; }
+    let sr = 0, sg = 0, sb = 0, sa = 0;
     const cnt = d.length / 4;
-    for (let i = 0; i < d.length; i += 4) { sr += d[i]; sg += d[i + 1]; sb += d[i + 2]; }
-    r = Math.round(sr / cnt); g = Math.round(sg / cnt); b = Math.round(sb / cnt);
+    for (let i = 0; i < d.length; i += 4) { sr += d[i]; sg += d[i + 1]; sb += d[i + 2]; sa += d[i + 3]; }
+    r = Math.round(sr / cnt); g = Math.round(sg / cnt); b = Math.round(sb / cnt); a = Math.round(sa / cnt);
   }
+  // On a per-layer source, a fully transparent sample has no colour — don't pick
+  // black from an empty area (the composited 'all' surface has no transparency).
+  if (!isAll && a === 0) return;
   const hex = '#' + [r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('');
   state.color = hex;
   if (state.container) {
@@ -6048,6 +6090,8 @@ function _buildEditor(container) {
   // Eyedropper sample size (point / 3×3 / 5×5 average).
   const _eyeSample = document.getElementById('ge-eyedropper-sample');
   _eyeSample?.addEventListener('change', () => { state.eyedropperSampleSize = parseInt(_eyeSample.value, 10) || 1; });
+  const _eyeSource = document.getElementById('ge-eyedropper-source');
+  if (_eyeSource) { _eyeSource.value = state.eyedropperSampleSource || 'all'; _eyeSource.addEventListener('change', () => { state.eyedropperSampleSource = _eyeSource.value || 'all'; }); }
 
   // Crop "Delete cropped pixels" toggle (PS parity) — off keeps outside pixels.
   const _cropDel = document.getElementById('ge-crop-delete');
@@ -7157,6 +7201,7 @@ export function openEditor(imageUrl, imageId, presetSize, displayName, draftId) 
   try { window.__geGoldenDiff = _goldenDiff; } catch {} // dev: GPU-vs-CPU golden diff
   try { window.__geWebGPUStatus = _webgpuStatus; } catch {} // dev: WebGPU compute backend status (real-hardware check)
   try { window.__geCompositeCalls = () => _compositeCalls; } catch {} // dev: composite-render counter (rAF-coalesce check)
+  try { window.__geComposite = () => composite(); } catch {} // dev: force a synchronous composite (tests)
   try { window.__geRenderLayers = (cv) => _renderLayersTo(cv.getContext('2d'), cv); } catch {} // dev: render the layer stack into a test canvas
   if (state.persistTimer) { clearTimeout(state.persistTimer); state.persistTimer = null; }
   state.persistDirty = false;

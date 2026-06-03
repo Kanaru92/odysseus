@@ -89,6 +89,14 @@ export function controlsHTML({ color, brushSize, wandTolerance }) {
           <option value="5">5 × 5 average</option>
         </select>
       </div>
+      <div class="ge-control-row ge-tool-model-row">
+        <label>Source</label>
+        <select id="ge-eyedropper-source" class="ge-tool-select" style="flex:1;min-width:0;" title="Which layers the eyedropper samples from.">
+          <option value="all">All Layers</option>
+          <option value="current">Current Layer</option>
+          <option value="below">Current &amp; Below</option>
+        </select>
+      </div>
     </div>
     <div id="ge-brush-controls">
       <div class="ge-control-row" id="ge-color-row">
