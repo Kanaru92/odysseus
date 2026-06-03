@@ -22,6 +22,14 @@ import { jitterHue } from './color-jitter.js';
 
 const clamp01 = (v) => Math.max(0, Math.min(1, v));
 
+// Reflect point (px,py) across a line through (cx,cy) at direction angle `phi`.
+// Used for placeable/rotatable brush symmetry (axis mirrors + mandala).
+function reflectLine(px, py, cx, cy, phi) {
+  const dx = px - cx, dy = py - cy;
+  const c = Math.cos(2 * phi), s = Math.sin(2 * phi);
+  return { x: cx + dx * c + dy * s, y: cy + dx * s - dy * c };
+}
+
 function normalizePreset(p = {}) {
   return {
     id: p.id || 'custom',
@@ -192,12 +200,17 @@ export function createBrushEngine(preset) {
     // Each entry carries an optional rot (so tips orient radially) + mirror flag.
     const cw = strokeBuf.width, ch = strokeBuf.height;
     const sym = rt.symmetry || 'none';
+    // Symmetry centre + axis angle are placeable via the on-canvas gizmo (default
+    // = canvas centre, 0°). Axis mirrors reflect across a line through the centre
+    // at the gizmo angle; radial/mandala rotate around the centre.
+    const cx = rt.symCx != null ? rt.symCx : cw / 2;
+    const cy = rt.symCy != null ? rt.symCy : ch / 2;
+    const th = rt.symAngle || 0;
     const positions = [{ x, y, rot: 0 }];
-    if (sym === 'x' || sym === 'xy') positions.push({ x: cw - x, y, rot: 0 });
-    if (sym === 'y' || sym === 'xy') positions.push({ x, y: ch - y, rot: 0 });
-    if (sym === 'xy') positions.push({ x: cw - x, y: ch - y, rot: 0 });
+    if (sym === 'x' || sym === 'xy') { const r = reflectLine(x, y, cx, cy, Math.PI / 2 + th); positions.push({ x: r.x, y: r.y, rot: 0 }); }
+    if (sym === 'y' || sym === 'xy') { const r = reflectLine(x, y, cx, cy, th); positions.push({ x: r.x, y: r.y, rot: 0 }); }
+    if (sym === 'xy') positions.push({ x: 2 * cx - x, y: 2 * cy - y, rot: 0 });
     if (sym === 'radial' || sym === 'mandala') {
-      const cx = cw / 2, cy = ch / 2;
       const N = Math.max(2, Math.round(rt.symN || 6));
       const dx = x - cx, dy = y - cy;
       for (let k = 1; k < N; k++) { // k=0 is the base dab already in `positions`
@@ -205,10 +218,11 @@ export function createBrushEngine(preset) {
         positions.push({ x: cx + dx * ca - dy * sa, y: cy + dx * sa + dy * ca, rot: a });
       }
       if (sym === 'mandala') {
-        const mdx = -dx; // reflect the source across the centre's vertical axis
+        const m = reflectLine(x, y, cx, cy, Math.PI / 2 + th); // reflect source across the axis
+        const mdx = m.x - cx, mdy = m.y - cy;
         for (let k = 0; k < N; k++) {
           const a = (k * 2 * Math.PI) / N, ca = Math.cos(a), sa = Math.sin(a);
-          positions.push({ x: cx + mdx * ca - dy * sa, y: cy + mdx * sa + dy * ca, rot: a, mirror: true });
+          positions.push({ x: cx + mdx * ca - mdy * sa, y: cy + mdx * sa + mdy * ca, rot: a, mirror: true });
         }
       }
     }

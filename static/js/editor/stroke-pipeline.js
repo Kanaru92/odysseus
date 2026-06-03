@@ -128,8 +128,9 @@ export function createStrokePipeline({ activeLayer, getActiveMaskLayer, composit
       flow: (isEraser ? state.eraserFlow : state.brushFlow) / 100,
       color: isEraser ? '#000000' : state.color,
       hardness: Math.max(0, Math.min(1, 1 - (isEraser ? state.eraserSoftness : state.brushSoftness) / 300)),
-      symmetry: state.brushSymmetry || 'none',
+      symmetry: state.symActive ? (state.brushSymmetry || 'none') : 'none',
       symN: state.brushSymmetryN || 6,
+      symCx: state.symCx, symCy: state.symCy, symAngle: state.symAngle || 0,
       flowPressure: !isEraser && !!state.brushPressureOpacity,
       angleFollow: !isEraser && !!state.brushAngleFollow,
       tiltAngle: !isEraser && !!state.brushTiltAngle,
@@ -399,8 +400,9 @@ export function createStrokePipeline({ activeLayer, getActiveMaskLayer, composit
           flow: (isEraser ? state.eraserFlow : state.brushFlow) / 100,           // per-dab build-up
           color: isEraser ? '#000000' : state.color,  // color is irrelevant when erasing
           hardness: Math.max(0, Math.min(1, 1 - (isEraser ? state.eraserSoftness : state.brushSoftness) / 300)),
-          symmetry: state.brushSymmetry || 'none',
+          symmetry: state.symActive ? (state.brushSymmetry || 'none') : 'none',
           symN: state.brushSymmetryN || 6,
+          symCx: state.symCx, symCy: state.symCy, symAngle: state.symAngle || 0,
           flowPressure: !isEraser && !!state.brushPressureOpacity, // pen pressure → opacity
 
           angleFollow: !isEraser && !!state.brushAngleFollow,

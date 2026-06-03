@@ -12,6 +12,7 @@ import { parseABR } from './brush/import-abr.js';
 import { parseBrushBundle } from './brush/import-brush-bundle.js';
 import { parseGIH } from './brush/import-gih.js';
 import { BLEND_MODES } from './blend-modes.js';
+import { armSymmetryGizmo, dismissSymmetryGizmo } from './symmetry-gizmo.js';
 
 export function wireBrushPresets() {
   const sel = document.getElementById('ge-brush-preset');
@@ -90,7 +91,13 @@ export function wireBrushPresets() {
   };
   if (sym) {
     sym.value = state.brushSymmetry || 'none';
-    sym.addEventListener('change', () => { state.brushSymmetry = sym.value; updateSymnVisibility(); });
+    sym.addEventListener('change', () => {
+      state.brushSymmetry = sym.value;
+      updateSymnVisibility();
+      // Symmetry is placed via an on-canvas gizmo + accepted before it applies.
+      if (sym.value && sym.value !== 'none') { try { armSymmetryGizmo(); } catch {} }
+      else { state.symActive = false; try { dismissSymmetryGizmo(); } catch {} }
+    });
   }
   if (symn) {
     symn.value = String(state.brushSymmetryN || 6);

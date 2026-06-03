@@ -9,6 +9,7 @@ import { attachColorPicker, isColorPickerOpen, closeColorPicker } from './colorP
 import { gradientOverlay } from './editor/fx/layer-style-gradient-overlay.js';
 import { getPattern as _getPattern, getPatterns as _getPatterns, definePattern as _definePattern, defaultPatternId as _defaultPatternId } from './editor/patterns/pattern-store.js';
 import { webgpuStatus as _webgpuStatus } from './editor/render/webgpu-backend.js';
+import { dismissSymmetryGizmo as _dismissSymmetryGizmo } from './editor/symmetry-gizmo.js';
 import { satin } from './editor/fx/layer-style-satin.js';
 import { bevelEmboss } from './editor/fx/layer-style-bevel.js';
 import { strokeStyle } from './editor/fx/layer-style-stroke.js';
@@ -7493,6 +7494,7 @@ export function closeEditor() {
   // Disconnect the tool-flyout MutationObserver so it isn't left observing a
   // detached toolbar subtree across reopens.
   try { state.container?.querySelector('.ge-toolbar')?._flyoutObserver?.disconnect(); } catch {}
+  try { _dismissSymmetryGizmo(); } catch {}
   // Dismiss any open prompt/dialog modal (export, pattern picker, etc.) so its
   // overlay + key listener don't outlive the editor.
   try { if (_activePromptClose) _activePromptClose(); } catch {}
