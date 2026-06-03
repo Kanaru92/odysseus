@@ -2192,7 +2192,7 @@ function _buildDraftPayload() {
       // Group (folder) entry — metadata only, no pixel data.
       if (l.isGroup) {
         return { id: l.id, name: l.name, visible: l.visible, opacity: l.opacity,
-                 isGroup: true, collapsed: !!l.collapsed, blendMode: l.blendMode || 'pass-through' };
+                 isGroup: true, collapsed: !!l.collapsed, locked: !!l.locked, blendMode: l.blendMode || 'pass-through' };
       }
       return {
         id: l.id,
@@ -2393,7 +2393,7 @@ function _restoreDraft(draft) {
         state.layers[idx] = { id: s.id, name: s.name || 'Group', isGroup: true,
           visible: s.visible !== false,
           opacity: typeof s.opacity === 'number' ? s.opacity : 1,
-          collapsed: !!s.collapsed, blendMode: s.blendMode || 'pass-through' };
+          collapsed: !!s.collapsed, locked: !!s.locked, blendMode: s.blendMode || 'pass-through' };
         return;
       }
       const layer = createLayer(s.name || 'Layer', s.canvasW || state.imgWidth, s.canvasH || state.imgHeight);
@@ -6956,12 +6956,8 @@ export function downloadPNG() {
 // Save the entire layered editor state as a JSON project file. Each
 // layer is encoded as a base64 PNG so transparency / partial alpha
 // survives the round-trip. Use Load Project to restore.
-function _saveProject() {
-  if (!state.layers.length) {
-    if (uiModule) uiModule.showToast('Nothing to save');
-    return;
-  }
-  const project = {
+function _buildProjectPayload() {
+  return {
     v: 1,
     type: 'odysseus-gallery-editor-project',
     imgWidth: state.imgWidth,
@@ -6971,7 +6967,7 @@ function _saveProject() {
     layers: state.layers.map(l => {
       if (l.isGroup) {
         return { id: l.id, name: l.name, visible: l.visible, opacity: l.opacity,
-                 isGroup: true, collapsed: !!l.collapsed, blendMode: l.blendMode || 'pass-through' };
+                 isGroup: true, collapsed: !!l.collapsed, locked: !!l.locked, blendMode: l.blendMode || 'pass-through' };
       }
       return {
         id: l.id,
@@ -7000,9 +6996,23 @@ function _saveProject() {
         sourceUrl: (l.isSmart && l.sourceCanvas) ? l.sourceCanvas.toDataURL('image/png') : null,
         smartFilters: l.smartFilters || null,
         linked: l.linked || null,
+        // Round-trip parity with the auto-draft payload (these were silently
+        // dropped on Save Project → reload): colour label, base-layer flag, and
+        // the inpaint/paint mask sub-layers + which one is active.
+        colorLabel: l.colorLabel || null,
+        isBase: !!l.isBase,
+        masks: (l.masks || []).map(m => ({ id: m.id, name: m.name, visible: m.visible !== false, dataUrl: m.canvas.toDataURL('image/png') })),
+        activeMaskId: l.activeMaskId || null,
       };
     }),
   };
+}
+function _saveProject() {
+  if (!state.layers.length) {
+    if (uiModule) uiModule.showToast('Nothing to save');
+    return;
+  }
+  const project = _buildProjectPayload();
   const json = JSON.stringify(project);
   const blob = new Blob([json], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
@@ -7431,6 +7441,7 @@ export function openEditor(imageUrl, imageId, presetSize, displayName, draftId) 
   try { window.__geComposite = () => composite(); } catch {} // dev: force a synchronous composite (tests)
   try { window.__geRenderLayers = (cv) => _renderLayersTo(cv.getContext('2d'), cv); } catch {} // dev: render the layer stack into a test canvas
   try { window.__geBuildDraft = () => _buildDraftPayload(); } catch {} // dev: serialize the draft payload (persistence round-trip tests)
+  try { window.__geBuildProject = () => _buildProjectPayload(); } catch {} // dev: serialize the .geproj payload (project round-trip tests)
   try { window.__geRestoreDraft = (p) => _restoreDraft(p); } catch {} // dev: restore a draft payload (persistence round-trip tests)
   if (state.persistTimer) { clearTimeout(state.persistTimer); state.persistTimer = null; }
   state.persistDirty = false;
