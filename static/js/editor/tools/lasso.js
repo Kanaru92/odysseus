@@ -14,6 +14,17 @@
  */
 import { state } from '../state.js';
 import { canvasCoords } from '../canvas-coords.js';
+import { polygonToMask, combineMasks, modeFromEvent } from '../selection/mask-ops.js';
+
+// Rasterize a doc-space polygon into the ACTIVE LAYER's local mask space (every
+// wandMask consumer subtracts the layer offset).
+function _polyToLayerMask(pts) {
+  const lyr = state.layers.find((l) => l.id === state.activeLayerId);
+  const off = (lyr && state.layerOffsets.get(lyr.id)) || { x: 0, y: 0 };
+  const lw = lyr ? lyr.canvas.width : state.imgWidth;
+  const lh = lyr ? lyr.canvas.height : state.imgHeight;
+  return polygonToMask(pts.map((p) => ({ x: p.x - off.x, y: p.y - off.y })), lw, lh);
+}
 
 export function createLassoTool({ composite, drawLassoOverlay, syncToolClearIndicators }) {
   // rAF-coalesced redraw: every pointermove appends a point (cheap, keeps the
@@ -52,7 +63,14 @@ export function createLassoTool({ composite, drawLassoOverlay, syncToolClearIndi
       // (marquee / wand / color-range) unless a combine modifier is held — without
       // this, a lasso drawn after a marquee left BOTH selections visible (the
       // "two overlapping selections" bug).
-      if (!e.shiftKey && !e.altKey) { state.wandMask = null; state.wandLayerId = null; }
+      state.selCombineMode = modeFromEvent(e);
+      if (state.selCombineMode === 'replace') { state.wandMask = null; state.wandLayerId = null; }
+      else if (!state.wandMask && state.lassoPoints && state.lassoPoints.length >= 3) {
+        // Combining onto an existing lasso-polygon selection — rasterize it into
+        // the shared mask first so end()'s boolean op has a base to act on.
+        state.wandMask = _polyToLayerMask(state.lassoPoints);
+        state.wandLayerId = state.activeLayerId;
+      }
       state.lassoPoints = [];
       state.lassoActive = true;
       const coords = canvasCoords(e, state.mainCanvas);
@@ -79,7 +97,25 @@ export function createLassoTool({ composite, drawLassoOverlay, syncToolClearIndi
         syncToolClearIndicators();
         return;
       }
-      // Keep the selection drawn — the panel's action buttons use it.
+      // With a combine modifier, fold this polygon into the shared mask selection
+      // (boolean op) instead of leaving a separate live polygon — otherwise the
+      // downstream priority chain (mask > lasso > wand) would act on the polygon
+      // ALONE and ignore the existing mask, so add/subtract/intersect did nothing.
+      const mode = state.selCombineMode || 'replace';
+      if (mode !== 'replace') {
+        const cand = _polyToLayerMask(state.lassoPoints);
+        const compatible = state.wandMask && state.wandLayerId === state.activeLayerId
+          && state.wandMask.width === cand.width && state.wandMask.height === cand.height;
+        const base = compatible ? state.wandMask : null;
+        state.wandMask = combineMasks(base, cand, base ? mode : 'replace');
+        state.wandLayerId = state.activeLayerId;
+        state.wandMaskVisible = true;
+        state.lassoPoints = []; // now a mask
+        composite();
+        syncToolClearIndicators();
+        return;
+      }
+      // Replace mode — keep the live polygon (the panel's action buttons use it).
       composite();
       drawLassoOverlay();
       syncToolClearIndicators();

@@ -6419,6 +6419,14 @@ function _buildEditor(container) {
     const lbl = document.getElementById('ge-smudge-strength-label');
     if (lbl) lbl.textContent = _smudgeS.value + '%';
   });
+  // Smudge spacing/scatter/jitter (were preset-only — no direct control). Spacing
+  // is a fraction (0..2), scatter/jitter 0..1; the slider is a percent.
+  const _smB = (id, lbl, set) => { const el = document.getElementById(id); el?.addEventListener('input', () => { set(parseInt(el.value, 10) || 0); const l = document.getElementById(lbl); if (l) l.textContent = el.value + '%'; }); };
+  _smB('ge-smudge-spacing', 'ge-smudge-spacing-label', (v) => { state.smudgeSpacing = Math.max(0.01, v / 100); });
+  _smB('ge-smudge-scatter', 'ge-smudge-scatter-label', (v) => { state.smudgeScatter = v / 100; });
+  _smB('ge-smudge-jitter', 'ge-smudge-jitter-label', (v) => { state.smudgeJitter = v / 100; });
+  const _smAll = document.getElementById('ge-smudge-sampleall');
+  if (_smAll) { _smAll.checked = !!state.smudgeSampleAll; _smAll.addEventListener('change', () => { state.smudgeSampleAll = !!_smAll.checked; }); }
   // Mixer brush slider labels (Wet / Mix / Flow).
   [['ge-mixer-wet', 'ge-mixer-wet-label'], ['ge-mixer-mix', 'ge-mixer-mix-label'], ['ge-mixer-flow', 'ge-mixer-flow-label']].forEach(([id, lid]) => {
     const el = document.getElementById(id);

@@ -340,6 +340,7 @@ export const state = {
   brushVelocityTaper: 0, // 0..100 — fast strokes paint thinner (the speed sensor)
   lineAnchor: null, // last stroke end-point → Shift-click draws a straight line from here
   airbrush: false, // build-up: paint keeps accumulating while the brush is held (Alt+Shift+P)
+  expandOnPaint: false, // opt-in: auto-grow the document when a stroke reaches the right/bottom edge
   brushHudActive: false, // Alt+right-drag on-canvas brush HUD in progress
   brushHudStart: null,   // { x, y, size, soft } captured when the HUD drag began
   quickSelecting: false, // Quick Selection drag in progress (drag-flood selection)

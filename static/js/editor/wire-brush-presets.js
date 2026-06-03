@@ -93,6 +93,10 @@ export function wireBrushPresets() {
   };
   _reflectDual();
   _syncDualVis();
+  // Expand-canvas-on-paint (opt-in) — auto-grows the doc when a stroke reaches
+  // the right/bottom edge.
+  const _exp = document.getElementById('ge-brush-expand-paint');
+  if (_exp) { _exp.checked = !!state.expandOnPaint; _exp.addEventListener('change', () => { state.expandOnPaint = !!_exp.checked; }); }
   // Brush blend mode — only the canvas-native modes (valid for the stroke→layer
   // composite); custom per-pixel modes don't apply to the live stroke buffer.
   const _bb = document.getElementById('ge-brush-blend');

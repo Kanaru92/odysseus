@@ -457,6 +457,9 @@ export function controlsHTML({ color, brushSize, wandTolerance }) {
       <div class="ge-control-row ge-eraser-row" style="gap:6px;">
         <label style="display:flex;align-items:center;gap:6px;cursor:pointer;" title="Airbrush / build-up: paint keeps accumulating while you hold the cursor still (Alt+Shift+P)."><input type="checkbox" id="ge-brush-airbrush" /> Airbrush (build up while held)</label>
       </div>
+      <div class="ge-control-row ge-eraser-row" style="gap:6px;">
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;" title="Auto-grow the canvas when a stroke reaches the right/bottom edge."><input type="checkbox" id="ge-brush-expand-paint" /> Expand canvas on paint</label>
+      </div>
       <div class="ge-control-row ge-eraser-row">
         <label>Velocity taper <span id="ge-brush-velocity-label">0%</span></label>
         <input type="range" id="ge-brush-velocity" min="0" max="100" value="0" title="Fast strokes paint thinner (speed sensor). 0 = off." />
@@ -611,9 +614,25 @@ export function controlsHTML({ color, brushSize, wandTolerance }) {
         <label>Strength <span id="ge-smudge-strength-label">60%</span></label>
         <input type="range" id="ge-smudge-strength" min="1" max="100" value="60" title="How far paint smears — higher carries colour longer along the stroke." />
       </div>
+      <div class="ge-control-row ge-eraser-row">
+        <label>Spacing <span id="ge-smudge-spacing-label">25%</span></label>
+        <input type="range" id="ge-smudge-spacing" min="1" max="100" value="25" title="Distance between smear samples — lower = smoother smear, slower." />
+      </div>
+      <div class="ge-control-row ge-eraser-row">
+        <label>Scatter <span id="ge-smudge-scatter-label">0%</span></label>
+        <input type="range" id="ge-smudge-scatter" min="0" max="100" value="0" title="Random per-sample offset for a rougher smear." />
+      </div>
+      <div class="ge-control-row ge-eraser-row">
+        <label>Jitter <span id="ge-smudge-jitter-label">0%</span></label>
+        <input type="range" id="ge-smudge-jitter" min="0" max="100" value="0" title="Random strength variation per sample." />
+      </div>
       <label class="ge-control-row" style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer;">
         <input type="checkbox" id="ge-smudge-finger">
         <span>Finger painting (drag foreground colour)</span>
+      </label>
+      <label class="ge-control-row" style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer;">
+        <input type="checkbox" id="ge-smudge-sampleall">
+        <span>Sample all layers</span>
       </label>
       <p style="font-size:10px;opacity:0.5;margin:2px 0 0;">Drag to smear paint like a finger (Brush Size = radius; pen pressure smears further, brush softness shapes the edge). Blends colours and edges.</p>
     </div>

@@ -49,6 +49,18 @@ export function createMarqueeTool({ composite, drawLassoOverlay }) {
       state.marqueeStart = { x: c.x, y: c.y };
       // Shift = add, Alt = subtract, Shift+Alt = intersect, none = replace.
       state.selCombineMode = modeFromEvent(e);
+      // If combining onto an existing LASSO-POLYGON selection (no mask yet),
+      // rasterize that polygon into the shared mask BEFORE we overwrite
+      // state.lassoPoints below — otherwise the boolean op has nothing to act on
+      // and silently falls back to replace.
+      if (state.selCombineMode !== 'replace' && !state.wandMask && state.lassoPoints && state.lassoPoints.length >= 3) {
+        const lyr = state.layers.find((l) => l.id === state.activeLayerId);
+        const lo = (lyr && state.layerOffsets.get(lyr.id)) || { x: 0, y: 0 };
+        const lw = lyr ? lyr.canvas.width : state.imgWidth;
+        const lh = lyr ? lyr.canvas.height : state.imgHeight;
+        state.wandMask = polygonToMask(state.lassoPoints.map((p) => ({ x: p.x - lo.x, y: p.y - lo.y })), lw, lh);
+        state.wandLayerId = state.activeLayerId;
+      }
       // Row/Column commit on a plain click, so seed their band immediately.
       const m = currentMode();
       state.lassoPoints = (m === 'row' || m === 'col') ? pointsFor(m, c.x, c.y, c.x, c.y) : [];
