@@ -42,10 +42,11 @@ function strokeLabel(tool) {
 }
 
 export function createStrokeTool({
-  saveState, strokeTo, composite, flushComposite,
+  saveState, strokeTo, composite, flushComposite, bakeLayerOffset,
   getActiveMaskLayer, activeParentLayer, ensureActiveMaskLayer, createLayer,
   renderLayerPanel, syncToolClearIndicators,
 }) {
+  const bakeOffset = bakeLayerOffset || (() => {});
   // Render the final stroke frame synchronously on lift (flushes any rAF-coalesced
   // composite scheduled during the stroke). Falls back to composite if unwired.
   const finalComposite = flushComposite || composite;
@@ -76,6 +77,7 @@ export function createStrokeTool({
       if ((state.tool === 'brush' || state.tool === 'eraser') && e && e.shiftKey && state.lineAnchor) {
         const c = canvasCoords(e, state.mainCanvas);
         saveState(strokeLabel(state.tool));
+        bakeOffset(); // fold a moved layer's offset in so paint isn't clipped to its old bounds
         state.drawing = true;
         const savedSmooth = state.brushSmoothing;
         state.brushSmoothing = 0;
@@ -122,6 +124,7 @@ export function createStrokeTool({
         }
       }
       saveState(strokeLabel(state.tool));
+      bakeOffset(); // fold a moved layer's offset in so paint isn't clipped to its old bounds
       state.drawing = true;
       const coords = canvasCoords(e, state.mainCanvas);
       state.lastX = coords.x;

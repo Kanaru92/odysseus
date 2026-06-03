@@ -1376,6 +1376,14 @@ function _expandDocTo(newW, newH) {
   if (state.maskCanvas) { try { state.maskCanvas = grow(state.maskCanvas); state.maskCtx = state.maskCanvas.getContext('2d'); } catch {} }
   state.mainCanvas.width = newW; state.mainCanvas.height = newH;
   state.imgWidth = newW; state.imgHeight = newH;
+  // Keep the CSS display size in sync with the enlarged backing store — without
+  // this the bigger bitmap is squashed into the old display box (the canvas
+  // visibly "squishes" while drawing past the edge). Preserve current zoom;
+  // don't refit or reset pan mid-stroke.
+  const _z = state.zoom || 1;
+  state.mainCanvas.style.width = (newW * _z) + 'px';
+  state.mainCanvas.style.height = (newH * _z) + 'px';
+  try { _syncTransformOverlay(); } catch {}
   return true;
 }
 
@@ -2811,7 +2819,10 @@ const _strokeTo      = (x, y) => {
   // Expand-on-paint: if the dab reaches the right/bottom edge, grow the doc to fit
   // (right/bottom only — no origin shift, so coords stay valid; the pipeline
   // re-fetches the layer ctx each dab, so the swapped-in larger canvas is used).
-  if (state.expandOnPaint !== false && (x > state.imgWidth - 1 || y > state.imgHeight - 1) && (state.imgWidth < 8192 || state.imgHeight < 8192)) {
+  // Auto-grow the doc when a dab passes the right/bottom edge — OPT-IN only.
+  // (Drawing past the edge clips by default, like every other editor; auto-grow
+  // on overshoot surprised users and distorted the view.)
+  if (state.expandOnPaint === true && (x > state.imgWidth - 1 || y > state.imgHeight - 1) && (state.imgWidth < 8192 || state.imgHeight < 8192)) {
     const nw = x > state.imgWidth - 1 ? Math.ceil((x + 24) / 256) * 256 : state.imgWidth;
     const nh = y > state.imgHeight - 1 ? Math.ceil((y + 24) / 256) * 256 : state.imgHeight;
     _expandDocTo(nw, nh);
@@ -2820,6 +2831,34 @@ const _strokeTo      = (x, y) => {
   return _strokeToRaw(x, y);
 };
 const _cloneStrokeTo = _strokePipeline.cloneStrokeTo;
+
+// Before a pixel-paint stroke, fold a moved layer's offset INTO its (doc-sized)
+// canvas so paint can land anywhere on the document. Without this, a layer moved
+// by (ox,oy) maps a document point P to layer-local P-(ox,oy); the area the layer
+// vacated is off its canvas, so brushing there silently does nothing. Baking
+// shifts the layer's pixels (+ its masks, which share the offset) into a fresh
+// doc-sized canvas and zeroes the offset. Call AFTER the stroke's saveState so
+// Undo restores the pre-stroke moved (un-baked) state.
+function _bakeLayerOffsetForPaint() {
+  const layer = activeLayer() || _activeParentLayer();
+  if (!layer || layer.isGroup || !layer.canvas) return;
+  const off = state.layerOffsets.get(layer.id);
+  if (!off) return;
+  const ox = Math.round(off.x), oy = Math.round(off.y);
+  if (ox === 0 && oy === 0) return;
+  // Only when painting the layer's PIXELS — mask sub-layers / layer-mask edits /
+  // inpaint masks are full-image (offset 0) and must not be baked.
+  if (_getActiveMaskLayer()) return;
+  if (state.layerMaskEdit && layer.layerMask) return;
+  if (state.tool === 'inpaint') return;
+  const w = layer.canvas.width, h = layer.canvas.height;
+  const bake = (cv) => { if (!cv) return cv; const n = document.createElement('canvas'); n.width = w; n.height = h; n.getContext('2d').drawImage(cv, ox, oy); return n; };
+  layer.canvas = bake(layer.canvas); layer.ctx = layer.canvas.getContext('2d');
+  if (layer.layerMask) layer.layerMask = bake(layer.layerMask);
+  if (layer.masks) for (const m of layer.masks) { m.canvas = bake(m.canvas); m.ctx = m.canvas.getContext('2d'); }
+  state.layerOffsets.set(layer.id, { x: 0, y: 0 });
+  _resetLayerCaches(layer);
+}
 
 // ── Brush cursor overlay ──
 
@@ -3771,6 +3810,7 @@ const _strokeTool = createStrokeTool({
   strokeTo: (x, y) => _strokeTo(x, y),
   composite,
   flushComposite: _flushComposite,
+  bakeLayerOffset: () => _bakeLayerOffsetForPaint(),
   getActiveMaskLayer: () => _getActiveMaskLayer(),
   activeParentLayer: () => _activeParentLayer(),
   ensureActiveMaskLayer: () => _ensureActiveMaskLayer(),
