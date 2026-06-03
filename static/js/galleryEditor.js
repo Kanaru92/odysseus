@@ -7,6 +7,7 @@ import dragSortModule from './dragSort.js';
 import spinnerModule from './spinner.js';
 import { attachColorPicker, isColorPickerOpen, closeColorPicker } from './colorPicker.js';
 import { gradientOverlay } from './editor/fx/layer-style-gradient-overlay.js';
+import { getPattern as _getPattern, getPatterns as _getPatterns, definePattern as _definePattern, defaultPatternId as _defaultPatternId } from './editor/patterns/pattern-store.js';
 import { satin } from './editor/fx/layer-style-satin.js';
 import { bevelEmboss } from './editor/fx/layer-style-bevel.js';
 import { strokeStyle } from './editor/fx/layer-style-stroke.js';
@@ -435,7 +436,28 @@ function _renderFillLayer(layer) {
   ctx.save();
   ctx.globalCompositeOperation = 'source-over';
   ctx.clearRect(0, 0, w, h);
-  if (f.type === 'gradient') {
+  if (f.type === 'pattern') {
+    // Tile a pattern across the whole layer at the spec's scale (crisp scaling
+    // so geometric tiles stay sharp). Falls back to a flat grey if the pattern
+    // id no longer resolves.
+    const p = _getPattern(f.patternId) || _getPatterns()[0];
+    let pat = null;
+    if (p && p.canvas) {
+      const sc = Math.max(0.05, f.scale || 1);
+      let tile = p.canvas;
+      if (sc !== 1) {
+        const t = document.createElement('canvas');
+        t.width = Math.max(1, Math.round(p.canvas.width * sc));
+        t.height = Math.max(1, Math.round(p.canvas.height * sc));
+        const tx = t.getContext('2d');
+        tx.imageSmoothingEnabled = false;
+        tx.drawImage(p.canvas, 0, 0, t.width, t.height);
+        tile = t;
+      }
+      pat = ctx.createPattern(tile, 'repeat');
+    }
+    ctx.fillStyle = pat || '#888888';
+  } else if (f.type === 'gradient') {
     const g = ctx.createLinearGradient(0, 0, w, 0); // left→right linear
     g.addColorStop(0, f.from || '#000000');
     g.addColorStop(1, f.to || '#ffffff');
@@ -450,6 +472,11 @@ function _renderFillLayer(layer) {
 // Create a new fill layer (kind: 'solid' | 'gradient') from the current colours,
 // inserted above the active layer (PS placement).
 function _addFillLayer(kind) {
+  // Pattern fill picks a pattern + scale via a small dialog first.
+  if (kind === 'pattern') {
+    _openPatternPicker(null).then((res) => { if (res) _createPatternFill(res.patternId, res.scale); });
+    return;
+  }
   _saveState(kind === 'gradient' ? 'Gradient fill layer' : 'Solid fill layer');
   const layer = createLayer(kind === 'gradient' ? 'Gradient Fill' : 'Color Fill',
     state.imgWidth, state.imgHeight);
@@ -457,6 +484,11 @@ function _addFillLayer(kind) {
     ? { type: 'gradient', from: state.color || '#000000', to: state.bgColor || '#ffffff' }
     : { type: 'solid', color: state.color || '#000000' };
   _renderFillLayer(layer);
+  return _insertFillLayer(layer);
+}
+
+// Shared insert: place above the active layer (PS placement), select, repaint.
+function _insertFillLayer(layer) {
   const ai = state.layers.findIndex(l => l.id === state.activeLayerId);
   if (ai >= 0) state.layers.splice(ai + 1, 0, layer); else state.layers.push(layer);
   state.activeLayerId = layer.id;
@@ -466,9 +498,30 @@ function _addFillLayer(kind) {
   return layer;
 }
 
+// Create a pattern fill layer from a chosen pattern id + scale.
+function _createPatternFill(patternId, scale) {
+  _saveState('Pattern fill layer');
+  const layer = createLayer('Pattern Fill', state.imgWidth, state.imgHeight);
+  layer.fill = { type: 'pattern', patternId: patternId || _defaultPatternId(), scale: scale || 1 };
+  _renderFillLayer(layer);
+  return _insertFillLayer(layer);
+}
+
 // Re-edit an existing fill layer's spec from the current colours (double-click).
 function _editFillLayer(layer) {
   if (!layer || !layer.fill) return;
+  if (layer.fill.type === 'pattern') {
+    _openPatternPicker({ patternId: layer.fill.patternId, scale: layer.fill.scale }).then((res) => {
+      if (!res) return;
+      _saveState('Edit fill');
+      layer.fill.patternId = res.patternId;
+      layer.fill.scale = res.scale;
+      _renderFillLayer(layer);
+      _renderLayerPanel();
+      composite();
+    });
+    return;
+  }
   _saveState('Edit fill');
   if (layer.fill.type === 'gradient') {
     layer.fill.from = state.color || layer.fill.from;
@@ -479,6 +532,92 @@ function _editFillLayer(layer) {
   _renderFillLayer(layer);
   _renderLayerPanel();
   composite();
+}
+
+// Pattern picker dialog — choose a tileable pattern + scale for a pattern fill
+// layer. Resolves to { patternId, scale } or null on cancel. Honors the Esc
+// hard-guard via _activePromptClose (same contract as the other editor modals).
+function _openPatternPicker(initial) {
+  return new Promise((resolve) => {
+    let sel = (initial && initial.patternId) || _defaultPatternId();
+    let scale = (initial && initial.scale) || 1;
+    let done = false;
+    const finish = (val) => { if (done) return; done = true; close(); resolve(val); };
+
+    let overlay = document.getElementById('ge-pattern-overlay');
+    if (overlay) overlay.remove();
+    overlay = document.createElement('div');
+    overlay.id = 'ge-pattern-overlay';
+    overlay.className = 'modal';
+    // Explicit modal styling so the dialog reliably sits above + captures clicks
+    // (the base .modal is pointer-events:none on desktop, expecting an inner
+    // element to re-enable interaction).
+    overlay.style.cssText = 'position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:1000;background:rgba(0,0,0,0.45);pointer-events:auto;';
+    overlay.innerHTML = `
+      <div class="ge-prompt-card" style="background:#26262b;border:1px solid rgba(255,255,255,0.14);border-radius:10px;padding:18px;min-width:340px;max-width:420px;color:#eee;box-shadow:0 18px 48px rgba(0,0,0,0.55);">
+        <div style="font-weight:600;margin-bottom:10px;">Pattern Fill</div>
+        <div id="ge-pattern-grid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px;"></div>
+        <label style="display:flex;align-items:center;gap:10px;font-size:12px;">Scale
+          <input id="ge-pattern-scale" type="range" min="10" max="400" value="${Math.round(scale * 100)}" style="flex:1;">
+          <span id="ge-pattern-scale-val" style="width:46px;text-align:right;opacity:0.75;">${Math.round(scale * 100)}%</span>
+        </label>
+        <div style="display:flex;justify-content:space-between;gap:8px;margin-top:14px;">
+          <button id="ge-pattern-define" class="ge-btn" title="Define a new pattern from the active layer">Define from Layer</button>
+          <div style="display:flex;gap:8px;">
+            <button id="ge-pattern-cancel" class="ge-btn">Cancel</button>
+            <button id="ge-pattern-ok" class="ge-btn ge-btn-primary">OK</button>
+          </div>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+
+    const grid = overlay.querySelector('#ge-pattern-grid');
+    const scaleIn = overlay.querySelector('#ge-pattern-scale');
+    const scaleVal = overlay.querySelector('#ge-pattern-scale-val');
+
+    const renderGrid = () => {
+      grid.innerHTML = '';
+      for (const p of _getPatterns()) {
+        const cell = document.createElement('button');
+        cell.type = 'button';
+        cell.title = p.name;
+        cell.dataset.pid = p.id;
+        const on = p.id === sel;
+        cell.style.cssText = 'padding:0;height:56px;border-radius:6px;cursor:pointer;overflow:hidden;background:#1d1d22;border:2px solid ' + (on ? 'var(--red,#e0564f)' : 'rgba(255,255,255,0.14)') + ';';
+        const sw = document.createElement('canvas');
+        sw.width = 52; sw.height = 52;
+        const sx = sw.getContext('2d');
+        const pat = p.canvas ? sx.createPattern(p.canvas, 'repeat') : null;
+        sx.fillStyle = pat || '#888'; sx.fillRect(0, 0, 52, 52);
+        sw.style.cssText = 'width:100%;height:100%;display:block;image-rendering:pixelated;';
+        cell.appendChild(sw);
+        cell.addEventListener('click', () => { sel = p.id; renderGrid(); });
+        grid.appendChild(cell);
+      }
+    };
+    renderGrid();
+
+    scaleIn.addEventListener('input', () => { scale = parseInt(scaleIn.value, 10) / 100; scaleVal.textContent = scaleIn.value + '%'; });
+    overlay.querySelector('#ge-pattern-define').addEventListener('click', () => {
+      const al = state.layers.find(l => l.id === state.activeLayerId);
+      if (al && al.canvas) {
+        const id = _definePattern('Layer Pattern', al.canvas);
+        if (id) { sel = id; renderGrid(); }
+        else { try { uiModule.showToast('Could not define pattern'); } catch {} }
+      } else { try { uiModule.showToast('No layer to define from'); } catch {} }
+    });
+
+    const onKey = (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); finish({ patternId: sel, scale }); }
+      else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); finish(null); }
+    };
+    function close() { overlay.remove(); document.removeEventListener('keydown', onKey, true); if (_activePromptClose === close) _activePromptClose = null; }
+    _activePromptClose = close;
+    overlay.querySelector('#ge-pattern-ok').addEventListener('click', () => finish({ patternId: sel, scale }));
+    overlay.querySelector('#ge-pattern-cancel').addEventListener('click', () => finish(null));
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) finish(null); });
+    document.addEventListener('keydown', onKey, true);
+  });
 }
 
 // _layerFilterString + _fxFilterToSlider live in editor/fx/filter-string.js
@@ -5987,12 +6126,16 @@ function _buildEditor(container) {
       openDialog: () => _openNewLayerDialog(),
       create: (o) => _addLayerFromDialog(o),
     };
-    window.__geFillLayer = { add: (kind) => _addFillLayer(kind), edit: (l) => _editFillLayer(l) };
+    window.__geFillLayer = {
+      add: (kind) => _addFillLayer(kind),
+      edit: (l) => _editFillLayer(l),
+      addPattern: (patternId, scale) => _createPatternFill(patternId, scale), // headless path (skips the picker)
+    };
   }
 
   // Fill-layer creation. Hidden buttons exist only so the Layer menu can relay-
   // click them by id (same pattern as New Layer); the menu items are the real UI.
-  for (const [id, kind] of [['ge-fill-solid', 'solid'], ['ge-fill-gradient', 'gradient']]) {
+  for (const [id, kind] of [['ge-fill-solid', 'solid'], ['ge-fill-gradient', 'gradient'], ['ge-fill-pattern', 'pattern']]) {
     let btn = document.getElementById(id);
     if (!btn) {
       btn = document.createElement('button');
