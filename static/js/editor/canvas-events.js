@@ -65,7 +65,13 @@ export function wireCanvasEvents({ canvasArea, beginDraw, continueDraw, endDraw:
   // the WINDOW so a drag can continue (and end) past the canvas edge.
   // Critical for the Resize tool where users overshoot.
   state.mainCanvas.addEventListener('mousedown', beginDraw);
-  on(window, 'mousemove', continueDraw);
+  // Mouse drives the stroke here; a pen drives it from pointermove's coalesced
+  // sub-frame samples instead (below), so the paired compat mousemove is skipped
+  // (state._penDroveFrame) to avoid painting the same point twice.
+  on(window, 'mousemove', (e) => {
+    if (state._penDroveFrame) { state._penDroveFrame = false; return; }
+    continueDraw(e);
+  });
   on(window, 'mouseup', endDraw);
   // Lasso can start OUTSIDE the canvas — fallback mousedown on the
   // surrounding canvas-area so the user can begin a lasso path in
@@ -131,12 +137,23 @@ export function wireCanvasEvents({ canvasArea, beginDraw, continueDraw, endDraw:
     }
   };
   state.mainCanvas.addEventListener('pointerdown', capturePen);
-  // Record stylus pressure/tilt only — the mouse-compat events DRIVE the stroke
-  // (one continueDraw per frame). Replaying every sub-frame getCoalescedEvents()
-  // sample through the full stroke pipeline composited N× per frame and made
-  // drawing lag, so high-Hz sub-sampling is deferred to a batched-composite
-  // approach. capturePen stays so pen pressure (Windows Ink) still works.
-  state.mainCanvas.addEventListener('pointermove', capturePen);
+  // High-rate pen: drive the in-progress stroke from the pointer's COALESCED
+  // sub-frame samples so fast strokes don't drop points (the "angular / skipped
+  // section" lines). Safe now that compositing is rAF-coalesced — replaying many
+  // points per frame renders dabs cheaply and composites once. Each sample
+  // updates pressure/tilt (capturePen) then paints (continueDraw). The paired
+  // compat mousemove is suppressed via state._penDroveFrame. Mouse is unaffected
+  // (it has no useful sub-frame samples and keeps the mousemove path).
+  state.mainCanvas.addEventListener('pointermove', (e) => {
+    if (state.drawing && e.pointerType === 'pen') {
+      const evs = (typeof e.getCoalescedEvents === 'function') ? e.getCoalescedEvents() : null;
+      const list = (evs && evs.length) ? evs : [e];
+      for (const ce of list) { capturePen(ce); continueDraw(ce); }
+      state._penDroveFrame = true;
+    } else {
+      capturePen(e);
+    }
+  });
 
   // Touch — single finger draws; two fingers pan + pinch-zoom.
   let multiActive = false;
