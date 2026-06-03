@@ -470,7 +470,7 @@ export function wireKeyboardShortcuts(deps) {
     // size.
     if (e.key === '[' || e.key === ']') {
       const factor = e.key === '[' ? 0.9 : 1.1;
-      state.brushSize = Math.max(1, Math.min(800, Math.round(state.brushSize * factor)));
+      state.brushSize = Math.max(1, Math.min(5000, Math.round(state.brushSize * factor)));
       try { brushSizeSync(null); } catch {}
     }
     // { / } adjust brush hardness. brushSoftness is the inverse of

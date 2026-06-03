@@ -4352,20 +4352,25 @@ function _drawWandOverlay() {
   const layer = state.layers.find(l => l.id === state.wandLayerId);
   if (!layer) return;
   const off = state.layerOffsets.get(layer.id) || { x: 0, y: 0 };
-  // Tint the white mask red, draw at the layer's offset on the main canvas.
-  const tint = document.createElement('canvas');
-  tint.width = state.wandMask.width;
-  tint.height = state.wandMask.height;
-  const tc = tint.getContext('2d');
-  tc.drawImage(state.wandMask, 0, 0);
-  tc.globalCompositeOperation = 'source-in';
-  tc.fillStyle = 'rgba(255, 60, 60, 1)';
-  tc.fillRect(0, 0, tint.width, tint.height);
-  state.mainCtx.save();
-  state.mainCtx.globalAlpha = 0.18; // lighter tint so the marching-ants edge reads clearly
-  state.mainCtx.drawImage(tint, off.x, off.y);
-  state.mainCtx.globalAlpha = 1;
-  state.mainCtx.restore();
+  // Quick Mask only: tint the selected area red (PS Quick Mask preview). A plain
+  // selection (marquee / wand / lasso) shows the marching-ants boundary ONLY —
+  // a filled red overlay obscures the artwork and isn't how selections read in
+  // any pro editor.
+  if (state.quickMask) {
+    const tint = document.createElement('canvas');
+    tint.width = state.wandMask.width;
+    tint.height = state.wandMask.height;
+    const tc = tint.getContext('2d');
+    tc.drawImage(state.wandMask, 0, 0);
+    tc.globalCompositeOperation = 'source-in';
+    tc.fillStyle = 'rgba(255, 60, 60, 1)';
+    tc.fillRect(0, 0, tint.width, tint.height);
+    state.mainCtx.save();
+    state.mainCtx.globalAlpha = 0.4;
+    state.mainCtx.drawImage(tint, off.x, off.y);
+    state.mainCtx.globalAlpha = 1;
+    state.mainCtx.restore();
+  }
   // Marching-ants boundary (cached; crawls with _antsPhase).
   if (!state.wandMask._ants) state.wandMask._ants = _computeMaskBoundary(state.wandMask);
   const b = state.wandMask._ants, ph = _antsPhase, c = state.mainCtx, ox = off.x, oy = off.y;
@@ -5203,7 +5208,7 @@ function _buildEditor(container) {
           state.inpaintBrushInitialised = true;
           const inp = document.getElementById('ge-inpaint-brush-slider');
           if (inp) {
-            const pos = Math.round(Math.log(Math.max(1, state.brushSize)) / Math.log(800) * 1000);
+            const pos = Math.round(Math.log(Math.max(1, state.brushSize)) / Math.log(5000) * 1000);
             inp.value = String(pos);
             const lbl = document.getElementById('ge-inpaint-brush-label');
             if (lbl) lbl.textContent = `${state.brushSize}px`;
@@ -5639,7 +5644,7 @@ function _buildEditor(container) {
   const initBrushCtrl = document.getElementById('ge-brush-controls');
   if (initBrushCtrl) initBrushCtrl.style.display = 'none';
   // Brush-size slider is exponential — slider position 0..1000 maps to
-  // brush size 1..800 via Math.pow(800, pos/1000). This gives fine
+  // brush size 1..5000 via Math.pow(5000, pos/1000). This gives fine
   // control at small sizes (where precision matters most) and bigger
   // jumps at the high end (where +/-50 px is barely visible anyway).
   // We expose two sliders (global brush-controls + inpaint section) and
@@ -5649,7 +5654,7 @@ function _buildEditor(container) {
     const globalInput = controls.querySelector('.ge-size-slider');
     const inpaintLabel = document.getElementById('ge-inpaint-brush-label');
     const inpaintInput = document.getElementById('ge-inpaint-brush-slider');
-    const pos = Math.round(Math.log(Math.max(1, state.brushSize)) / Math.log(800) * 1000);
+    const pos = Math.round(Math.log(Math.max(1, state.brushSize)) / Math.log(5000) * 1000);
     if (globalLabel) globalLabel.textContent = state.brushSize + 'px';
     if (inpaintLabel) inpaintLabel.textContent = state.brushSize + 'px';
     if (globalInput && source !== globalInput) globalInput.value = String(pos);
@@ -5659,7 +5664,7 @@ function _buildEditor(container) {
     if (!el) return;
     el.addEventListener('input', (e) => {
       const pos = parseInt(e.target.value, 10);
-      state.brushSize = Math.max(1, Math.round(Math.pow(800, pos / 1000)));
+      state.brushSize = Math.max(1, Math.round(Math.pow(5000, pos / 1000)));
       _brushSizeSync(e.target);
     });
   }
@@ -5672,7 +5677,7 @@ function _buildEditor(container) {
   _addManagedListener(window, 'mousemove', (e) => {
     if (!state.brushHudActive || !state.brushHudStart) return;
     const s = state.brushHudStart;
-    state.brushSize = Math.max(1, Math.min(800, Math.round(s.size + (e.clientX - s.x))));
+    state.brushSize = Math.max(1, Math.min(5000, Math.round(s.size + (e.clientX - s.x))));
     // Vertical → opacity 0-100; up (negative dy) increases. ~200px = full range.
     const opField = s.opField || 'brushOpacity';
     const newOp = Math.max(0, Math.min(100, Math.round(s.opacity - (e.clientY - s.y) * 0.5)));

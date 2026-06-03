@@ -10,7 +10,7 @@
  * @returns {string}
  */
 export function controlsHTML({ color, brushSize, wandTolerance }) {
-  const brushSliderValue = Math.round(Math.log(Math.max(1, brushSize)) / Math.log(800) * 1000);
+  const brushSliderValue = Math.round(Math.log(Math.max(1, brushSize)) / Math.log(5000) * 1000);
   return `
     <div class="ge-color-panel" id="ge-color-panel">
       <div class="ge-color-tabs" role="tablist">
@@ -241,7 +241,7 @@ export function controlsHTML({ color, brushSize, wandTolerance }) {
       <div class="ge-control-row ge-eraser-row">
         <span class="ge-eraser-preview" id="ge-inpaint-brush-preview" aria-hidden="true"></span>
         <label>Mask Brush Size <span id="ge-inpaint-brush-label">${brushSize}px</span></label>
-        <input type="range" id="ge-inpaint-brush-slider" min="0" max="1000" value="${brushSliderValue}" title="Brush diameter (log scale 1→800px). Use [ and ] for ±10%." />
+        <input type="range" id="ge-inpaint-brush-slider" min="0" max="1000" value="${brushSliderValue}" title="Brush diameter (log scale 1→5000px). Use [ and ] for ±10%." />
       </div>
       <div class="ge-control-row ge-actions ge-inpaint-mask-row" style="margin-top:4px;">
         <button class="ge-btn ge-btn-sm ge-btn-iconlabel ge-mask-vis-btn visible" id="ge-mask-vis" title="Hide mask">
