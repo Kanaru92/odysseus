@@ -83,6 +83,15 @@ export function wireBrushPresets() {
   _dcount?.addEventListener('input', () => { state.brushDualCount = parseInt(_dcount.value, 10) || 6; const l = document.getElementById('ge-brush-dual-count-label'); if (l) l.textContent = _dcount.value; });
   const _dscatter = document.getElementById('ge-brush-dual-scatter');
   _dscatter?.addEventListener('input', () => { state.brushDualScatter = (parseInt(_dscatter.value, 10) || 80) / 100; const l = document.getElementById('ge-brush-dual-scatter-label'); if (l) l.textContent = _dscatter.value + '%'; });
+  // Reflect persisted dual values into the sliders + labels on wire-up so they
+  // match state (which may differ from the HTML defaults after a restore).
+  const _reflectDual = () => {
+    const put = (el, v, lab, suffix) => { if (el) el.value = String(v); const l = lab && document.getElementById(lab); if (l) l.textContent = v + (suffix || ''); };
+    put(_dscale, Math.round((state.brushDualScale != null ? state.brushDualScale : 0.35) * 100), 'ge-brush-dual-scale-label', '%');
+    put(_dcount, state.brushDualCount != null ? state.brushDualCount : 6, 'ge-brush-dual-count-label', '');
+    put(_dscatter, Math.round((state.brushDualScatter != null ? state.brushDualScatter : 0.8) * 100), 'ge-brush-dual-scatter-label', '%');
+  };
+  _reflectDual();
   _syncDualVis();
   // Brush blend mode — only the canvas-native modes (valid for the stroke→layer
   // composite); custom per-pixel modes don't apply to the live stroke buffer.
