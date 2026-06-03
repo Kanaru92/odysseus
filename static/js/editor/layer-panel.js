@@ -568,6 +568,19 @@ export function createLayerPanelRenderer(deps) {
       render();
       uiModule?.showToast?.(layer.lockAlpha ? 'Transparency locked' : 'Transparency unlocked');
     });
+
+    // Lock layer — blocks ALL edits (pixels, position, properties) until
+    // unlocked. The lock state is enforced across the editor + persists; this is
+    // the only place to toggle it. Works on layers and groups.
+    const lockLayerBtn = document.getElementById('ge-lock-layer');
+    lockLayerBtn?.addEventListener('click', () => {
+      const layer = _activeLayerOrGroup();
+      if (!layer) { uiModule?.showToast?.('Select a layer first'); return; }
+      saveState(layer.locked ? `Unlock "${layer.name}"` : `Lock "${layer.name}"`);
+      layer.locked = !layer.locked;
+      render();
+      uiModule?.showToast?.(layer.locked ? 'Layer locked' : 'Layer unlocked');
+    });
   }
   function syncHeaderProps() {
     wireHeaderProps();
@@ -588,6 +601,8 @@ export function createLayerPanelRenderer(deps) {
     if (clipBtn) clipBtn.classList.toggle('active', !!(l && !isGroup && l.clipped));
     const lockBtn = document.getElementById('ge-lockalpha-layer');
     if (lockBtn) lockBtn.classList.toggle('active', !!(l && !isGroup && l.lockAlpha));
+    const lockLayerBtn = document.getElementById('ge-lock-layer');
+    if (lockLayerBtn) lockLayerBtn.classList.toggle('active', !!(l && l.locked));
   }
 
   function render() {
