@@ -66,7 +66,7 @@ export function wireKeyboardShortcuts(deps) {
     buildLassoMask, drawLassoOverlay,
     swapColors, defaultColors, toggleMaskView, runCommand,
     activeLayer, uiModule, renderLayerPanel, fillActiveLayer, stampVisible,
-    confirmDistort, cancelDistort, applyPcrop,
+    confirmDistort, cancelDistort, applyPcrop, stepFrame,
     polyLassoClose, polyLassoCancel,
     magLassoClose, magLassoCancel,
     addManagedListener,
@@ -121,6 +121,12 @@ export function wireKeyboardShortcuts(deps) {
         if (uiModule) uiModule.showToast(lyr.lockAlpha ? 'Transparency locked' : 'Transparency unlocked');
       }
       return;
+    }
+    // ',' / '.' step to the previous / next animation frame (advertised on the
+    // timeline buttons). Skip while typing in a field.
+    if ((e.key === ',' || e.key === '.') && !e.ctrlKey && !e.metaKey && !e.altKey
+        && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA' && stepFrame) {
+      e.preventDefault(); stepFrame(e.key === '.' ? 1 : -1); return;
     }
     // Enter closes an in-progress polygonal-lasso selection (before transform).
     if (e.key === 'Enter' && state.polyLassoActive && polyLassoClose) {

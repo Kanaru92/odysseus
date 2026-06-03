@@ -51,6 +51,11 @@ export function transformPopupHTML() {
       <button type="button" class="ge-btn ge-btn-sm" id="ge-transform-cancel-btn">Cancel</button>
       <button type="button" class="ge-btn ge-btn-sm ge-btn-primary" id="ge-transform-apply">Apply</button>
     </div>
+    <div class="ge-transform-popup-actions" style="display:flex;gap:6px;justify-content:center;margin-top:6px;">
+      <button type="button" class="ge-btn ge-btn-sm" id="ge-transform-flip-h" title="Flip horizontal">Flip H</button>
+      <button type="button" class="ge-btn ge-btn-sm" id="ge-transform-flip-v" title="Flip vertical">Flip V</button>
+      <button type="button" class="ge-btn ge-btn-sm" id="ge-transform-rot-90" title="Rotate 90°">Rotate 90°</button>
+    </div>
     <p class="ge-transform-popup-hint">Type <strong>-</strong> before W / H to flip.</p>
   `;
 }

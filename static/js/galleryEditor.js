@@ -6771,6 +6771,7 @@ function _buildEditor(container) {
     confirmDistort: () => { _distortTool.commit(); composite(); },
     cancelDistort: () => _distortTool.cancel(),
     applyPcrop: () => { try { _pcropTool.apply(); } catch {} },
+    stepFrame: (d) => { try { if (_anim) (d > 0 ? _anim.nextFrame() : _anim.prevFrame()); } catch {} },
     polyLassoClose: () => _polyLassoTool.close(),
     polyLassoCancel: () => _polyLassoTool.cancel(),
     magLassoClose: () => _magLassoTool.close(),

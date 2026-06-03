@@ -54,12 +54,21 @@ export function createTimeline(anim, container) {
     og._beforeTint = col(a.onion.beforeTint || '#ff5555', 'Previous-frame tint', (v) => anim.setOnion({ beforeTint: v }));
     og._afterTint = col(a.onion.afterTint || '#55aaff', 'Next-frame tint', (v) => anim.setOnion({ afterTint: v }));
     og._after = num(a.onion.after, 'Onion: frames after', (v) => anim.setOnion({ after: v }));
+    // Overall onion-skin opacity (the model knob existed but had no control).
+    const op = document.createElement('input');
+    op.type = 'range'; op.min = '5'; op.max = '100';
+    op.value = String(Math.round((a.onion.opacity != null ? a.onion.opacity : 0.3) * 100));
+    op.title = 'Onion-skin opacity';
+    op.style.cssText = 'width:60px;';
+    op.addEventListener('input', () => anim.setOnion({ opacity: (parseInt(op.value, 10) || 30) / 100 }));
+    og._opacity = op;
     og.appendChild(document.createTextNode('◂'));
     og.appendChild(og._before);
     og.appendChild(og._beforeTint);
     og.appendChild(og._afterTint);
     og.appendChild(og._after);
     og.appendChild(document.createTextNode('▸'));
+    og.appendChild(og._opacity);
     return og;
   }
 
