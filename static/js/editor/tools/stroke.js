@@ -71,6 +71,7 @@ export function createStrokeTool({
      */
     tryBegin(e) {
       if (!STROKE_TOOLS.has(state.tool)) return false;
+      state._engStrokeStarted = false; // new stroke → the brush engine begins exactly once (airbrush fix)
       // Shift-click straight line (brush/eraser): draw from the previous stroke's
       // end-point to the clicked point. Smoothing is bypassed so the line lands
       // exactly on the click; drawing stays on so a continued drag extends it.
@@ -158,6 +159,7 @@ export function createStrokeTool({
       if (!state.drawing) return false;
       const wasDrawingInpaint = state.tool === 'inpaint';
       state.drawing = false;
+      state._engStrokeStarted = false; // stroke ended → next one re-begins the engine
       // A clone stroke leaves a full-document source snapshot resident in
       // state; release it at stroke end so it doesn't pin a full-canvas
       // bitmap until the next source-pick/stroke.

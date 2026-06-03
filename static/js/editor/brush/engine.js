@@ -379,7 +379,11 @@ export function createBrushEngine(preset) {
       const size = Math.max(0.5, sizeFn(to, rt.size));
       const spacingPx = Math.max(0.5, p.spacing * size);
       if (dist === 0) {
-        if (residual <= 0) { stampToBuffer(to.x, to.y, { ...to, random: Math.random() }, rt, lastAngle); residual = spacingPx; }
+        // Stationary point: stamp when spacing allows, OR on an airbrush pulse
+        // (the held-airbrush timer) so build-up keeps depositing into the SAME
+        // flow buffer — composited at the opacity cap, so it asymptotes to the
+        // cap instead of re-beginning and building past it.
+        if (residual <= 0 || (rt && rt.airbrushPulse)) { stampToBuffer(to.x, to.y, { ...to, random: Math.random() }, rt, lastAngle); residual = spacingPx; }
       } else {
         lastAngle = Math.atan2(dy, dx);
         let d = residual;

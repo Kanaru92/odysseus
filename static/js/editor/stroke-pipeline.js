@@ -145,6 +145,7 @@ export function createStrokePipeline({ activeLayer, getActiveMaskLayer, composit
       dualCount: state.brushDualCount != null ? state.brushDualCount : 6,
       dualScatter: state.brushDualScatter != null ? state.brushDualScatter : 0.8,
       dualHardness: state.brushDualHardness != null ? state.brushDualHardness : 1,
+      airbrushPulse: !isEraser && !!state.airbrush, // held-airbrush build-up: keep stamping at a stationary point
       lockAlpha: !isEraser && !!(layer && layer.lockAlpha),
       erase: isEraser,
     };
@@ -346,7 +347,13 @@ export function createStrokePipeline({ activeLayer, getActiveMaskLayer, composit
     if (state.useBrushEngine && (state.tool === 'brush' || state.tool === 'eraser') && !paintingMask) {
       try {
         const eng = getBrushEngine();
-        const isStart = state.lastX === x && state.lastY === y;
+        // First dab of THIS stroke. Use an explicit per-stroke flag, not
+        // coordinate equality: the airbrush timer re-emits strokeTo at the same
+        // point, which would otherwise read as "start" every tick → eng.begin()
+        // re-snapshots the layer and resets the opacity cap, letting a held
+        // airbrush build past the Opacity slider. The flag is set false at
+        // pointerdown (tools/stroke.js) so each real stroke begins exactly once.
+        const isStart = !state._engStrokeStarted;
         // Stroke stabilizer — lag the painted target toward the cursor for
         // smoother lines. brushSmoothing 0 → alpha 1 → no change (no
         // regression). Reset to the cursor at stroke start.
@@ -428,12 +435,14 @@ export function createStrokePipeline({ activeLayer, getActiveMaskLayer, composit
           dualCount: state.brushDualCount != null ? state.brushDualCount : 6,
           dualScatter: state.brushDualScatter != null ? state.brushDualScatter : 0.8,
           dualHardness: state.brushDualHardness != null ? state.brushDualHardness : 1,
+          airbrushPulse: !isEraser && !!state.airbrush, // held-airbrush build-up at a stationary point
           lockAlpha: !isEraser && !!(layer && layer.lockAlpha),
           erase: isEraser,
         };
         // tryBegin seeds lastX/lastY to the start point, so a dist-0 first
         // call marks the stroke start → snapshot the layer + reset the buffer.
         if (isStart) eng.begin(ctx, rt);
+        state._engStrokeStarted = true; // subsequent dabs (incl. airbrush ticks) add to the buffer
         eng.segment(
           ctx,
           { x: fromX, y: fromY, pressure: fromPr, tilt: tiltMag },

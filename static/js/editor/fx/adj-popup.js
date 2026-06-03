@@ -743,6 +743,10 @@ export function createAdjPopupSystem({ composite, saveState, renderLayerPanel })
     } else if (type === 'selective-color') {
       const fam = layer._scFam || 'reds';
       if (p[fam]) p[fam][key] = 0;
+    } else if (type === 'channel-mixer') {
+      const [out, ch] = key.split('-');
+      const def = (defaults && defaults[out]) || {};
+      if (p[out]) p[out][ch] = def[ch] != null ? def[ch] : 0;
     } else if (defaults && key in defaults) {
       // Flat-param adjustments (vibrance/exposure/shadows-highlights/vignette/
       // clarity/chromatic-aberration/lens-distortion/…) revert to their default.
@@ -777,6 +781,12 @@ export function createAdjPopupSystem({ composite, saveState, renderLayerPanel })
       const fam = layer._scFam || 'reds';
       if (!p[fam]) p[fam] = { c: 0, m: 0, y: 0, k: 0 };
       p[fam][key] = raw / 100; display = raw + '%';
+    } else if (type === 'channel-mixer') {
+      // keys are 'r-r'|'r-g'|...|'gray-b' — write into the per-output {r,g,b} object
+      // pixel-pass reads, not a junk flat key.
+      const [out, ch] = key.split('-');
+      if (!p[out]) p[out] = { r: 0, g: 0, b: 0 };
+      p[out][ch] = raw; display = raw + '%';
     } else {
       // vibrance/exposure/posterize/threshold/photo-filter density: 1:1 numeric.
       p[key] = raw;

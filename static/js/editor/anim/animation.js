@@ -13,7 +13,7 @@
 import { state } from '../state.js';
 import * as M from './model.js';
 
-export function createAnimation({ composite, createLayer, renderLayerPanel, onChange }) {
+export function createAnimation({ composite, createLayer, renderLayerPanel, onChange, saveState }) {
   const emit = () => { try { onChange && onChange(); } catch {} };
   let scratch = null; // reusable canvas for tinting onion cels
   let raf = 0, lastT = 0, acc = 0;
@@ -77,6 +77,7 @@ export function createAnimation({ composite, createLayer, renderLayerPanel, onCh
   // Append a new frame after the current one and drop a blank cel on it.
   function addFrame() {
     const a = ensure();
+    if (saveState) saveState('Add frame'); // undoable + keeps state.anim/layers consistent under undo
     const at = a.currentFrame + 1;
     a.frameCount = Math.max(a.frameCount || 1, at + 1);
     addCelAt(at);
@@ -86,6 +87,7 @@ export function createAnimation({ composite, createLayer, renderLayerPanel, onCh
   // Duplicate the current cel's pixels into a new cel on the next frame.
   function duplicateFrame() {
     const a = ensure(), trk = track();
+    if (saveState) saveState('Duplicate frame');
     const src = celLayer(trk.cels.find((c) => c.id === M.celAtFrame(trk, a.currentFrame)));
     const at = a.currentFrame + 1;
     a.frameCount = Math.max(a.frameCount || 1, at + 1);
@@ -98,6 +100,7 @@ export function createAnimation({ composite, createLayer, renderLayerPanel, onCh
   // Remove the cel assigned at the current frame (+ its layer + map entry).
   function deleteFrame() {
     const a = ensure(), trk = track();
+    if (saveState) saveState('Delete frame');
     const celId = trk.frameMap[a.currentFrame];
     if (celId == null) { gotoFrame(Math.max(0, a.currentFrame - 1)); return; }
     const cel = trk.cels.find((c) => c.id === celId);

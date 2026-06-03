@@ -31,6 +31,7 @@
  * }}
  */
 import { state } from '../state.js';
+import { applySmartFilterStack } from '../smart-object.js';
 import {
   transformPopupHTML,
   attachSpinRepeat,
@@ -500,6 +501,11 @@ export function createTransformSession({
         rot: state.transformPendingRot,
         flipH: state.transformPendingFlipH, flipV: state.transformPendingFlipV,
       };
+      // The transform re-derived pixels straight from the pristine source, so the
+      // smart-filter stack isn't on them — re-apply it onto the transformed canvas
+      // (else Free Transform silently drops a Smart Object's filters + persists the
+      // filterless result).
+      try { if (state.transformLayer.smartFilters && state.transformLayer.smartFilters.length) applySmartFilterStack(state.transformLayer); } catch {}
     }
     closeTransformPopup();
     const wasSilent = state.transformSilent;

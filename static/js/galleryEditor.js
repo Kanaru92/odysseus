@@ -2063,6 +2063,9 @@ function _snapshotState() {
     imgHeight: state.imgHeight,
     activeLayerId: state.activeLayerId,
     wand,
+    // Animation timeline (cels reference layerIds, which this snapshot's layers
+    // keep) so frame add/dup/delete roll back together with the layer stack.
+    anim: state.anim ? (() => { try { return JSON.parse(JSON.stringify(state.anim)); } catch { return null; } })() : null,
     layers: state.layers.map(l => {
       // Group (folder) entries hold no pixels — snapshot just their metadata.
       if (l.isGroup) {
@@ -2637,6 +2640,8 @@ function _restoreState(snap) {
       state.maskCanvas.height = snap.imgHeight;
     }
   }
+  // Roll the animation timeline back with the layers (frame add/dup/delete).
+  if (snap.anim !== undefined) { try { state.anim = snap.anim ? JSON.parse(JSON.stringify(snap.anim)) : null; } catch {} }
   const layerStates = snap.layers || snap;
   // Rebuild the state.layers array from the snapshot order. This lets Ctrl+Z
   // restore deleted layers (previously the loop only updated existing
@@ -6037,6 +6042,7 @@ function _buildEditor(container) {
     createLayer,
     renderLayerPanel: () => _renderLayerPanel(),
     onChange: () => { if (_timeline) _timeline.render(); },
+    saveState: _saveState, // make frame add/dup/delete undoable
   });
   _timeline = createTimeline(_anim, container);
   // WebHID tablet bridge — real stylus pressure with Windows Ink off. Connect is
