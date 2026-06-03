@@ -1368,6 +1368,9 @@ function _expandDocTo(newW, newH) {
     } catch (e) { console.error('[gallery] expandDocTo layer grow failed:', e); }
     // Per-layer caches are sized to the old document — drop them.
     _resetLayerCaches(layer);
+    // Fill layers regenerate from their spec at the new size (re-tile patterns,
+    // re-fill solids/gradients) instead of leaving the grown region empty.
+    if (layer.fill) _renderFillLayer(layer);
   }
   if (state.maskCanvas) { try { state.maskCanvas = grow(state.maskCanvas); state.maskCtx = state.maskCanvas.getContext('2d'); } catch {} }
   state.mainCanvas.width = newW; state.mainCanvas.height = newH;
@@ -3130,6 +3133,9 @@ function _resampleImage(newW, newH, method) {
     const off = state.layerOffsets.get(layer.id);
     if (off) state.layerOffsets.set(layer.id, { x: Math.round(off.x * sx), y: Math.round(off.y * sy) });
     _resetLayerCaches(layer); // canvases are a different size now — drop old-dim caches
+    // Fill layers re-bake from their spec so patterns re-tile at constant scale
+    // (and gradients stay crisp) rather than being bilinearly stretched.
+    if (layer.fill) _renderFillLayer(layer);
   }
   if (state.maskCanvas) { scaleCanvas(state.maskCanvas); state.maskCtx = state.maskCanvas.getContext('2d'); }
   state.imgWidth = newW; state.imgHeight = newH;
@@ -6150,6 +6156,7 @@ function _buildEditor(container) {
       edit: (l) => _editFillLayer(l),
       addPattern: (patternId, scale) => _createPatternFill(patternId, scale), // headless path (skips the picker)
     };
+    window.__geImageSize = { resample: (w, h, m) => _resampleImage(w, h, m || 'bilinear') }; // scripting/test hook
   }
 
   // Fill-layer creation. Hidden buttons exist only so the Layer menu can relay-
@@ -7311,6 +7318,9 @@ export function closeEditor() {
   // Disconnect the tool-flyout MutationObserver so it isn't left observing a
   // detached toolbar subtree across reopens.
   try { state.container?.querySelector('.ge-toolbar')?._flyoutObserver?.disconnect(); } catch {}
+  // Dismiss any open prompt/dialog modal (export, pattern picker, etc.) so its
+  // overlay + key listener don't outlive the editor.
+  try { if (_activePromptClose) _activePromptClose(); } catch {}
   _setEditTabLabel(null);
   _unmountEditorLoading();
   state.editorOpen = false;
