@@ -105,11 +105,47 @@ export function buildRightPanel({ controlsHTML, layerPanelHTML }) {
     }
   });
 
+  // Vertical splitter between the controls and the Layers dock — drag up to give
+  // Layers more height (it's otherwise capped at ~46%), down to shrink it.
+  const vsplit = document.createElement('div');
+  vsplit.className = 'ge-vsplit';
+  vsplit.title = 'Drag to resize the Layers panel';
+  vsplit.style.cssText = 'flex:0 0 auto;height:8px;cursor:ns-resize;display:flex;align-items:center;justify-content:center;';
+  vsplit.innerHTML = '<span style="width:34px;height:3px;border-radius:2px;background:var(--fg);opacity:0.28;pointer-events:none;"></span>';
+  rightPanel.appendChild(vsplit);
+
   // Layer panel.
   const layerPanel = document.createElement('div');
   layerPanel.className = 'ge-layers';
   layerPanel.innerHTML = layerPanelHTML();
   rightPanel.appendChild(layerPanel);
+
+  // Restore a saved Layers height + wire the vertical drag-resize (desktop).
+  try {
+    const savedH = parseInt(localStorage.getItem('ge-layers-height') || '', 10);
+    if (savedH && savedH > 140) { layerPanel.style.flex = `0 0 ${savedH}px`; layerPanel.style.maxHeight = 'none'; }
+  } catch {}
+  let _vsY = 0, _vsH = 0;
+  const onVMove = (e) => {
+    const dy = _vsY - e.clientY; // drag up → taller Layers
+    const panelH = rightPanel.getBoundingClientRect().height;
+    const next = Math.max(140, Math.min(panelH - 140, _vsH + dy));
+    layerPanel.style.flex = `0 0 ${next}px`;
+    layerPanel.style.maxHeight = 'none';
+  };
+  const onVUp = () => {
+    document.removeEventListener('mousemove', onVMove);
+    document.removeEventListener('mouseup', onVUp);
+    document.body.style.cursor = '';
+    try { localStorage.setItem('ge-layers-height', String(Math.round(layerPanel.getBoundingClientRect().height))); } catch {}
+  };
+  vsplit.addEventListener('mousedown', (e) => {
+    _vsY = e.clientY; _vsH = layerPanel.getBoundingClientRect().height;
+    e.preventDefault();
+    document.body.style.cursor = 'ns-resize';
+    document.addEventListener('mousemove', onVMove);
+    document.addEventListener('mouseup', onVUp);
+  });
   // Mobile: tap the header grab handle or swipe up/down to toggle
   // the layers sheet between peek and expanded. The peek state
   // always shows the active layer so users never lose access to it.
