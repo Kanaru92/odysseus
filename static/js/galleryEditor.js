@@ -2420,6 +2420,12 @@ function _buildThumbnail() {
 
 async function _persistDraft() {
   if (!state.editorOpen || !state.layers.length) return;
+  // Never serialize mid-stroke. _buildDraftPayload() runs a synchronous
+  // toDataURL('image/png') per layer (a ~50ms encode on a large doc); if the
+  // 800ms debounce fires during an active stroke it freezes the main thread,
+  // pointer input throttles to match, and the gap renders as a straight chord
+  // cutting across the drawing. Defer until the pen lifts.
+  if (state.drawing) { _schedulePersist(); return; }
   // Coalesce concurrent saves — if one's already in-flight, mark dirty
   // and let the running call kick off another when it returns.
   if (state.persistInFlight) { state.persistDirty = true; return; }
