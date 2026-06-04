@@ -56,6 +56,11 @@ export function createBrushEngine(preset) {
   const sizeFn = compileParam(p.dynamics.size);
   const flowFn = compileParam(p.dynamics.flow);
   const rotationFn = compileParam(p.dynamics.rotation);
+  // When the preset's flow dynamic already keys on pressure, flowFn has already
+  // scaled flow by pressure — so the global pen-pressure->flow toggle below must
+  // NOT multiply by pressure a second time (which made pressure-flow presets like
+  // the pencil / soft round paint at pressure² = too light on a light touch).
+  const flowAlreadyByPressure = p.dynamics.flow && p.dynamics.flow.sensor === 'pressure';
 
   // Tip cache keyed by rounded size + hardness + color so repeated dabs reuse
   // one offscreen canvas (the per-dab hot path stays drawImage-only).
@@ -228,7 +233,9 @@ export function createBrushEngine(preset) {
     if (rt.flowJitter > 0) flow *= (1 - rt.flowJitter * Math.random());
     // Pen pressure → opacity: scale per-dab deposit by the (interpolated)
     // pressure so a light touch lays down a lighter, more transparent mark.
-    if (rt.flowPressure) flow *= (info.pressure != null ? info.pressure : 1);
+    // Skip when the preset's flow dynamic already applied pressure (above), so we
+    // don't square it.
+    if (rt.flowPressure && !flowAlreadyByPressure) flow *= (info.pressure != null ? info.pressure : 1);
     if (flow <= 0) return;
     // Tip rotation = stroke direction (if "follows direction") + the preset's
     // own rotation dynamic. Lets calligraphic / image tips orient along the path.

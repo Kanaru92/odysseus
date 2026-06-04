@@ -193,10 +193,16 @@ export function createStrokePipeline({ activeLayer, getActiveMaskLayer, composit
     if (state.brushSmoothAdjustZoom && (state.zoom || 1) > 1) sa = 1 - (1 - sa) / Math.sqrt(state.zoom);
     sa = Math.max(0.12, Math.min(1, sa)); // guarantee forward progress per step
 
-    const pr = samplePressure(state.lastPressure != null ? state.lastPressure : (state.pressure != null ? state.pressure : 1));
+    // state.lastPressure is ALREADY curve-mapped (strokeTo stores the sampled
+    // value), so use it directly — re-running samplePressure would apply the
+    // response curve twice and step the width/density at the pen-up seam for
+    // non-linear presets.
+    const pr = state.lastPressure != null ? state.lastPressure : samplePressure(state.pressure != null ? state.pressure : 1);
     const tiltMag = Math.min(1, Math.hypot(state.tiltX || 0, state.tiltY || 0) / 90);
-    let effSize = state.brushSize;
-    if (state.brushTiltSize && tiltMag > 0) effSize *= (1 + tiltMag);
+    // Reuse the width the live stroke ended on (includes velocity taper) so the
+    // drained lift-tail doesn't pop back to full brush size at the seam.
+    let effSize = state._lastEffSize != null ? state._lastEffSize : state.brushSize;
+    if (state._lastEffSize == null && state.brushTiltSize && tiltMag > 0) effSize *= (1 + tiltMag);
     const rt = buildBrushRuntime(layer, effSize, tiltMag);
 
     const SNAP = 0.5;          // close enough → snap to raw and stop
@@ -392,9 +398,17 @@ export function createStrokePipeline({ activeLayer, getActiveMaskLayer, composit
         const fromPr = state.lastPressure;
         // Velocity taper (the "speed" sensor): fast strokes paint thinner. The
         // segment speed is dist/dt; brushVelocityTaper 0 = off (no change).
-        const nowT = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+        // Use the input EVENT's timestamp (state._evtTime, set by the event
+        // handlers) rather than performance.now(): replayed coalesced sub-frame
+        // samples execute microseconds apart on the wall clock, which would
+        // collapse dt to the floor and massively over-inflate speed. The event
+        // timestamps carry the true per-sample deltas. Falls back to the clock
+        // for programmatic / airbrush ticks that have no event.
+        const nowT = (state._evtTime != null)
+          ? state._evtTime
+          : ((typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now());
         if (isStart || state.lastStrokeT == null) state.lastStrokeT = nowT;
-        const dt = Math.max(1, nowT - state.lastStrokeT);
+        const dt = Math.max(0.1, nowT - state.lastStrokeT);
         const segDist = Math.hypot(tx - state.lastX, ty - state.lastY);
         state.lastStrokeT = nowT;
         let effSize = state.brushSize;
@@ -410,6 +424,7 @@ export function createStrokePipeline({ activeLayer, getActiveMaskLayer, composit
         // azimuth (direction) already drives tip rotation via rt.tiltAz.
         const tiltMag = Math.min(1, Math.hypot(state.tiltX || 0, state.tiltY || 0) / 90);
         if (state.brushTiltSize && tiltMag > 0) effSize *= (1 + tiltMag);
+        state._lastEffSize = effSize; // so the stroke-end catch-up drain matches this width
         const isEraser = state.tool === 'eraser';
         const rt = {
           size: effSize,

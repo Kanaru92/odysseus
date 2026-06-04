@@ -70,6 +70,7 @@ export function wireCanvasEvents({ canvasArea, beginDraw, continueDraw, endDraw:
   // (state._penDroveFrame) to avoid painting the same point twice.
   on(window, 'mousemove', (e) => {
     if (state._penDroveFrame) { state._penDroveFrame = false; return; }
+    if (typeof e.timeStamp === 'number') state._evtTime = e.timeStamp;
     continueDraw(e);
   });
   on(window, 'mouseup', endDraw);
@@ -98,6 +99,11 @@ export function wireCanvasEvents({ canvasArea, beginDraw, continueDraw, endDraw:
   // full pressure. Pointer events fire before their compat mouse events, so
   // state.pressure is fresh when continueDraw → strokeTo runs.
   const capturePen = (e) => {
+    // Record the event's own timestamp so the velocity-taper sensor measures real
+    // per-sample time. Replayed coalesced sub-frame samples run microseconds apart
+    // on the wall clock, so performance.now() would collapse dt toward zero and
+    // wildly inflate speed; the events themselves carry true sub-frame timestamps.
+    if (e && typeof e.timeStamp === 'number') state._evtTime = e.timeStamp;
     if (e.pointerType === 'pen') {
       state.isPen = true;
       // Pressure: a graphics tablet + Windows Ink can fire a brief 1.0 on light contact
