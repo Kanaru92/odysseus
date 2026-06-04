@@ -159,7 +159,10 @@ export function createStrokePipeline({ activeLayer, getActiveMaskLayer, composit
   // Each point is {x,y,pr} in IMAGE space; emitted dabs are in layer-local space.
   function drawCRSegment(eng, ctx, rt, off, tiltMag, P0, P1, P2, P3, acc) {
     const d = Math.hypot(P2.x - P1.x, P2.y - P1.y);
-    const N = Math.max(2, Math.min(64, Math.round(d / 3)));
+    // Sub-sample the curve about every 6 image px (the dab spacing fills the rest);
+    // each sub-segment is an eng.segment + recompose call, so keeping this modest
+    // limits per-input-sample work and keeps the frame rate up.
+    const N = Math.max(2, Math.min(32, Math.round(d / 6)));
     const knot = (ti, A, B) => ti + (Math.pow((B.x - A.x) * (B.x - A.x) + (B.y - A.y) * (B.y - A.y), 0.25) || 1e-4);
     const t0 = 0, t1 = knot(t0, P0, P1), t2 = knot(t1, P1, P2), t3 = knot(t2, P2, P3);
     const d10 = (t1 - t0) || 1e-4, d21 = (t2 - t1) || 1e-4, d32 = (t3 - t2) || 1e-4, d20 = (t2 - t0) || 1e-4, d31 = (t3 - t1) || 1e-4;

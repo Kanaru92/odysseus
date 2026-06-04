@@ -61,6 +61,11 @@ export function createBrushEngine(preset) {
   // NOT multiply by pressure a second time (which made pressure-flow presets like
   // the pencil / soft round paint at pressure² = too light on a light touch).
   const flowAlreadyByPressure = p.dynamics.flow && p.dynamics.flow.sensor === 'pressure';
+  // Reused per-dab interpolation scratch — stampToBuffer reads it synchronously
+  // and never retains it, so writing into one object instead of allocating a fresh
+  // lerpInfo() per dab avoids thousands of short-lived allocations per stroke (the
+  // GC churn that caused periodic frame-rate dips → dropped input samples).
+  const _scr = { pressure: 1, speed: 0, tilt: 0, random: 0 };
 
   // Tip cache keyed by rounded size + hardness + color so repeated dabs reuse
   // one offscreen canvas (the per-dab hot path stays drawImage-only).
@@ -393,13 +398,26 @@ export function createBrushEngine(preset) {
         // (the held-airbrush timer) so build-up keeps depositing into the SAME
         // flow buffer — composited at the opacity cap, so it asymptotes to the
         // cap instead of re-beginning and building past it.
-        if (residual <= 0 || (rt && rt.airbrushPulse)) { stampToBuffer(to.x, to.y, { ...to, random: Math.random() }, rt, lastAngle); residual = spacingPx; }
+        if (residual <= 0 || (rt && rt.airbrushPulse)) {
+          _scr.pressure = to.pressure != null ? to.pressure : 1;
+          _scr.speed = to.speed != null ? to.speed : 0;
+          _scr.tilt = to.tilt != null ? to.tilt : 0;
+          _scr.random = Math.random();
+          stampToBuffer(to.x, to.y, _scr, rt, lastAngle); residual = spacingPx;
+        }
       } else {
         lastAngle = Math.atan2(dy, dx);
+        const fp = from.pressure != null ? from.pressure : 1, tp = to.pressure != null ? to.pressure : 1;
+        const fs = from.speed != null ? from.speed : 0, ts = to.speed != null ? to.speed : 0;
+        const ft = from.tilt != null ? from.tilt : 0, tt = to.tilt != null ? to.tilt : 0;
         let d = residual;
         while (d <= dist) {
           const t = d / dist;
-          stampToBuffer(from.x + dx * t, from.y + dy * t, lerpInfo(from, to, t), rt, lastAngle);
+          _scr.pressure = fp + (tp - fp) * t;
+          _scr.speed = fs + (ts - fs) * t;
+          _scr.tilt = ft + (tt - ft) * t;
+          _scr.random = Math.random();
+          stampToBuffer(from.x + dx * t, from.y + dy * t, _scr, rt, lastAngle);
           d += spacingPx;
         }
         residual = d - dist;
