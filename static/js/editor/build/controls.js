@@ -170,10 +170,10 @@ export function controlsHTML({ color, brushSize, wandTolerance }) {
         <button type="button" class="ge-btn ge-btn-sm ge-wand-mode-btn" data-wand-mode="subtract" title="Subtract from selection (Alt)">− Subtract</button>
       </div>
       <div class="ge-control-row ge-wand-opts-row" style="display:flex;gap:12px;margin-bottom:4px;font-size:11px;align-items:center;flex-wrap:wrap;">
-        <label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;" title="On: select only the connected region under the cursor. Off: select every matching pixel across the layer (PS 'Contiguous').">
+        <label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;" title="On: select only the connected region under the cursor. Off: select every matching pixel across the layer.">
           <input type="checkbox" id="ge-wand-contiguous" checked /> Contiguous
         </label>
-        <label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;" title="Sample the merged result of all visible layers instead of just the active layer (PS 'Sample All Layers').">
+        <label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;" title="Sample the merged result of all visible layers instead of just the active layer.">
           <input type="checkbox" id="ge-wand-sampleall" /> Sample All Layers
         </label>
       </div>

@@ -26,7 +26,7 @@ import {
   getLassoPath as _getLassoPathImpl,
   buildLassoMask as _buildLassoMaskImpl,
 } from './editor/tools/lasso-mask.js';
-import { floodFillMask as _floodFillMask } from './editor/tools/flood-fill.js';
+import { floodFillMask as _floodFillMask, globalMatchMask as _globalMatchMask } from './editor/tools/flood-fill.js';
 import { runFloodAsync } from './editor/filter-worker-client.js';
 import { colorRangeMask as _colorRangeMask } from './editor/tools/color-range.js';
 import { diffusionFill as _diffusionFill } from './editor/tools/content-fill.js';
@@ -4526,7 +4526,7 @@ function _runMagicWand(cx, cy, mode = 'replace', opts = {}) {
   if (lx < 0 || ly < 0 || lx >= w || ly >= h) return;
   // Read pixels from the chosen source. Bypass the cache when sourcing
   // from a mask — masks change frequently and the cache is keyed by
-  // parent layer id, not by mask id. Sample All Layers (PS): seed/flood from
+  // parent layer id, not by mask id. Sample All Layers: seed/flood from
   // the merged visible composite instead of just the active layer; render it
   // into the ACTIVE LAYER's coordinate space (offset-aligned) so the resulting
   // mask stays compatible with every selection consumer (they map via the
@@ -4573,12 +4573,13 @@ function _runMagicWand(cx, cy, mode = 'replace', opts = {}) {
     composite();
     _syncToolClearIndicators();
   };
-  // Contiguous OFF (PS): select EVERY pixel within tolerance of the clicked
-  // colour across the whole source — not just the connected region. Reuses the
-  // global colour-range mask, seeded from the clicked pixel (synchronous; O(n)).
+  // Contiguous OFF: select EVERY pixel within tolerance of the clicked colour
+  // across the whole source — not just the connected region. Uses the same
+  // alpha-aware RGBA metric + tolerance scale as the contiguous flood (so the
+  // two modes agree on extent, and a click on a transparent area still selects
+  // the transparent region). Synchronous; O(n).
   if (state.wandContiguous === false) {
-    const o = (ly * w + lx) * 4;
-    applyMask(_colorRangeMask(src, w, h, [src[o], src[o + 1], src[o + 2]], state.wandTolerance));
+    applyMask(_globalMatchMask(src, w, h, lx, ly, state.wandTolerance));
     return;
   }
   // Contiguous (default): connected-region BFS flood (editor/tools/flood-fill.js),

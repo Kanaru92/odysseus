@@ -485,8 +485,8 @@ export function createAdjPopupSystem({ composite, saveState, renderLayerPanel })
       ${sliderRow('contrast',   'Contrast',   -100, 100, cSlider, '')}
     `;
     } else if (type === 'hue-saturation') {
-      // Master (global hue/saturation) + PS per-hue ranges (Reds…Magentas),
-      // each with Hue/Saturation/Lightness. The selector swaps the slider set.
+      // Master (global hue/saturation) + per-hue ranges (Reds…Magentas), each
+      // with Hue/Saturation/Lightness. The selector swaps the slider set.
       const HSR = [['master', 'Master'], ['reds', 'Reds'], ['yellows', 'Yellows'], ['greens', 'Greens'], ['cyans', 'Cyans'], ['blues', 'Blues'], ['magentas', 'Magentas']];
       const cur = layer._hsRange || 'master';
       const selHtml = `<div class="ge-adj-row" style="align-items:center;gap:8px;"><label>Range</label>
@@ -515,7 +515,7 @@ export function createAdjPopupSystem({ composite, saveState, renderLayerPanel })
       // <details> wrapper is collapsed by default on mobile to save
       // vertical space; open by default on desktop.
       const isMobile = window.matchMedia('(max-width: 820px)').matches;
-      // Per-channel Levels (PS): RGB master + independent Red/Green/Blue. The
+      // Per-channel Levels: RGB master + independent Red/Green/Blue. The
       // selector swaps which param set the sliders/handles/histogram edit.
       const chans = [['rgb', 'RGB'], ['r', 'Red'], ['g', 'Green'], ['b', 'Blue']];
       const curCh = layer._levelsCh || 'rgb';

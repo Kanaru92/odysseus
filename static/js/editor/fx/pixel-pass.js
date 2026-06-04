@@ -112,8 +112,8 @@ function _hsl2rgb(h, s, l) {
     Math.round(_hue2rgb(p, q, h - 1 / 3) * 255),
   ];
 }
-// PS hue ranges, centred 60° apart. Trapezoidal weight: full within ±15° of the
-// centre, linear falloff to 0 by ±45° (so adjacent ranges overlap, as in PS).
+// Standard hue ranges, centred 60° apart. Trapezoidal weight: full within ±15°
+// of the centre, linear falloff to 0 by ±45° (so adjacent ranges overlap).
 const HS_RANGES = [
   { key: 'reds', center: 0 }, { key: 'yellows', center: 60 }, { key: 'greens', center: 120 },
   { key: 'cyans', center: 180 }, { key: 'blues', center: 240 }, { key: 'magentas', center: 300 },
@@ -145,11 +145,13 @@ export function applyAdjustment(srcCanvas, adj) {
     octx.filter = `saturate(${p.saturation}) hue-rotate(${p.hue}deg)`;
     octx.drawImage(srcCanvas, 0, 0);
     octx.filter = 'none';
-    // Per-hue-range adjustments (PS Reds/Yellows/Greens/Cyans/Blues/Magentas),
+    // Per-hue-range adjustments (Reds/Yellows/Greens/Cyans/Blues/Magentas),
     // additive on top of the master hue/saturation. Back-compat: with no ranges
-    // defined this returns the CSS-only result above (unchanged). Range weights
-    // are computed from each pixel's ORIGINAL hue so overlapping ranges combine
-    // order-independently.
+    // defined this returns the CSS-only result above (unchanged). Range membership
+    // is classified from each pixel's ORIGINAL (pre-master) hue so a master
+    // hue-rotate doesn't shift which range a pixel falls into; the H/S/L deltas
+    // are then applied to the master-adjusted pixel. Classifying from the source
+    // hue also makes overlapping ranges combine order-independently.
     const ranges = p.ranges;
     const active = ranges ? HS_RANGES.filter((r) => {
       const v = ranges[r.key]; return v && (v.hue || v.saturation || v.lightness);
@@ -157,12 +159,18 @@ export function applyAdjustment(srcCanvas, adj) {
     if (!active.length) return out;
     const img = octx.getImageData(0, 0, w, h);
     const d = img.data;
+    // Original (pre-master) pixels for hue classification.
+    const oc = document.createElement('canvas');
+    oc.width = w; oc.height = h;
+    const octx2 = oc.getContext('2d');
+    octx2.drawImage(srcCanvas, 0, 0);
+    const od = octx2.getImageData(0, 0, w, h).data;
     for (let i = 0; i < d.length; i += 4) {
       if (d[i + 3] === 0) continue;
-      const hsl = _rgb2hsl(d[i], d[i + 1], d[i + 2]);
+      const srcHue = _rgb2hsl(od[i], od[i + 1], od[i + 2])[0];
       let dh = 0, sMul = 1, dl = 0;
       for (const r of active) {
-        const wgt = _hueRangeWeight(hsl[0], r.center);
+        const wgt = _hueRangeWeight(srcHue, r.center);
         if (wgt <= 0) continue;
         const v = ranges[r.key];
         dh += (v.hue || 0) * wgt;
@@ -170,6 +178,7 @@ export function applyAdjustment(srcCanvas, adj) {
         dl += (v.lightness || 0) / 100 * wgt;
       }
       if (dh === 0 && sMul === 1 && dl === 0) continue;
+      const hsl = _rgb2hsl(d[i], d[i + 1], d[i + 2]);
       const H = ((hsl[0] + dh) % 360 + 360) % 360;
       const S = Math.max(0, Math.min(1, hsl[1] * sMul));
       const L = Math.max(0, Math.min(1, hsl[2] + dl * 0.5));
@@ -201,11 +210,11 @@ export function applyAdjustment(srcCanvas, adj) {
 
   if (adj.type === 'levels') {
     const p = adj.params;
-    // PS-style per-channel Levels: an optional `params.channels.{r,g,b}` holds
-    // independent levels for each channel; the top-level params are the RGB
-    // "master". Final mapping per channel = master( channel( input ) ), i.e. the
-    // per-channel LUT first, then the master LUT (matches Photoshop). When no
-    // per-channel overrides exist this is identical to the old single-LUT path.
+    // Per-channel Levels: an optional `params.channels.{r,g,b}` holds independent
+    // levels for each channel; the top-level params are the RGB "master". Final
+    // mapping per channel = master( channel( input ) ), i.e. the per-channel LUT
+    // first, then the master LUT. When no per-channel overrides exist this is
+    // identical to the old single-LUT path.
     const master = buildLevelsLut(p);
     const ch = p.channels || {};
     const rl = ch.r ? buildLevelsLut(ch.r) : null;

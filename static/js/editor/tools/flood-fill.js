@@ -90,6 +90,31 @@ export function floodFillVisited(src, w, h, seedX, seedY, tolerance) {
   return { visited, minX, minY, maxX, maxY };
 }
 
+// Global (non-contiguous) match: every pixel within `tolerance` of the seed
+// colour, anywhere in the source — the Magic Wand's "Contiguous off" mode. Uses
+// the SAME alpha-aware RGBA metric + tolerance scale as floodFillVisited so
+// toggling Contiguous keeps an identical tolerance feel and still selects
+// transparent regions (unlike a colour-range match that skips them). Returns a
+// w×h white-where-matched mask canvas, or null if the seed is out of bounds.
+export function globalMatchMask(src, w, h, seedX, seedY, tolerance) {
+  if (seedX < 0 || seedY < 0 || seedX >= w || seedY >= h) return null;
+  const si = (seedY * w + seedX) * 4;
+  const sr = src[si], sg = src[si + 1], sb = src[si + 2], sa = src[si + 3];
+  const tol = Math.pow(tolerance * 5.1, 2); // matches floodFillVisited
+  const mask = document.createElement('canvas');
+  mask.width = w; mask.height = h;
+  const mCtx = mask.getContext('2d');
+  const mData = mCtx.createImageData(w, h);
+  const mView = new Uint32Array(mData.data.buffer);
+  const n = w * h;
+  for (let i = 0, o = 0; i < n; i++, o += 4) {
+    const dr = src[o] - sr, dg = src[o + 1] - sg, db = src[o + 2] - sb, da = src[o + 3] - sa;
+    if (dr * dr + dg * dg + db * db + da * da <= tol) mView[i] = 0xFFFFFFFF;
+  }
+  mCtx.putImageData(mData, 0, 0);
+  return mask;
+}
+
 // Build a white-opaque mask canvas (w × h) from a visited grid + its bounding box.
 // White-opaque (0xAABBGGRR little-endian = 0xFFFFFFFF) is written once per visited
 // pixel via a 32-bit view, bounded to the visited bbox rather than the whole doc.

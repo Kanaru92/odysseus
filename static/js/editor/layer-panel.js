@@ -657,7 +657,12 @@ export function createLayerPanelRenderer(deps) {
         const allRows = list.querySelectorAll('.ge-layer-item').length;
         const MAX_ROWS = 2;
         const rows = Math.min(allRows, MAX_ROWS);
-        panel.style.setProperty('--peek-height', `${headerH + rows * rowH + 6}px`);
+        // Set on the editor body (common ancestor) so the sibling .ge-canvas-area
+        // can also read it for its mobile bottom-padding — a custom property set
+        // only on .ge-right-panel inherits to the panel's subtree, not across to
+        // its siblings. Falls back to the panel itself if the body isn't found.
+        const peekHost = panel.closest('.ge-editor-body') || panel;
+        peekHost.style.setProperty('--peek-height', `${headerH + rows * rowH + 6}px`);
       });
     }
     list.innerHTML = '';
