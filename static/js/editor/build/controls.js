@@ -169,6 +169,14 @@ export function controlsHTML({ color, brushSize, wandTolerance }) {
         <button type="button" class="ge-btn ge-btn-sm ge-wand-mode-btn" data-wand-mode="add" title="Add to selection (Shift)">+ Add</button>
         <button type="button" class="ge-btn ge-btn-sm ge-wand-mode-btn" data-wand-mode="subtract" title="Subtract from selection (Alt)">− Subtract</button>
       </div>
+      <div class="ge-control-row ge-wand-opts-row" style="display:flex;gap:12px;margin-bottom:4px;font-size:11px;align-items:center;flex-wrap:wrap;">
+        <label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;" title="On: select only the connected region under the cursor. Off: select every matching pixel across the layer (PS 'Contiguous').">
+          <input type="checkbox" id="ge-wand-contiguous" checked /> Contiguous
+        </label>
+        <label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;" title="Sample the merged result of all visible layers instead of just the active layer (PS 'Sample All Layers').">
+          <input type="checkbox" id="ge-wand-sampleall" /> Sample All Layers
+        </label>
+      </div>
       <div class="ge-control-row ge-eraser-row">
         <span class="ge-eraser-preview" id="ge-wand-tol-preview" aria-hidden="true"></span>
         <label>Tolerance <span id="ge-wand-tol-label">${wandTolerance}</span></label>

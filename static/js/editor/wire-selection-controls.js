@@ -153,6 +153,16 @@ export function wireSelectionControls({
     });
   });
 
+  // Contiguous toggle (PS): off = global match across the whole source.
+  document.getElementById('ge-wand-contiguous')?.addEventListener('change', (e) => {
+    state.wandContiguous = e.target.checked;
+  });
+  // Sample All Layers (PS): seed/flood from the merged composite, not just
+  // the active layer.
+  document.getElementById('ge-wand-sampleall')?.addEventListener('change', (e) => {
+    state.wandSampleAll = e.target.checked;
+  });
+
   // Toggle the translucent red overlay for the wand selection.
   document.getElementById('ge-wand-vis')?.addEventListener('click', () => {
     state.wandMaskVisible = !state.wandMaskVisible;

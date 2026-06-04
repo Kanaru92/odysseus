@@ -4526,23 +4526,32 @@ function _runMagicWand(cx, cy, mode = 'replace', opts = {}) {
   if (lx < 0 || ly < 0 || lx >= w || ly >= h) return;
   // Read pixels from the chosen source. Bypass the cache when sourcing
   // from a mask — masks change frequently and the cache is keyed by
-  // parent layer id, not by mask id.
-  const src = activeMask
-    ? sourceCtx.getImageData(0, 0, w, h).data
-    : _getWandSource(layer).data;
-  // Pixel-level flood fill lives in editor/tools/flood-fill.js.
-  // Returns a mask canvas at (w × h) with white where the fill landed.
-  // Flood off the main thread (the full-canvas BFS freezes the UI on big docs,
-  // especially the live Tolerance retune). A generation guard drops stale results
-  // from a rapid tolerance drag; falls back to the synchronous flood if no worker.
-  const gen = (state._wandFloodGen = (state._wandFloodGen || 0) + 1);
+  // parent layer id, not by mask id. Sample All Layers (PS): seed/flood from
+  // the merged visible composite instead of just the active layer; render it
+  // into the ACTIVE LAYER's coordinate space (offset-aligned) so the resulting
+  // mask stays compatible with every selection consumer (they map via the
+  // active layer's offset).
+  let src;
+  if (activeMask) {
+    src = sourceCtx.getImageData(0, 0, w, h).data;
+  } else if (state.wandSampleAll) {
+    const full = document.createElement('canvas');
+    full.width = state.imgWidth; full.height = state.imgHeight;
+    _renderLayersTo(full.getContext('2d'), full);
+    const aligned = document.createElement('canvas');
+    aligned.width = w; aligned.height = h;
+    const actx = aligned.getContext('2d');
+    actx.drawImage(full, -off.x, -off.y);
+    src = actx.getImageData(0, 0, w, h).data;
+  } else {
+    src = _getWandSource(layer).data;
+  }
   const targetLayerId = layer.id;
-  runFloodAsync(src, w, h, lx, ly, state.wandTolerance).then((mask) => {
-    if (gen !== state._wandFloodGen) return; // a newer wand flood superseded this one
+  // Merge a freshly computed candidate mask into the shared wand selection per
+  // `mode`. If the existing mask is for a different layer or differs in size,
+  // treat as replace (merging doesn't make sense across canvases).
+  const applyMask = (mask) => {
     if (!mask) return;
-    // Merge with existing selection per `mode`. If the existing mask is for a
-    // different layer or has different dimensions, treat as replace (merging
-    // doesn't make sense across canvases).
     const compatible = state.wandMask && state.wandLayerId === targetLayerId &&
       state.wandMask.width === mask.width && state.wandMask.height === mask.height;
     if (compatible && mode === 'add') {
@@ -4550,17 +4559,11 @@ function _runMagicWand(cx, cy, mode = 'replace', opts = {}) {
       state.wandMask._ants = null; // invalidate marching-ants boundary cache
     } else if (compatible && mode === 'subtract') {
       const ec = state.wandMask.getContext('2d');
-      ec.save();
-      ec.globalCompositeOperation = 'destination-out';
-      ec.drawImage(mask, 0, 0); // difference
-      ec.restore();
+      ec.save(); ec.globalCompositeOperation = 'destination-out'; ec.drawImage(mask, 0, 0); ec.restore(); // difference
       state.wandMask._ants = null;
     } else if (compatible && mode === 'intersect') {
       const ec = state.wandMask.getContext('2d');
-      ec.save();
-      ec.globalCompositeOperation = 'destination-in';
-      ec.drawImage(mask, 0, 0); // base ∩ candidate
-      ec.restore();
+      ec.save(); ec.globalCompositeOperation = 'destination-in'; ec.drawImage(mask, 0, 0); ec.restore(); // base ∩ candidate
       state.wandMask._ants = null;
     } else {
       state.wandMask = mask;
@@ -4569,6 +4572,23 @@ function _runMagicWand(cx, cy, mode = 'replace', opts = {}) {
     }
     composite();
     _syncToolClearIndicators();
+  };
+  // Contiguous OFF (PS): select EVERY pixel within tolerance of the clicked
+  // colour across the whole source — not just the connected region. Reuses the
+  // global colour-range mask, seeded from the clicked pixel (synchronous; O(n)).
+  if (state.wandContiguous === false) {
+    const o = (ly * w + lx) * 4;
+    applyMask(_colorRangeMask(src, w, h, [src[o], src[o + 1], src[o + 2]], state.wandTolerance));
+    return;
+  }
+  // Contiguous (default): connected-region BFS flood (editor/tools/flood-fill.js),
+  // off the main thread (the full-canvas BFS freezes the UI on big docs, esp. the
+  // live Tolerance retune). A generation guard drops stale results from a rapid
+  // tolerance drag; falls back to the synchronous flood if no worker.
+  const gen = (state._wandFloodGen = (state._wandFloodGen || 0) + 1);
+  runFloodAsync(src, w, h, lx, ly, state.wandTolerance).then((mask) => {
+    if (gen !== state._wandFloodGen) return; // a newer wand flood superseded this one
+    applyMask(mask);
   });
 }
 
@@ -7638,6 +7658,7 @@ export function openEditor(imageUrl, imageId, presetSize, displayName, draftId) 
   try { _setAdjMaskReadyCallback(() => composite()); } catch {} // re-composite when an adj-layer mask finishes decoding (reload)
   try { _setSmartMaskReadyCallback((l) => { try { _smartObject.rebakeSmart(l); } catch {} composite(); }); } catch {} // re-rebake when a smart-filter mask decodes
   try { window.__geRenderLayers = (cv) => _renderLayersTo(cv.getContext('2d'), cv); } catch {} // dev: render the layer stack into a test canvas
+  try { window.__geWand = (x, y, mode, opts) => _runMagicWand(x, y, mode, opts); } catch {} // dev: run the magic wand (contiguous / sample-all tests)
   try { window.__geBuildDraft = () => _buildDraftPayload(); } catch {} // dev: serialize the draft payload (persistence round-trip tests)
   try { window.__geBuildProject = () => _buildProjectPayload(); } catch {} // dev: serialize the .geproj payload (project round-trip tests)
   try { window.__geRestoreDraft = (p) => _restoreDraft(p); } catch {} // dev: restore a draft payload (persistence round-trip tests)
