@@ -77,6 +77,55 @@ export function buildLevelsLut(l) {
   return lut;
 }
 
+// ── HSL helpers for per-hue Hue/Saturation ranges ──
+// h in [0,360), s/l in [0,1].
+function _rgb2hsl(r, g, b) {
+  r /= 255; g /= 255; b /= 255;
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+  const l = (mx + mn) / 2;
+  let h = 0, s = 0;
+  if (mx !== mn) {
+    const dd = mx - mn;
+    s = l > 0.5 ? dd / (2 - mx - mn) : dd / (mx + mn);
+    if (mx === r) h = (g - b) / dd + (g < b ? 6 : 0);
+    else if (mx === g) h = (b - r) / dd + 2;
+    else h = (r - g) / dd + 4;
+    h *= 60;
+  }
+  return [h, s, l];
+}
+function _hue2rgb(p, q, t) {
+  if (t < 0) t += 1; if (t > 1) t -= 1;
+  if (t < 1 / 6) return p + (q - p) * 6 * t;
+  if (t < 1 / 2) return q;
+  if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+  return p;
+}
+function _hsl2rgb(h, s, l) {
+  h /= 360;
+  if (s === 0) { const v = Math.round(l * 255); return [v, v, v]; }
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+  const p = 2 * l - q;
+  return [
+    Math.round(_hue2rgb(p, q, h + 1 / 3) * 255),
+    Math.round(_hue2rgb(p, q, h) * 255),
+    Math.round(_hue2rgb(p, q, h - 1 / 3) * 255),
+  ];
+}
+// PS hue ranges, centred 60° apart. Trapezoidal weight: full within ±15° of the
+// centre, linear falloff to 0 by ±45° (so adjacent ranges overlap, as in PS).
+const HS_RANGES = [
+  { key: 'reds', center: 0 }, { key: 'yellows', center: 60 }, { key: 'greens', center: 120 },
+  { key: 'cyans', center: 180 }, { key: 'blues', center: 240 }, { key: 'magentas', center: 300 },
+];
+function _hueRangeWeight(h, center) {
+  let d = Math.abs(h - center) % 360;
+  if (d > 180) d = 360 - d;
+  if (d <= 15) return 1;
+  if (d >= 45) return 0;
+  return 1 - (d - 15) / 30;
+}
+
 export function applyAdjustment(srcCanvas, adj) {
   const w = srcCanvas.width, h = srcCanvas.height;
   const out = document.createElement('canvas');
@@ -96,6 +145,38 @@ export function applyAdjustment(srcCanvas, adj) {
     octx.filter = `saturate(${p.saturation}) hue-rotate(${p.hue}deg)`;
     octx.drawImage(srcCanvas, 0, 0);
     octx.filter = 'none';
+    // Per-hue-range adjustments (PS Reds/Yellows/Greens/Cyans/Blues/Magentas),
+    // additive on top of the master hue/saturation. Back-compat: with no ranges
+    // defined this returns the CSS-only result above (unchanged). Range weights
+    // are computed from each pixel's ORIGINAL hue so overlapping ranges combine
+    // order-independently.
+    const ranges = p.ranges;
+    const active = ranges ? HS_RANGES.filter((r) => {
+      const v = ranges[r.key]; return v && (v.hue || v.saturation || v.lightness);
+    }) : [];
+    if (!active.length) return out;
+    const img = octx.getImageData(0, 0, w, h);
+    const d = img.data;
+    for (let i = 0; i < d.length; i += 4) {
+      if (d[i + 3] === 0) continue;
+      const hsl = _rgb2hsl(d[i], d[i + 1], d[i + 2]);
+      let dh = 0, sMul = 1, dl = 0;
+      for (const r of active) {
+        const wgt = _hueRangeWeight(hsl[0], r.center);
+        if (wgt <= 0) continue;
+        const v = ranges[r.key];
+        dh += (v.hue || 0) * wgt;
+        sMul *= (1 + (v.saturation || 0) / 100 * wgt);
+        dl += (v.lightness || 0) / 100 * wgt;
+      }
+      if (dh === 0 && sMul === 1 && dl === 0) continue;
+      const H = ((hsl[0] + dh) % 360 + 360) % 360;
+      const S = Math.max(0, Math.min(1, hsl[1] * sMul));
+      const L = Math.max(0, Math.min(1, hsl[2] + dl * 0.5));
+      const rgb = _hsl2rgb(H, S, L);
+      d[i] = rgb[0]; d[i + 1] = rgb[1]; d[i + 2] = rgb[2];
+    }
+    octx.putImageData(img, 0, 0);
     return out;
   }
   if (adj.type === 'color-lookup') {

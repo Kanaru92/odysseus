@@ -485,12 +485,29 @@ export function createAdjPopupSystem({ composite, saveState, renderLayerPanel })
       ${sliderRow('contrast',   'Contrast',   -100, 100, cSlider, '')}
     `;
     } else if (type === 'hue-saturation') {
-      const hSlider = Math.round(p.hue);
-      const sSlider = Math.round((p.saturation - 1) * 100);
-      body.innerHTML = `
-      ${sliderRow('hue',        'Hue',        -180, 180, hSlider, ' °')}
-      ${sliderRow('saturation', 'Saturation', -100, 100, sSlider, '')}
-    `;
+      // Master (global hue/saturation) + PS per-hue ranges (Reds…Magentas),
+      // each with Hue/Saturation/Lightness. The selector swaps the slider set.
+      const HSR = [['master', 'Master'], ['reds', 'Reds'], ['yellows', 'Yellows'], ['greens', 'Greens'], ['cyans', 'Cyans'], ['blues', 'Blues'], ['magentas', 'Magentas']];
+      const cur = layer._hsRange || 'master';
+      const selHtml = `<div class="ge-adj-row" style="align-items:center;gap:8px;"><label>Range</label>
+        <select class="ge-hs-range ge-tool-select" style="flex:1;min-width:0;">
+          ${HSR.map(([k, lbl]) => `<option value="${k}"${k === cur ? ' selected' : ''}>${lbl}</option>`).join('')}
+        </select></div>`;
+      if (cur === 'master') {
+        body.innerHTML = selHtml +
+          sliderRow('hue',        'Hue',        -180, 180, Math.round(p.hue), ' °') +
+          sliderRow('saturation', 'Saturation', -100, 100, Math.round((p.saturation - 1) * 100), '');
+      } else {
+        if (!p.ranges) p.ranges = {};
+        const rv = p.ranges[cur] || { hue: 0, saturation: 0, lightness: 0 };
+        body.innerHTML = selHtml +
+          sliderRow('hue',        'Hue',        -180, 180, Math.round(rv.hue || 0), ' °') +
+          sliderRow('saturation', 'Saturation', -100, 100, Math.round(rv.saturation || 0), '') +
+          sliderRow('lightness',  'Lightness',  -100, 100, Math.round(rv.lightness || 0), '');
+      }
+      body.querySelector('.ge-hs-range')?.addEventListener('change', (e) => {
+        layer._hsRange = e.target.value; body.innerHTML = ''; buildAdjBody(layer, type, body, popEl);
+      });
     } else if (type === 'levels') {
       // Histogram canvas + sliders. Histogram is computed from the
       // layer's pixel data (after any adjLayers below this one) so
@@ -757,8 +774,12 @@ export function createAdjPopupSystem({ composite, saveState, renderLayerPanel })
   function revertAdjKey(layer, type, key) {
     const defaults = defaultAdjParams(type);
     const p = layer._stagedAdj.params;
-    if (type === 'brightness-contrast' || type === 'hue-saturation') {
+    if (type === 'brightness-contrast') {
       p[key] = defaults[key];
+    } else if (type === 'hue-saturation') {
+      const rng = layer._hsRange || 'master';
+      if (rng === 'master') p[key] = defaults[key];
+      else if (p.ranges && p.ranges[rng]) p.ranges[rng][key] = 0;
     } else if (type === 'levels') {
       activeLevelsParams(layer)[key] = defaults[key];
     } else if (type === 'color-balance') {
@@ -786,11 +807,18 @@ export function createAdjPopupSystem({ composite, saveState, renderLayerPanel })
     const valEl = sl.parentElement.querySelector('.ge-adj-value');
     const p = layer._stagedAdj.params;
     let display = String(raw);
-    if (type === 'brightness-contrast' || type === 'hue-saturation') {
-      if (key === 'brightness' || key === 'contrast' || key === 'saturation') {
-        p[key] = 1 + raw / 100;
-      } else if (key === 'hue') {
-        p.hue = raw; display = raw + ' °';
+    if (type === 'brightness-contrast') {
+      if (key === 'brightness' || key === 'contrast') p[key] = 1 + raw / 100;
+    } else if (type === 'hue-saturation') {
+      const rng = layer._hsRange || 'master';
+      if (rng === 'master') {
+        if (key === 'saturation') p.saturation = 1 + raw / 100;
+        else if (key === 'hue') { p.hue = raw; display = raw + ' °'; }
+      } else {
+        if (!p.ranges) p.ranges = {};
+        if (!p.ranges[rng]) p.ranges[rng] = { hue: 0, saturation: 0, lightness: 0 };
+        p.ranges[rng][key] = raw;
+        if (key === 'hue') display = raw + ' °';
       }
     } else if (type === 'levels') {
       const lp = activeLevelsParams(layer);
