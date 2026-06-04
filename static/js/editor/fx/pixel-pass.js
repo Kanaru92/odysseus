@@ -57,6 +57,26 @@ function _hexRgb(hex) {
   return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
 }
 
+// Build a 256-entry Levels LUT from {inBlack,inWhite,gamma,outBlack,outWhite}.
+// Shared by the RGB master and each per-channel override.
+export function buildLevelsLut(l) {
+  const inLow  = Math.max(0, Math.min(254, l.inBlack ?? 0));
+  const inHigh = Math.max(inLow + 1, Math.min(255, l.inWhite ?? 255));
+  const gamma  = Math.max(0.1, l.gamma || 1);
+  const outLow  = Math.max(0, Math.min(255, l.outBlack ?? 0));
+  const outHigh = Math.max(outLow, Math.min(255, l.outWhite ?? 255));
+  const inv = 1.0 / gamma;
+  const span = (outHigh - outLow);
+  const lut = new Uint8ClampedArray(256);
+  for (let v = 0; v < 256; v++) {
+    let t = (v - inLow) / (inHigh - inLow);
+    if (t < 0) t = 0; else if (t > 1) t = 1;
+    t = Math.pow(t, inv);
+    lut[v] = Math.round(t * span + outLow);
+  }
+  return lut;
+}
+
 export function applyAdjustment(srcCanvas, adj) {
   const w = srcCanvas.width, h = srcCanvas.height;
   const out = document.createElement('canvas');
@@ -99,23 +119,21 @@ export function applyAdjustment(srcCanvas, adj) {
   if (adj.type === 'lens-distortion') { d.set(lensDistortPixels(d, w, h, adj.params || {})); octx.putImageData(img, 0, 0); return out; }
 
   if (adj.type === 'levels') {
-    const l = adj.params;
-    const inLow  = Math.max(0, Math.min(254, l.inBlack));
-    const inHigh = Math.max(inLow + 1, Math.min(255, l.inWhite));
-    const gamma  = Math.max(0.1, l.gamma || 1);
-    const outLow  = Math.max(0, Math.min(255, l.outBlack));
-    const outHigh = Math.max(outLow, Math.min(255, l.outWhite));
-    const inv = 1.0 / gamma;
-    const span = (outHigh - outLow);
-    const lut = new Uint8ClampedArray(256);
-    for (let v = 0; v < 256; v++) {
-      let t = (v - inLow) / (inHigh - inLow);
-      if (t < 0) t = 0; else if (t > 1) t = 1;
-      t = Math.pow(t, inv);
-      lut[v] = Math.round(t * span + outLow);
-    }
+    const p = adj.params;
+    // PS-style per-channel Levels: an optional `params.channels.{r,g,b}` holds
+    // independent levels for each channel; the top-level params are the RGB
+    // "master". Final mapping per channel = master( channel( input ) ), i.e. the
+    // per-channel LUT first, then the master LUT (matches Photoshop). When no
+    // per-channel overrides exist this is identical to the old single-LUT path.
+    const master = buildLevelsLut(p);
+    const ch = p.channels || {};
+    const rl = ch.r ? buildLevelsLut(ch.r) : null;
+    const gl = ch.g ? buildLevelsLut(ch.g) : null;
+    const bl = ch.b ? buildLevelsLut(ch.b) : null;
     for (let i = 0; i < d.length; i += 4) {
-      d[i] = lut[d[i]]; d[i+1] = lut[d[i+1]]; d[i+2] = lut[d[i+2]];
+      d[i]   = master[rl ? rl[d[i]]   : d[i]];
+      d[i+1] = master[gl ? gl[d[i+1]] : d[i+1]];
+      d[i+2] = master[bl ? bl[d[i+2]] : d[i+2]];
     }
     octx.putImageData(img, 0, 0);
     return out;

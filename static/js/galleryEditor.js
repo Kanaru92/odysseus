@@ -7659,6 +7659,7 @@ export function openEditor(imageUrl, imageId, presetSize, displayName, draftId) 
   try { _setSmartMaskReadyCallback((l) => { try { _smartObject.rebakeSmart(l); } catch {} composite(); }); } catch {} // re-rebake when a smart-filter mask decodes
   try { window.__geRenderLayers = (cv) => _renderLayersTo(cv.getContext('2d'), cv); } catch {} // dev: render the layer stack into a test canvas
   try { window.__geWand = (x, y, mode, opts) => _runMagicWand(x, y, mode, opts); } catch {} // dev: run the magic wand (contiguous / sample-all tests)
+  try { window.__geOpenAdj = (type, adj) => _openAdjPopup(activeLayer(), type, null, adj); } catch {} // dev: open an adjustment popup (per-channel levels tests)
   try { window.__geBuildDraft = () => _buildDraftPayload(); } catch {} // dev: serialize the draft payload (persistence round-trip tests)
   try { window.__geBuildProject = () => _buildProjectPayload(); } catch {} // dev: serialize the .geproj payload (project round-trip tests)
   try { window.__geRestoreDraft = (p) => _restoreDraft(p); } catch {} // dev: restore a draft payload (persistence round-trip tests)

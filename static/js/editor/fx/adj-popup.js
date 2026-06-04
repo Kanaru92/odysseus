@@ -454,6 +454,18 @@ export function createAdjPopupSystem({ composite, saveState, renderLayerPanel })
     });
   }
 
+  // Resolve the Levels param object currently being edited. 'rgb' edits the
+  // top-level master; 'r'/'g'/'b' edit (and lazily create) a per-channel
+  // override under params.channels. Mirrors the selective-color _scFam pattern.
+  function activeLevelsParams(layer) {
+    const p = layer._stagedAdj.params;
+    const ch = layer._levelsCh || 'rgb';
+    if (ch === 'rgb') return p;
+    if (!p.channels) p.channels = {};
+    if (!p.channels[ch]) p.channels[ch] = { inBlack: 0, inWhite: 255, gamma: 1, outBlack: 0, outWhite: 255 };
+    return p.channels[ch];
+  }
+
   function buildAdjBody(layer, type, body, popEl) {
     const p = layer._stagedAdj.params;
     const revertIcon = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>';
@@ -486,7 +498,16 @@ export function createAdjPopupSystem({ composite, saveState, renderLayerPanel })
       // <details> wrapper is collapsed by default on mobile to save
       // vertical space; open by default on desktop.
       const isMobile = window.matchMedia('(max-width: 820px)').matches;
+      // Per-channel Levels (PS): RGB master + independent Red/Green/Blue. The
+      // selector swaps which param set the sliders/handles/histogram edit.
+      const chans = [['rgb', 'RGB'], ['r', 'Red'], ['g', 'Green'], ['b', 'Blue']];
+      const curCh = layer._levelsCh || 'rgb';
+      const lp = activeLevelsParams(layer);
       body.innerHTML = `
+      <div class="ge-adj-row" style="align-items:center;gap:8px;"><label>Channel</label>
+        <select class="ge-levels-ch ge-tool-select" style="flex:1;min-width:0;">
+          ${chans.map(([k, lbl]) => `<option value="${k}"${k === curCh ? ' selected' : ''}>${lbl}</option>`).join('')}
+        </select></div>
       <details class="ge-adj-hist-details"${isMobile ? '' : ' open'}>
         <summary>Histogram</summary>
         <div class="ge-adj-hist-wrap">
@@ -498,19 +519,22 @@ export function createAdjPopupSystem({ composite, saveState, renderLayerPanel })
           </div>
         </div>
       </details>
-      ${sliderRow('inBlack',  'Input black',  0, 254, p.inBlack, '')}
-      ${sliderRow('inWhite',  'Input white',  1, 255, p.inWhite, '')}
-      ${sliderRow('gamma',    'Gamma',        10, 990, Math.round((p.gamma || 1) * 100), 'γ')}
-      ${sliderRow('outBlack', 'Output black', 0, 255, p.outBlack, '')}
-      ${sliderRow('outWhite', 'Output white', 0, 255, p.outWhite, '')}
+      ${sliderRow('inBlack',  'Input black',  0, 254, lp.inBlack, '')}
+      ${sliderRow('inWhite',  'Input white',  1, 255, lp.inWhite, '')}
+      ${sliderRow('gamma',    'Gamma',        10, 990, Math.round((lp.gamma || 1) * 100), 'γ')}
+      ${sliderRow('outBlack', 'Output black', 0, 255, lp.outBlack, '')}
+      ${sliderRow('outWhite', 'Output white', 0, 255, lp.outWhite, '')}
     `;
+      body.querySelector('.ge-levels-ch')?.addEventListener('change', (e) => {
+        layer._levelsCh = e.target.value; body.innerHTML = ''; buildAdjBody(layer, type, body, popEl);
+      });
       const hist = body.querySelector('.ge-adj-histogram');
-      drawHistogram(hist, layer);
+      drawHistogram(hist, layer, curCh);
       wireHistogramHandles(body, layer, type);
       // Redraw histogram when the user opens the disclosure (canvas
       // dimensions are layout-dependent).
       body.querySelector('.ge-adj-hist-details')?.addEventListener('toggle', (e) => {
-        if (e.target.open) drawHistogram(hist, layer);
+        if (e.target.open) drawHistogram(hist, layer, layer._levelsCh || 'rgb');
       });
     } else if (type === 'curves') {
       // Draggable tone curve. Master "RGB" plus per-channel R/G/B, like a
@@ -736,7 +760,7 @@ export function createAdjPopupSystem({ composite, saveState, renderLayerPanel })
     if (type === 'brightness-contrast' || type === 'hue-saturation') {
       p[key] = defaults[key];
     } else if (type === 'levels') {
-      p[key] = defaults[key];
+      activeLevelsParams(layer)[key] = defaults[key];
     } else if (type === 'color-balance') {
       const [tone, ch] = key.split('-');
       p[tone][ch] = defaults[tone][ch];
@@ -769,10 +793,11 @@ export function createAdjPopupSystem({ composite, saveState, renderLayerPanel })
         p.hue = raw; display = raw + ' °';
       }
     } else if (type === 'levels') {
+      const lp = activeLevelsParams(layer);
       if (key === 'gamma') {
-        p.gamma = raw / 100; display = (raw / 100).toFixed(2) + 'γ';
+        lp.gamma = raw / 100; display = (raw / 100).toFixed(2) + 'γ';
       } else {
-        p[key] = raw;
+        lp[key] = raw;
       }
     } else if (type === 'color-balance') {
       const [tone, ch] = key.split('-');
@@ -805,7 +830,7 @@ export function createAdjPopupSystem({ composite, saveState, renderLayerPanel })
     const handles = bodyEl.querySelectorAll('.ge-adj-hist-handle');
     const placeHandles = () => {
       const w = canvas.getBoundingClientRect().width;
-      const p = layer._stagedAdj.params;
+      const p = activeLevelsParams(layer);
       const xB = (p.inBlack  / 255) * w;
       const xW = (p.inWhite  / 255) * w;
       // Gamma handle sits at a fraction of the (xB..xW) span, mapped
@@ -831,7 +856,7 @@ export function createAdjPopupSystem({ composite, saveState, renderLayerPanel })
         const onMove = (ev) => {
           const x = Math.max(0, Math.min(rect.width, ev.clientX - rect.left));
           const v = Math.round((x / rect.width) * 255);
-          const p = layer._stagedAdj.params;
+          const p = activeLevelsParams(layer);
           if (which === 'inBlack') {
             p.inBlack = Math.min(p.inWhite - 1, v);
           } else if (which === 'inWhite') {
@@ -850,14 +875,14 @@ export function createAdjPopupSystem({ composite, saveState, renderLayerPanel })
           // Update visible slider rows + value labels.
           const updateRow = (key, displayVal) => {
             const sl = bodyEl.querySelector(`input[type="range"][data-key="${key}"]`);
-            if (sl) sl.value = String(key === 'gamma' ? Math.round(layer._stagedAdj.params.gamma * 100) : layer._stagedAdj.params[key]);
+            if (sl) sl.value = String(key === 'gamma' ? Math.round(p.gamma * 100) : p[key]);
             const val = sl?.parentElement.querySelector('.ge-adj-value');
             if (val) val.textContent = displayVal;
           };
-          if (which === 'inBlack') updateRow('inBlack', String(layer._stagedAdj.params.inBlack));
-          if (which === 'inWhite') updateRow('inWhite', String(layer._stagedAdj.params.inWhite));
-          if (which === 'gamma')   updateRow('gamma',   layer._stagedAdj.params.gamma.toFixed(2) + 'γ');
-          drawHistogram(canvas, layer);
+          if (which === 'inBlack') updateRow('inBlack', String(p.inBlack));
+          if (which === 'inWhite') updateRow('inWhite', String(p.inWhite));
+          if (which === 'gamma')   updateRow('gamma',   p.gamma.toFixed(2) + 'γ');
+          drawHistogram(canvas, layer, layer._levelsCh || 'rgb');
           scheduleAdjRefresh(layer);
         };
         const onUp = () => {
