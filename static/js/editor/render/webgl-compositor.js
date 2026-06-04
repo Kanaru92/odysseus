@@ -57,13 +57,20 @@ const MODE_INDEX = {
   'vivid-light': 17,
   'pin-light': 18,
   'hard-mix': 19,
+  // Non-separable HSL component modes (W3C "Compositing and Blending" §non-
+  // separable). Operate on the whole RGB vector, not per-channel — handled by
+  // blendNonSep() in the shader. Matches Canvas2D's native globalCompositeOperation
+  // (same spec) so the CPU fallback stays pixel-consistent (golden-diff verified).
+  'hue': 20,
+  'saturation': 21,
+  'color': 22,
+  'luminosity': 23,
 };
 
-// Modes that are explicitly NOT GPU-supported here (non-separable or special).
-// isSupported() returns false for these and for any unknown id; the caller
-// falls back to CPU compositing for those layers.
-//   non-separable: 'hue','saturation','color','luminosity'
-//   special:       'darker-color','lighter-color','dissolve'
+// Modes that are explicitly NOT GPU-supported here (special whole-pixel ops with
+// no GLSL equivalent). isSupported() returns false for these and for any unknown
+// id; the caller falls back to CPU compositing for those layers.
+//   special: 'darker-color','lighter-color','dissolve'
 
 // ---------------------------------------------------------------------------
 // Shaders (GLSL ES 3.00)
@@ -173,6 +180,34 @@ vec3 blendRGB(int mode, vec3 Cb, vec3 Cs) {
   );
 }
 
+// ---- non-separable (HSL component) blend helpers (W3C spec) ----
+// Lum / Sat / SetLum / SetSat / ClipColor operate on the whole RGB vector.
+// Coefficients (0.3, 0.59, 0.11) match Canvas2D's native hue/saturation/color/
+// luminosity modes so the CPU fallback stays pixel-consistent.
+float nsLum(vec3 c) { return dot(c, vec3(0.3, 0.59, 0.11)); }
+vec3 nsClip(vec3 c) {
+  float l = nsLum(c);
+  float n = min(min(c.r, c.g), c.b);
+  float x = max(max(c.r, c.g), c.b);
+  if (n < 0.0) c = l + ((c - l) * l) / (l - n);
+  if (x > 1.0) c = l + ((c - l) * (1.0 - l)) / (x - l);
+  return c;
+}
+vec3 nsSetLum(vec3 c, float l) { return nsClip(c + (l - nsLum(c))); }
+float nsSat(vec3 c) { return max(max(c.r, c.g), c.b) - min(min(c.r, c.g), c.b); }
+// Remap channels so min→0, max→s, mid scales proportionally (W3C SetSat).
+vec3 nsSetSat(vec3 c, float s) {
+  float mn = min(min(c.r, c.g), c.b);
+  float mx = max(max(c.r, c.g), c.b);
+  return (mx > mn) ? ((c - mn) * s / (mx - mn)) : vec3(0.0);
+}
+vec3 blendNonSep(int mode, vec3 Cb, vec3 Cs) {
+  if (mode == 20) return nsSetLum(nsSetSat(Cs, nsSat(Cb)), nsLum(Cb)); // hue
+  if (mode == 21) return nsSetLum(nsSetSat(Cb, nsSat(Cs)), nsLum(Cb)); // saturation
+  if (mode == 22) return nsSetLum(Cs, nsLum(Cb));                      // color
+  return nsSetLum(Cb, nsLum(Cs));                                      // 23 luminosity
+}
+
 void main() {
   // Backdrop straight color/alpha at this composite pixel.
   vec4 backdrop = texture(uBackdrop, vUV);
@@ -198,7 +233,9 @@ void main() {
   float as = srcA * uOpacity;               // effective source alpha
 
   // W3C compositing + blending (source-over), straight alpha throughout.
-  vec3 B   = blendRGB(uMode, Cb, Cs);       // per-channel blend
+  // Modes >=20 are non-separable (operate on the whole RGB vector).
+  vec3 B   = (uMode >= 20) ? blendNonSep(uMode, Cb, Cs)
+                          : blendRGB(uMode, Cb, Cs);
   vec3 Csb = (1.0 - ab) * Cs + ab * B;      // blended source color
   float ao = as + ab * (1.0 - as);          // output alpha (source-over)
   vec3 Co  = (ao <= 0.0)

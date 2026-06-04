@@ -1606,10 +1606,10 @@ function _glRenderTo(ctx, canvas) {
     }
     if (layer.clipped) return false; // clipping not yet on the GPU path
     const mode = layer.blendMode || 'source-over';
-    // Every GPU-supported mode (native + the separable custom modes) now matches
-    // the CPU path exactly (blendInto reconciled to the same W3C math). Modes the
-    // compositor doesn't implement (hue/sat/color/lum, darker/lighter-color,
-    // dissolve) fall back to CPU.
+    // Every GPU-supported mode (native + the separable custom modes + the four
+    // non-separable HSL modes hue/sat/color/lum) now matches the CPU path exactly
+    // (same W3C math). Modes the compositor doesn't implement (darker/lighter-
+    // color, dissolve) fall back to CPU.
     if (!_glCompositor.isSupported(mode)) return false;
     const off = state.layerOffsets.get(layer.id) || { x: 0, y: 0 };
     // Fractional offsets: CPU drawImage bilinear-resamples (soft edges) but the
