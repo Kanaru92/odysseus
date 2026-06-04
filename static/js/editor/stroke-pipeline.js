@@ -437,6 +437,21 @@ export function createStrokePipeline({ activeLayer, getActiveMaskLayer, composit
         // "Adjust for Zoom" — ease the catch-up more when zoomed in so the
         // smoothing feels consistent regardless of magnification.
         if (state.brushSmoothAdjustZoom && (state.zoom || 1) > 1) sa = 1 - (1 - sa) / Math.sqrt(state.zoom);
+        // Adaptive de-noise (a 1-euro-style filter): smooth SLOW strokes to remove
+        // the input wobble — the digitizer reports integer device pixels, and when
+        // zoomed out each maps to 1/zoom image px, so a slow deliberate line traces
+        // a visible staircase. Leave FAST strokes untouched so corners/peaks stay
+        // sharp (fast = widely-spaced samples, negligible relative noise). Speed is
+        // measured in SCREEN px/ms so it behaves the same at any zoom. Never weaker
+        // than the user's own smoothing.
+        const _nowSa = (state._evtTime != null) ? state._evtTime
+          : ((typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now());
+        if (!isStart && state.lastStrokeT != null) {
+          const _dtSa = Math.max(1, _nowSa - state.lastStrokeT);
+          const _spdScreen = (Math.hypot(x - state.lastX, y - state.lastY) * (state.zoom || 1)) / _dtSa;
+          // at rest → 0.45 (smooth); ramps to 1 (no smoothing) by ~0.8 screen px/ms.
+          sa = Math.min(sa, Math.max(0.45, Math.min(1, 0.45 + _spdScreen * 0.7)));
+        }
         if (state.brushSmoothPull && sm > 0 && !isStart) {
           // "Pulled String" — the brush trails the cursor by a fixed radius and
           // only moves once the cursor pulls past it (lasso-like control).
