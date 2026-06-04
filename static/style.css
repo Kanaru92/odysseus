@@ -25870,6 +25870,22 @@ button .spinner-whirlpool {
     align-items: center;
     justify-content: center;
   }
+  /* Reorder grip — was a 12px sliver flush to the screen edge (hard to grab with
+     a thumb, and right where edge screen-protectors swallow touches). Make it a
+     wide, full-row-height target inset from the edge. */
+  .ge-layer-drag {
+    width: 30px !important;
+    min-height: 40px;
+    margin-left: 8px;
+    margin-right: 4px;
+    padding: 0 4px;
+    opacity: 0.6;
+    touch-action: none; /* the grip drives drag-reorder, not page scroll */
+  }
+  .ge-layer-drag svg { width: 14px !important; height: 22px !important; }
+  /* Sheet grab bar — a bit taller/wider so it reads as a pull handle and is
+     easy to catch with a thumb. */
+  .ge-layers-grab { width: 52px; height: 5px; }
   .ge-layer-btn svg,
   .ge-layer-fx-btn svg,
   .ge-action-btn svg {
