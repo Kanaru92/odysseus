@@ -3048,8 +3048,12 @@ function _continueDraw(e) {
   // when it's actually over the canvas, otherwise hide it.
   const overCanvas = state.mainCanvas && e.target === state.mainCanvas;
   if (['eraser', 'inpaint', 'lasso', 'brush', 'liquify', 'smudge', 'mixer', 'dodgeburn'].includes(state.tool) && state.mainCanvas) {
-    if (overCanvas) _updateBrushCursor(e);
-    else if (state.cursorEl) state.cursorEl.style.display = 'none';
+    // Skip the per-sample cursor DOM update while actively painting: it writes
+    // several inline styles per coalesced sample (and the ring sits under the
+    // pen anyway). It resumes on the next hover move. Cuts layout work from the
+    // hot path so the frame/input rate stays high.
+    if (overCanvas && !state.drawing) _updateBrushCursor(e);
+    else if (!overCanvas && state.cursorEl) state.cursorEl.style.display = 'none';
   }
   // Transform-tool hover-cursor + handle drag — handler in
   // editor/tools/transform-drag.js. Returns true when the drag is
@@ -3201,7 +3205,6 @@ function _bakeLayerOffsetForPaint() {
 
 function _updateBrushCursor(e) {
   if (!state.mainCanvas) return;
-  const rect = state.mainCanvas.getBoundingClientRect();
   const clientX = e.touches ? e.touches[0].clientX : e.clientX;
   const clientY = e.touches ? e.touches[0].clientY : e.clientY;
 
@@ -6079,6 +6082,10 @@ function _buildEditor(container) {
   });
   let _navRaf = 0;
   _addManagedListener(window, 'ge:composited', () => {
+    // Skip the mini-map's full-canvas downscale every frame mid-stroke — it
+    // starves the paint hot path on large docs / slow devices. The final
+    // composite on lift (state.drawing false) refreshes it once.
+    if (state.drawing) return;
     if (_navRaf) return;
     _navRaf = requestAnimationFrame(() => { _navRaf = 0; try { _navigator && _navigator.refresh(); } catch {} });
   });
@@ -6088,6 +6095,9 @@ function _buildEditor(container) {
   // layer add/delete/reorder/merge, showing stale pixels mid-stroke.
   let _thumbRaf = 0;
   _addManagedListener(window, 'ge:composited', () => {
+    // Same: don't redraw the layer thumbnail (a full-canvas downscale) every
+    // frame while painting; the lift composite refreshes it.
+    if (state.drawing) return;
     if (_thumbRaf) return;
     _thumbRaf = requestAnimationFrame(() => { _thumbRaf = 0; try { _layerPanelRenderer.refreshThumb(state.activeLayerId); } catch {} });
   });
