@@ -151,6 +151,65 @@ export function createStrokePipeline({ activeLayer, getActiveMaskLayer, composit
     };
   }
 
+  // Centripetal Catmull-Rom: paint the curve segment from P1 to P2 using its
+  // neighbours P0 and P3, so the path curves smoothly THROUGH every captured
+  // sample (apexes are hit, not cut) instead of joining samples with straight
+  // chords. Centripetal parameterisation (alpha 0.5) avoids the loops/overshoot
+  // uniform Catmull-Rom produces on sharp turns. Pressure is interpolated P1->P2.
+  // Each point is {x,y,pr} in IMAGE space; emitted dabs are in layer-local space.
+  function drawCRSegment(eng, ctx, rt, off, tiltMag, P0, P1, P2, P3, acc) {
+    const d = Math.hypot(P2.x - P1.x, P2.y - P1.y);
+    const N = Math.max(2, Math.min(64, Math.round(d / 3)));
+    const knot = (ti, A, B) => ti + (Math.pow((B.x - A.x) * (B.x - A.x) + (B.y - A.y) * (B.y - A.y), 0.25) || 1e-4);
+    const t0 = 0, t1 = knot(t0, P0, P1), t2 = knot(t1, P1, P2), t3 = knot(t2, P2, P3);
+    const d10 = (t1 - t0) || 1e-4, d21 = (t2 - t1) || 1e-4, d32 = (t3 - t2) || 1e-4, d20 = (t2 - t0) || 1e-4, d31 = (t3 - t1) || 1e-4;
+    let pvx = P1.x, pvy = P1.y, pvp = P1.pr;
+    for (let i = 1; i <= N; i++) {
+      const tt = i / N, t = t1 + (t2 - t1) * tt;
+      const A1x = ((t1 - t) * P0.x + (t - t0) * P1.x) / d10, A1y = ((t1 - t) * P0.y + (t - t0) * P1.y) / d10;
+      const A2x = ((t2 - t) * P1.x + (t - t1) * P2.x) / d21, A2y = ((t2 - t) * P1.y + (t - t1) * P2.y) / d21;
+      const A3x = ((t3 - t) * P2.x + (t - t2) * P3.x) / d32, A3y = ((t3 - t) * P2.y + (t - t2) * P3.y) / d32;
+      const B1x = ((t2 - t) * A1x + (t - t0) * A2x) / d20, B1y = ((t2 - t) * A1y + (t - t0) * A2y) / d20;
+      const B2x = ((t3 - t) * A2x + (t - t1) * A3x) / d31, B2y = ((t3 - t) * A2y + (t - t1) * A3y) / d31;
+      const cxv = ((t2 - t) * B1x + (t - t1) * B2x) / d21, cyv = ((t2 - t) * B1y + (t - t1) * B2y) / d21;
+      const cp = P1.pr + (P2.pr - P1.pr) * tt;
+      eng.segment(ctx,
+        { x: pvx - off.x, y: pvy - off.y, pressure: pvp, tilt: tiltMag },
+        { x: cxv - off.x, y: cyv - off.y, pressure: cp, tilt: tiltMag },
+        rt);
+      if (acc) { acc(pvx, pvy); acc(cxv, cyv); }
+      pvx = cxv; pvy = cyv; pvp = cp;
+    }
+  }
+
+  // Flush the final pending Catmull-Rom segment at stroke end. The live path lags
+  // by one sample (a segment can't be smoothed until its FORWARD neighbour
+  // arrives), so on lift we draw the last buffered segment with the end point
+  // duplicated as its own forward neighbour, landing the stroke exactly where the
+  // pen lifted. A single-point buffer (a tap) stamps one dab. No-op for the
+  // legacy / mask path, where the buffer is never populated.
+  function flushCurve() {
+    const buf = state._crBuf;
+    if (!buf || !buf.length) return;
+    const rt = state._crRt, ctx = state._crCtx;
+    const off = state._crOff || { x: 0, y: 0 }, tiltMag = state._crTilt || 0;
+    if (rt && ctx) {
+      let _minX = null, _minY = null, _maxX = 0, _maxY = 0;
+      const acc = (px, py) => {
+        if (_minX === null) { _minX = _maxX = px; _minY = _maxY = py; }
+        else { if (px < _minX) _minX = px; else if (px > _maxX) _maxX = px; if (py < _minY) _minY = py; else if (py > _maxY) _maxY = py; }
+      };
+      const eng = getBrushEngine();
+      const n = buf.length;
+      if (n >= 3) drawCRSegment(eng, ctx, rt, off, tiltMag, buf[n - 3], buf[n - 2], buf[n - 1], buf[n - 1], acc);
+      else if (n === 2) drawCRSegment(eng, ctx, rt, off, tiltMag, buf[0], buf[0], buf[1], buf[1], acc);
+      else { const P = buf[0]; eng.segment(ctx, { x: P.x - off.x, y: P.y - off.y, pressure: P.pr, tilt: tiltMag }, { x: P.x - off.x, y: P.y - off.y, pressure: P.pr, tilt: tiltMag }, rt); acc(P.x, P.y); }
+      if (_minX !== null) { const m = (rt.size || state.brushSize) * 1.2 + 6; paint({ x: _minX - m, y: _minY - m, w: (_maxX - _minX) + 2 * m, h: (_maxY - _minY) + 2 * m }); }
+      else paint();
+    }
+    buf.length = 0;
+  }
+
   // "Catch-up on Stroke End" — with the stabilizer on, the painted brush
   // (state.lastX/Y, the smoothed position) trails the true cursor. On lift we
   // drain that remaining tail: step the smoothing EMA from the current smoothed
@@ -456,60 +515,47 @@ export function createStrokePipeline({ activeLayer, getActiveMaskLayer, composit
         };
         // tryBegin seeds lastX/lastY to the start point, so a dist-0 first
         // call marks the stroke start → snapshot the layer + reset the buffer.
-        if (isStart) { eng.begin(ctx, rt); state._qprevX = null; state._qprevY = null; }
+        if (isStart) { eng.begin(ctx, rt); state._crBuf = []; }
         state._engStrokeStarted = true; // subsequent dabs (incl. airbrush ticks) add to the buffer
-        // Curve smoothing: instead of one straight chord per input sample (which
-        // looks polygonal when samples are sparse / the stroke is fast), draw a
-        // quadratic through the MIDPOINT of (previous raw point, current raw
-        // point) using the previous raw point as the control. Consecutive
-        // midpoint-quadratics join continuously, so the path curves through the
-        // samples instead of cutting corners. It's subdivided into short
-        // sub-segments so the dab engine keeps its even spacing (residual carries
-        // across the eng.segment calls). A stationary tick (airbrush) or the very
-        // first sample falls back to the straight segment so build-up stays exact.
+        // Curve smoothing — a centripetal Catmull-Rom spline through the captured
+        // samples. A straight chord per sample looks polygonal when samples are
+        // sparse (fast strokes, low device input rates) and a one-sided quadratic
+        // barely bows; Catmull-Rom curves smoothly THROUGH every sample using
+        // neighbours on both sides, so even a coarse 7-point loop renders as a
+        // smooth spiral while captured apexes are still hit. Because a segment
+        // needs its FORWARD neighbour to be shaped, drawing lags one sample;
+        // flushCurve() (stroke end) emits the final segment. A stationary
+        // (airbrush) tick stamps a straight build-up dab without touching the buffer.
         const segMove = Math.hypot(tx - state.lastX, ty - state.lastY);
-        const p1x = state.lastX, p1y = state.lastY; // previous sample (= last emitted point)
         let _minX = null, _minY = null, _maxX = 0, _maxY = 0;
         const _acc = (px, py) => {
           if (_minX === null) { _minX = _maxX = px; _minY = _maxY = py; }
           else { if (px < _minX) _minX = px; else if (px > _maxX) _maxX = px; if (py < _minY) _minY = py; else if (py > _maxY) _maxY = py; }
         };
-        if (state._qprevX === null || segMove <= 0.6) {
-          // First sample of the stroke, or a stationary (airbrush) tick → straight.
+        // Stash routing so the stroke-end flush emits onto the same target/look.
+        state._crCtx = ctx; state._crRt = rt; state._crOff = off; state._crTilt = tiltMag;
+        if (!state._crBuf) state._crBuf = [];
+        const buf = state._crBuf;
+        if (segMove <= 0.6 && !isStart) {
+          // Stationary / airbrush tick → straight build-up dab; leave the buffer.
           eng.segment(
             ctx,
             { x: fromX, y: fromY, pressure: fromPr, tilt: tiltMag },
             { x: toX, y: toY, pressure: pr, tilt: tiltMag },
             rt,
           );
-          _acc(p1x, p1y); _acc(tx, ty);
+          _acc(state.lastX, state.lastY); _acc(tx, ty);
         } else {
-          // Quadratic that PASSES THROUGH the previous and current samples — so a
-          // captured zig-zag apex is never cut (the samples lie ON the curve, not
-          // used as control points). The control is extrapolated from the incoming
-          // direction (prev-prev → prev) so the joins are smooth, not polygonal.
-          const k = 0.22;
-          const cx = p1x + (p1x - state._qprevX) * k;
-          const cy = p1y + (p1y - state._qprevY) * k;
-          const N = Math.max(2, Math.min(28, Math.round(segMove / 3)));
-          let pvx = p1x, pvy = p1y, pvp = fromPr;
-          for (let i = 1; i <= N; i++) {
-            const t = i / N, mt = 1 - t;
-            const qx = mt * mt * p1x + 2 * mt * t * cx + t * t * tx;
-            const qy = mt * mt * p1y + 2 * mt * t * cy + t * t * ty;
-            const qp = fromPr + (pr - fromPr) * t;
-            eng.segment(
-              ctx,
-              { x: pvx - off.x, y: pvy - off.y, pressure: pvp, tilt: tiltMag },
-              { x: qx - off.x, y: qy - off.y, pressure: qp, tilt: tiltMag },
-              rt,
-            );
-            _acc(pvx, pvy); _acc(qx, qy);
-            pvx = qx; pvy = qy; pvp = qp;
-          }
+          buf.push({ x: tx, y: ty, pr: pr });
+          const n = buf.length;
+          // Draw the lagged segment (its forward neighbour is now known).
+          if (n >= 4) drawCRSegment(eng, ctx, rt, off, tiltMag, buf[n - 4], buf[n - 3], buf[n - 2], buf[n - 1], _acc);
+          else if (n === 3) drawCRSegment(eng, ctx, rt, off, tiltMag, buf[0], buf[0], buf[1], buf[2], _acc);
+          // n < 3: defer — the segment needs a forward neighbour; flushCurve()
+          // emits the start/tail at stroke end.
+          while (buf.length > 4) buf.shift();
         }
-        state._qprevX = p1x; state._qprevY = p1y; // previous sample becomes the next control's anchor
-        state.lastX = tx; state.lastY = ty;       // curve ends exactly on the current sample
+        state.lastX = tx; state.lastY = ty;       // newest captured sample
         // Dirty rect = the bounding box of the painted curve grown by the dab
         // footprint (diameter + a margin for soft edges). In IMAGE space —
         // composite() renders 1:1 (view zoom/pan is CSS). composite() ignores it
@@ -614,6 +660,8 @@ export function createStrokePipeline({ activeLayer, getActiveMaskLayer, composit
   // (which only receives the endDraw callback) can run it on lift WITHOUT a new
   // dependency wired through the editor. Idempotent across repeated pipelines.
   state.drainSmoothing = drainSmoothing;
+  // Same idea for the Catmull-Rom stroke-end flush (the path lags one sample).
+  state.flushCurve = flushCurve;
 
-  return { strokeTo, cloneStrokeTo, drainSmoothing };
+  return { strokeTo, cloneStrokeTo, drainSmoothing, flushCurve };
 }

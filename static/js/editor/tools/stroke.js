@@ -157,6 +157,10 @@ export function createStrokeTool({
       // authoritative rather than relying on the drawing guard below.
       stopAirbrush();
       if (!state.drawing) return false;
+      // The brush-engine path lags one sample (centripetal Catmull-Rom needs a
+      // forward neighbour); emit the final pending segment so the stroke lands on
+      // the lift point. No-op for non-engine / mask strokes (empty buffer).
+      if (state.flushCurve) state.flushCurve();
       const wasDrawingInpaint = state.tool === 'inpaint';
       state.drawing = false;
       state._engStrokeStarted = false; // stroke ended → next one re-begins the engine
