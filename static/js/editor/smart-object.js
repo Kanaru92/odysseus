@@ -30,12 +30,13 @@ export function applySmartFilterStack(layer) {
   if (!fx || !fx.length || !layer.ctx) return;
   const W = layer.canvas.width, H = layer.canvas.height;
   if (!W || !H) return;
-  let img = null;
+  const hasMask = !!layer.smartFilterMaskUrl;
+  let img = null, base = null;
   for (const f of fx) {
     if (!f || f.enabled === false) continue;
     const op = f.opacity != null ? f.opacity : 100;
     if (op <= 0) continue; // fully transparent → this filter contributes nothing
-    if (!img) img = layer.ctx.getImageData(0, 0, W, H);
+    if (!img) { img = layer.ctx.getImageData(0, 0, W, H); if (hasMask) base = new Uint8ClampedArray(img.data); }
     if (op >= 100) {
       try { applyFilter(img, f.type, f.amount != null ? f.amount : 50, f.opts); } catch {}
     } else {
@@ -48,7 +49,59 @@ export function applySmartFilterStack(layer) {
       for (let i = 0; i < after.length; i++) after[i] = before[i] + (after[i] - before[i]) * t;
     }
   }
-  if (img) layer.ctx.putImageData(img, 0, 0);
+  if (!img) return;
+  // Filter mask: blend the filtered result back toward the pre-filter pixels
+  // (base) by (1 - mask coverage), so the whole stack is confined to the mask.
+  if (hasMask && base) {
+    const mcv = _smartMask(layer);
+    if (mcv) {
+      let md;
+      try {
+        const mc = document.createElement('canvas'); mc.width = W; mc.height = H;
+        mc.getContext('2d').drawImage(mcv, 0, 0, W, H);
+        md = mc.getContext('2d').getImageData(0, 0, W, H).data;
+      } catch { md = null; }
+      if (md) {
+        const a = img.data;
+        for (let i = 0; i < a.length; i += 4) {
+          const m = md[i + 3] / 255;
+          if (m >= 0.999) continue;
+          const inv = 1 - m;
+          a[i] = a[i] * m + base[i] * inv;
+          a[i + 1] = a[i + 1] * m + base[i + 1] * inv;
+          a[i + 2] = a[i + 2] * m + base[i + 2] * inv;
+          a[i + 3] = a[i + 3] * m + base[i + 3] * inv;
+        }
+      }
+    }
+  }
+  layer.ctx.putImageData(img, 0, 0);
+}
+
+// ── Smart-filter mask cache ── decoded by layer.id; live setter is instant, a
+// reload decodes lazily then re-rebakes via the ready callback.
+const _smartMaskCache = new Map();
+let _onSmartMaskReady = null;
+export function setSmartMaskReadyCallback(fn) { _onSmartMaskReady = fn; }
+export function cacheSmartMask(layer, canvas) { if (layer && layer.id) _smartMaskCache.set(layer.id, { url: layer.smartFilterMaskUrl, canvas }); }
+function _smartMask(layer) {
+  if (!layer || !layer.smartFilterMaskUrl) return null;
+  const e = _smartMaskCache.get(layer.id);
+  if (e && e.url === layer.smartFilterMaskUrl) return e.canvas || null;
+  const entry = { url: layer.smartFilterMaskUrl, canvas: null };
+  _smartMaskCache.set(layer.id, entry);
+  try {
+    const img = new Image();
+    img.onload = () => {
+      const c = document.createElement('canvas');
+      c.width = img.naturalWidth || img.width; c.height = img.naturalHeight || img.height;
+      c.getContext('2d').drawImage(img, 0, 0);
+      entry.canvas = c;
+      try { if (_onSmartMaskReady) _onSmartMaskReady(layer); } catch {}
+    };
+    img.src = layer.smartFilterMaskUrl;
+  } catch {}
+  return null;
 }
 
 function cloneCanvas(src) {

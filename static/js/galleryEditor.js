@@ -120,7 +120,7 @@ import { createRedEyeTool } from './editor/tools/red-eye.js';
 import { createRulerTool } from './editor/tools/ruler.js';
 import { createBrushQuickPick } from './editor/brush-quickpick.js';
 import { createShapeTool } from './editor/tools/shapes.js';
-import { createSmartObject } from './editor/smart-object.js';
+import { createSmartObject, setSmartMaskReadyCallback as _setSmartMaskReadyCallback, cacheSmartMask as _cacheSmartMask } from './editor/smart-object.js';
 import { downloadImage, EXPORT_FORMATS } from './editor/export-image.js';
 import { createAnimation } from './editor/anim/animation.js';
 import { createTimeline } from './editor/anim/timeline.js';
@@ -655,7 +655,8 @@ function _openSmartFilters() {
         <select id="ge-smartfx-add-type" style="flex:1;">${_FILTERS.map((f) => `<option value="${f.id}">${f.name}</option>`).join('')}</select>
         <button id="ge-smartfx-add" class="ge-btn ge-btn-primary">Add</button>
       </div>
-      <div style="display:flex;justify-content:flex-end;margin-top:14px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:14px;">
+        <button id="ge-smartfx-mask" class="ge-btn ge-btn-sm" title="Confine the whole filter stack to the current selection (or clear it)."></button>
         <button id="ge-smartfx-close" class="ge-btn">Close</button>
       </div>
     </div>`;
@@ -735,6 +736,23 @@ function _openSmartFilters() {
     if (type === 'gradient-map') entry.opts = { shadow: state.bgColor || '#000000', highlight: state.color || '#ffffff' };
     layer.smartFilters.push(entry);
     rebake(); render();
+  });
+  // Filter-stack mask: confine all filters to the current selection (or clear).
+  const maskBtn = overlay.querySelector('#ge-smartfx-mask');
+  const syncMaskBtn = () => { maskBtn.textContent = layer.smartFilterMaskUrl ? 'Clear filter mask' : 'Mask to selection'; maskBtn.classList.toggle('ge-btn-primary', !!layer.smartFilterMaskUrl); };
+  syncMaskBtn();
+  maskBtn.addEventListener('click', () => {
+    if (layer.smartFilterMaskUrl) { _saveState('Clear filter mask'); delete layer.smartFilterMaskUrl; rebake(); syncMaskBtn(); return; }
+    if (!state.wandMask) { try { uiModule.showToast('Make a selection first (wand / marquee / lasso)'); } catch {} return; }
+    const off = state.layerOffsets.get(layer.id) || { x: 0, y: 0 };
+    const selOff = state.layerOffsets.get(state.wandLayerId) || { x: 0, y: 0 };
+    const m = document.createElement('canvas');
+    m.width = layer.canvas.width; m.height = layer.canvas.height;
+    m.getContext('2d').drawImage(state.wandMask, selOff.x - off.x, selOff.y - off.y);
+    _saveState('Smart-filter mask from selection');
+    layer.smartFilterMaskUrl = m.toDataURL('image/png');
+    _cacheSmartMask(layer, m); // instant for the live path
+    rebake(); syncMaskBtn();
   });
   const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); close(); } };
   function close() { overlay.remove(); document.removeEventListener('keydown', onKey, true); if (_activePromptClose === close) _activePromptClose = null; }
@@ -2134,6 +2152,7 @@ function _snapshotState() {
         smartXf: l.isSmart && l.smartXf ? { ...l.smartXf } : null,
         sourceCanvas: l.isSmart ? (l.sourceCanvas || null) : null,
         smartFilters: l.smartFilters ? JSON.parse(JSON.stringify(l.smartFilters)) : null, // non-destructive filter stack
+        smartFilterMaskUrl: l.smartFilterMaskUrl || null, // filter-stack mask
         linked: l.linked || null,
       };
     }),
@@ -2363,6 +2382,7 @@ function _buildDraftPayload() {
         smartXf: l.isSmart ? l.smartXf : null,
         sourceUrl: (l.isSmart && l.sourceCanvas) ? l.sourceCanvas.toDataURL('image/png') : null,
         smartFilters: l.smartFilters || null, // non-destructive filter stack (plain JSON)
+        smartFilterMaskUrl: l.smartFilterMaskUrl || null,
         linked: l.linked || null,
         // Inpaint / paint mask sub-layers + which one is active — mirror the undo
         // snapshot so mask work survives a draft reload (previously dropped).
@@ -2560,6 +2580,7 @@ function _restoreDraft(draft) {
         layer.isSmart = true;
         layer.smartXf = s.smartXf || null;
         layer.smartFilters = s.smartFilters || null; // non-destructive stack (baked into dataUrl; kept for re-editing)
+        layer.smartFilterMaskUrl = s.smartFilterMaskUrl || null;
         layer.linked = s.linked || null;
         if (s.sourceUrl) {
           const sc = document.createElement('canvas');
@@ -2722,6 +2743,7 @@ function _restoreState(snap) {
     layer.smartXf = s.smartXf || null;
     layer.sourceCanvas = s.isSmart ? (s.sourceCanvas || null) : null;
     layer.smartFilters = s.smartFilters ? JSON.parse(JSON.stringify(s.smartFilters)) : null;
+    layer.smartFilterMaskUrl = s.smartFilterMaskUrl || null;
     layer.linked = s.linked || null;
     // Restore mask sub-layers — rebuild each mask's canvas from the
     // snapshot's imageData. We don't reuse old mask canvases (snapshot
@@ -7164,6 +7186,7 @@ function _buildProjectPayload() {
         smartXf: l.isSmart ? l.smartXf : null,
         sourceUrl: (l.isSmart && l.sourceCanvas) ? l.sourceCanvas.toDataURL('image/png') : null,
         smartFilters: l.smartFilters || null,
+        smartFilterMaskUrl: l.smartFilterMaskUrl || null,
         linked: l.linked || null,
         // Round-trip parity with the auto-draft payload (these were silently
         // dropped on Save Project → reload): colour label, base-layer flag, and
@@ -7613,6 +7636,7 @@ export function openEditor(imageUrl, imageId, presetSize, displayName, draftId) 
   try { window.__geCompositeCalls = () => _compositeCalls; } catch {} // dev: composite-render counter (rAF-coalesce check)
   try { window.__geComposite = () => composite(); } catch {} // dev: force a synchronous composite (tests)
   try { _setAdjMaskReadyCallback(() => composite()); } catch {} // re-composite when an adj-layer mask finishes decoding (reload)
+  try { _setSmartMaskReadyCallback((l) => { try { _smartObject.rebakeSmart(l); } catch {} composite(); }); } catch {} // re-rebake when a smart-filter mask decodes
   try { window.__geRenderLayers = (cv) => _renderLayersTo(cv.getContext('2d'), cv); } catch {} // dev: render the layer stack into a test canvas
   try { window.__geBuildDraft = () => _buildDraftPayload(); } catch {} // dev: serialize the draft payload (persistence round-trip tests)
   try { window.__geBuildProject = () => _buildProjectPayload(); } catch {} // dev: serialize the .geproj payload (project round-trip tests)
