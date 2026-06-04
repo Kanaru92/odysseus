@@ -83,10 +83,7 @@ const MENUS = [
     { sep: true },
     { label: 'All Filters…', tool: 'filter' },
     { sep: true },
-    { label: 'Actions…', click: '#ge-actions-toggle' },
     { label: 'Script Console…', click: '#ge-script-toggle' },
-    { sep: true },
-    { label: 'Animation Timeline', click: '#ge-anim-toggle' },
     { label: 'Transparency Checkerboard…', click: '#ge-checker-trigger' },
   ] },
   { title: 'View', items: [
