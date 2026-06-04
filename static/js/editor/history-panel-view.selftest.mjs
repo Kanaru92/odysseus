@@ -103,7 +103,7 @@ let docVersion = 'v0'; // stand-in for the restored snapshot identity
 
 function saveState(label) {
   state.undoStack.push({ _label: label || 'Edit', _ts: Date.now(), _v: docVersion });
-  state.redoStack = []; // PS truncation
+  state.redoStack = []; // linear-history truncation
 }
 function undo() {
   if (!state.undoStack.length) return;
@@ -166,7 +166,7 @@ eq(docVersion, 'C', 'jump(+2) redoes to snapshot C');
 eq(state.undoStack.length, 2, 'undoStack=2 after forward jump');
 eq(state.redoStack.length, 1, 'redoStack=1 after forward jump');
 
-// PS truncation: a NEW edit here drops the single forward state.
+// Linear-history truncation: a NEW edit here drops the single forward state.
 docVersion = 'E'; saveState('Paint');
 eq(state.redoStack.length, 0, 'new edit truncates forward states');
 view.refresh();

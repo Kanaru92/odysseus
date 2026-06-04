@@ -86,7 +86,7 @@ function sampleStops(stops, t) {
       let f = span <= 0 ? 0 : (t - a.pos) / span;
       // Per-stop midpoint (a.mid, 0..1, default 0.5): the position within this
       // segment where the blend reaches 50%. Power-skew f so f==mid → 0.5 (the
-      // Photoshop/GIMP gradient midpoint). 0.5 leaves it linear (no change).
+      // standard gradient midpoint). 0.5 leaves it linear (no change).
       const mid = (a.mid != null && a.mid > 0.001 && a.mid < 0.999) ? a.mid : 0.5;
       if (mid !== 0.5) f = Math.pow(f, Math.log(0.5) / Math.log(mid));
       const ca = parseHex(a.color), cb = parseHex(b.color);
@@ -141,7 +141,7 @@ function paramFor(type, px, py, sx, sy, dx, dy, len2) {
 // Rasterise an angle/reflected/diamond gradient into a fresh canvas of size w×h
 // (in the target coordinate space). The axis is given in that same space.
 // Ordered (Bayer 4×4) dither offsets in ~[-0.5, 0.5) of one LUT step — breaks up
-// 8-bit gradient banding without visible noise (PS "Dither").
+// 8-bit gradient banding without visible noise (the standard "Dither").
 const BAYER4 = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map((v) => (v + 0.5) / 16 - 0.5);
 
 function rasterGradient(type, w, h, sx, sy, ex, ey, stops, dither) {

@@ -25,7 +25,7 @@ export function createCloneTool({ activeLayer, saveState, strokeTo, showToast, m
       const coords = canvasCoords(e, state.mainCanvas);
       // Pattern Stamp mode — no source pick needed; the source is the chosen
       // pattern tiled across the document, sampled AT the cursor so it lays down
-      // aligned to the canvas (PS Pattern Stamp). Reuses the clone stamp loop.
+      // aligned to the canvas (the standard Pattern Stamp). Reuses the clone stamp loop.
       if (state.cloneSource === 'pattern') {
         if (!layer || layer.locked) return;
         const snap = makePatternSource && makePatternSource();

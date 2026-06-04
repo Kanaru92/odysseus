@@ -76,7 +76,7 @@ export function createLayerPanelRenderer(deps) {
   //   • each folder's members stay contiguous and directly below the folder
   //     row, and array order always mirrors the rendered order.
   //
-  // Membership rule (PS-like): walking the visual order top→bottom, every
+  // Membership rule (industry-standard): walking the visual order top→bottom, every
   // non-folder row is "open" under the most recent folder until we hit a row
   // that the drag explicitly placed OUTSIDE the band. Because the panel only
   // ever renders members immediately under their (expanded) folder, the
@@ -182,7 +182,7 @@ export function createLayerPanelRenderer(deps) {
     return {};
   }
 
-  // Inline layer preview (PS-style): a small thumbnail of the layer's pixels
+  // Inline layer preview (industry-standard): a small thumbnail of the layer's pixels
   // over a checkerboard so transparency reads. Layer canvases are document-
   // sized, so a straight fit-draw is faithful. Regenerated per render (cheap at
   // this size); the row stays a fixed height.
@@ -225,7 +225,7 @@ export function createLayerPanelRenderer(deps) {
     }
   }
 
-  // Mask thumbnail (PS-style): a small grayscale preview of the layer's raster
+  // Mask thumbnail (industry-standard): a small grayscale preview of the layer's raster
   // visibility mask, shown beside the layer thumbnail when one exists. Click =
   // edit the mask (toggles back to pixels if already editing it); Shift+click =
   // disable/enable; Alt+click = rubylith overlay (red over hidden areas). An
@@ -335,7 +335,7 @@ export function createLayerPanelRenderer(deps) {
     }, 0);
   }
 
-  // ── Panel-header blend + opacity (PS layout) ──────────────────────────
+  // ── Panel-header blend + opacity (standard layout) ──────────────────────────
   // These live in the header and act on the ACTIVE layer (or group), replacing
   // the old per-row controls. Wired once; values synced each render.
   let _headerWired = false;
@@ -344,7 +344,7 @@ export function createLayerPanelRenderer(deps) {
   }
   // Layers a header edit (opacity / blend / visibility) applies to: the whole
   // multi-selection when 2+ layers are selected, otherwise just the active
-  // layer/group (Photoshop parity — set opacity/blend/visibility on many at once).
+  // layer/group (industry-standard — set opacity/blend/visibility on many at once).
   function _targetLayers() {
     const ids = (state.selectedLayerIds || []).filter(Boolean);
     if (ids.length > 1) {
@@ -383,7 +383,7 @@ export function createLayerPanelRenderer(deps) {
       composite();
     });
 
-    // Opacity chip → wide popover slider (PS-style; precision over a cramped inline
+    // Opacity chip → wide popover slider (industry-standard; precision over a cramped inline
     // track). The slider keeps id #ge-active-opacity, so the wiring above is reused.
     const opChip = document.getElementById('ge-active-opacity-chip');
     const opPop = document.getElementById('ge-opacity-pop');
@@ -411,7 +411,7 @@ export function createLayerPanelRenderer(deps) {
       opPop.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.stopPropagation(); closeOpPop(); opChip.focus(); } });
     }
 
-    // Header Group (folder) + Delete (trash) — PS layers-panel footer parity.
+    // Header Group (folder) + Delete (trash) — standard layers-panel footer.
     // Act on the active layer; mirror the Ctrl+G / per-row × logic so all three
     // entry points stay consistent.
     const groupBtn = document.getElementById('ge-group-layer');
@@ -452,7 +452,7 @@ export function createLayerPanelRenderer(deps) {
       const l = _activeLayerOrGroup();
       if (!l) return;
       // Multi-selection: delete every selected layer (+ group members), like the
-      // visibility/opacity/blend batch ops already do (and like Photoshop).
+      // visibility/opacity/blend batch ops already do (industry-standard).
       const selIds = (state.selectedLayerIds || []).filter((id) => state.layers.some((x) => x.id === id));
       if (selIds.length > 1) {
         const toDelete = new Set();
@@ -513,7 +513,7 @@ export function createLayerPanelRenderer(deps) {
       copy.ctx.drawImage(layer.canvas, 0, 0);
       copy.opacity = layer.opacity;
       copy.visible = layer.visible;
-      // Carry the non-destructive layer properties too (PS Duplicate Layer keeps
+      // Carry the non-destructive layer properties too (a standard Duplicate Layer keeps
       // blend mode, clip, locks, colour label, effects, fill spec, editable text).
       copy.blendMode = layer.blendMode || 'source-over';
       copy.clipped = !!layer.clipped;
@@ -566,7 +566,7 @@ export function createLayerPanelRenderer(deps) {
         copy.smartXf = layer.smartXf ? { ...layer.smartXf } : null;
         copy.linked = layer.linked ? { ...layer.linked } : null;
       }
-      if (layer.groupId) copy.groupId = layer.groupId; // keep group members contiguous (and in the group, PS-style)
+      if (layer.groupId) copy.groupId = layer.groupId; // keep group members contiguous (and in the group, industry-standard)
       const idx = state.layers.findIndex((l) => l.id === layer.id);
       if (idx >= 0) state.layers.splice(idx + 1, 0, copy);
       else state.layers.push(copy);
@@ -674,7 +674,7 @@ export function createLayerPanelRenderer(deps) {
 
     // Alt-clickable boundary between two layer rows. Alt-clicking it toggles
     // the UPPER layer's `clipped` flag (clip it to the layer below) — the same
-    // flag the action-row "Clip" button drives (PS Alt-click between layers).
+    // flag the action-row "Clip" button drives (standard Alt-click between layers).
     const makeClipZone = (upper) => {
       const z = document.createElement('div');
       z.className = 'ge-clip-zone' + (upper.clipped ? ' clipped' : '');
@@ -1022,7 +1022,7 @@ export function createLayerPanelRenderer(deps) {
           });
           sControls.appendChild(mergeBtn);
           // Mask the adjustment to the current selection (or clear an existing
-          // mask) — confines the non-destructive adjustment to a region (PS).
+          // mask) — confines the non-destructive adjustment to a region (industry-standard).
           const maskBtn = document.createElement('button');
           maskBtn.className = 'ge-layer-btn' + (adj.maskUrl ? ' active' : '');
           maskBtn.title = adj.maskUrl ? 'Clear adjustment mask' : 'Mask to selection (confine this adjustment to the current selection)';

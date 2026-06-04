@@ -102,7 +102,7 @@ export function createTimeline(anim, container) {
     bar.appendChild(pingBtn);
     onionBtn = btn('Onion', 'Onion skin (light table)', () => anim.toggleOnion());
     bar.appendChild(onionBtn);
-    // Light-table options (CSP-style) — only while onion is on.
+    // Light-table options (industry-standard) — only while onion is on.
     onionGroup = document.createElement('span');
     onionGroup.style.display = 'none';
     bar.appendChild(onionGroup);
@@ -114,7 +114,7 @@ export function createTimeline(anim, container) {
     bar.appendChild(btn('+ Frame', 'New blank frame', () => anim.addFrame()));
     bar.appendChild(btn('⧉ Dup', 'Duplicate frame', () => anim.duplicateFrame()));
     bar.appendChild(btn('🗑', 'Delete frame', () => anim.deleteFrame(), 'danger'));
-    // Cel reuse (CSP) — drop an existing cel on this frame, or hold the prev one.
+    // Cel reuse — drop an existing cel on this frame, or hold the prev one.
     reuseSel = document.createElement('select');
     reuseSel.title = 'Reuse an existing cel on this frame';
     reuseSel.style.cssText = 'padding:2px 4px;background:#1d1d22;border:1px solid rgba(255,255,255,0.15);border-radius:4px;color:#eee;max-width:96px;';

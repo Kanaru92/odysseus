@@ -1,5 +1,5 @@
 /**
- * Tabbed documents — work between multiple open files (PS document tabs). The
+ * Tabbed documents — work between multiple open files (standard document tabs). The
  * editor holds ONE document in `state`; this keeps an array of document SLOTS
  * (each a snapshot of the per-doc state fields, holding the LIVE layer canvases
  * so switching is instant — no serialize/decode) and swaps them in/out on tab

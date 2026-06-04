@@ -2,7 +2,7 @@
  * Edge-aware selection refinement via a guided filter (luminance guide).
  *
  * Snaps a rough selection's alpha to the image's real edges within `radius`,
- * approximating Photoshop's Refine Edge / Select & Mask "Radius" — without the
+ * approximating the standard Refine Edge / Select & Mask "Radius" — without the
  * heavy closed-form matting solve (a large sparse linear system). In uniform
  * regions the filter feathers the alpha; near a guide edge it pulls the alpha
  * transition onto that edge, so an over/under-shooting selection boundary snaps

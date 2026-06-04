@@ -131,7 +131,7 @@ export const state = {
   maskCanvas: null,
   maskCtx: null,
   maskVisible: true,
-  layerMaskEdit: false, // when true, brush/eraser paint the active layer's PS visibility mask (layer.layerMask): brush reveals, eraser hides
+  layerMaskEdit: false, // when true, brush/eraser paint the active layer's visibility mask (layer.layerMask): brush reveals, eraser hides
   maskOverlay: null,    // layer id whose mask is shown as a red rubylith overlay ('\' / Alt+click the mask thumb); null = off
   // Reused canvas for the union-of-masks tint pass (saves repeated
   // allocation on every composite).
@@ -320,7 +320,7 @@ export const state = {
   brushColorJitter: 0, // per-dab hue jitter 0..1 (Color Dynamics, natural-media variation)
   brushSizeJitter: 0,  // per-dab size jitter 0..1 (Shape Dynamics)
   brushFlowJitter: 0,  // per-dab flow jitter 0..1 (Transfer Dynamics)
-  // Dual brush — a scattered secondary tip textures each primary dab (PS Dual Brush).
+  // Dual brush — a scattered secondary tip textures each primary dab (industry-standard dual brush).
   brushDualEnabled: false,
   brushDualTipType: 'round', // round | soft | gaussian
   brushDualScale: 0.35,      // secondary tip size as a fraction of the dab

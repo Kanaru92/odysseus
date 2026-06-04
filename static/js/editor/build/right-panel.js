@@ -69,7 +69,7 @@ export function buildRightPanel({ controlsHTML, layerPanelHTML }) {
     wandTolerance: state.wandTolerance,
   });
   // Persist each disclosure section's collapsed state across editor reopens /
-  // reloads (PS-style panels that remember whether they're open). Restore the
+  // reloads (industry-standard panels that remember whether they're open). Restore the
   // saved state on build, then save on every toggle.
   try {
     controls.querySelectorAll('details[id]').forEach((d) => {
@@ -256,7 +256,7 @@ export function buildRightPanel({ controlsHTML, layerPanelHTML }) {
     document.addEventListener('mouseup', onPanelUp);
   });
 
-  // --- Float-out for the Layers + Color panels (PS-style undock) ---
+  // --- Float-out for the Layers + Color panels (industry-standard undock) ---
   // A small ⤢ button in each panel's header pops it into a draggable window
   // (the live node is MOVED, so its listeners survive); "Dock" returns it to its
   // home slot. Floated windows are cleaned up by closeEditor's .ge-float-panel sweep.

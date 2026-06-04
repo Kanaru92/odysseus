@@ -20,8 +20,8 @@
  * `applyUnsharp(srcCanvas, params) -> canvas` wraps it for the editor.
  *
  * Params (industry-standard ranges/semantics):
- *   radius    : Gaussian blur radius in pixels   (0.1 .. 250, PS uses 0.1..1000)
- *   amount    : sharpening strength as a percent  (0 .. 500, PS uses 1..500;
+ *   radius    : Gaussian blur radius in pixels   (0.1 .. 250, the standard uses 0.1..1000)
+ *   amount    : sharpening strength as a percent  (0 .. 500, the standard uses 1..500;
  *               100 = add the full unsharp difference, 50 = half, etc.)
  *   threshold : minimum per-channel difference (0..255 "levels") a pixel must
  *               exceed before it is sharpened at all. 0 = sharpen everything.

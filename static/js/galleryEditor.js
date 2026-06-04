@@ -394,8 +394,8 @@ function createLayer(name, width, height) {
     visible: true,
     opacity: 1,
     blendMode: 'source-over', // canvas globalCompositeOperation (see editor/blend-modes.js)
-    clipped: false,           // clip to the layer below (PS Ctrl+Alt+G)
-    lockAlpha: false,         // preserve transparency — paint existing pixels only (PS "/")
+    clipped: false,           // clip to the layer below (Ctrl+Alt+G)
+    lockAlpha: false,         // preserve transparency — paint existing pixels only ("/")
     locked: false,
     colorLabel: null,         // row COLOR LABEL tag (null = None); see LAYER_COLOR_LABELS
     // Mask sub-layers — same shape as adjLayers, parallel concept.
@@ -478,7 +478,7 @@ function _renderFillLayer(layer) {
 }
 
 // Create a new fill layer (kind: 'solid' | 'gradient') from the current colours,
-// inserted above the active layer (PS placement).
+// inserted above the active layer (standard placement).
 function _addFillLayer(kind) {
   // Pattern fill picks a pattern + scale via a small dialog first.
   if (kind === 'pattern') {
@@ -495,7 +495,7 @@ function _addFillLayer(kind) {
   return _insertFillLayer(layer);
 }
 
-// Shared insert: place above the active layer (PS placement), select, repaint.
+// Shared insert: place above the active layer (standard placement), select, repaint.
 function _insertFillLayer(layer) {
   const ai = state.layers.findIndex(l => l.id === state.activeLayerId);
   if (ai >= 0) state.layers.splice(ai + 1, 0, layer); else state.layers.push(layer);
@@ -632,7 +632,7 @@ function _openPatternPicker(initial) {
 // Filters re-apply from the pristine source on every rebake (see smart-object.js
 // applySmartFilterStack), so they can be toggled, reordered, re-amounted, and
 // removed without ever degrading the original pixels. A normal layer is
-// auto-converted to a Smart Object first (PS behaviour).
+// auto-converted to a Smart Object first (standard behaviour).
 function _openSmartFilters() {
   let layer = _activeParentLayer();
   if (!layer) { try { uiModule.showToast('Select a layer'); } catch {} return; }
@@ -708,7 +708,7 @@ function _openSmartFilters() {
         row.appendChild(amtRow);
       }
       // Per-filter opacity (blends the filter's result over its input) — applies
-      // to every filter, mirrors PS smart-filter blending options.
+      // to every filter, mirrors the standard smart-filter blending options.
       {
         const opRow = document.createElement('label');
         opRow.style.cssText = 'display:flex;align-items:center;gap:8px;font-size:11px;opacity:0.85;';
@@ -1000,7 +1000,7 @@ function _compositeCustomBlend(source, off, opacity, mode, ctx, canvas) {
 // Build an alpha MATTE from a layer mask: coverage = (luminance × mask-alpha),
 // i.e. white-and-opaque → fully reveal, black → fully hide, mid-gray → ~50%,
 // and transparent → hide (alpha gate preserved for the lasso/wand region masks
-// that store coverage as alpha). This is the PS visibility-mask model: black
+// that store coverage as alpha). This is the standard visibility-mask model: black
 // paint hides, white paint reveals. The returned canvas carries the coverage in
 // its ALPHA channel (RGB irrelevant) so it can be used with `destination-in`.
 // Recomputed each call (no cache) so a mask mutated in place by the stroke
@@ -1024,7 +1024,7 @@ function _maskCoverageMatte(mask) {
   return matte;
 }
 
-// Apply a PS-style raster layer mask: returns a NEW canvas = `source` with its
+// Apply an industry-standard raster layer mask: returns a NEW canvas = `source` with its
 // alpha multiplied by the mask's COVERAGE (luminance × mask-alpha) — white
 // reveals, black hides, gray = partial. The mask is layer-local (same size as
 // the layer canvas) and stored on `layer.layerMask`, kept DISTINCT from the
@@ -1041,7 +1041,7 @@ function _applyLayerMask(source, mask) {
   return c;
 }
 
-// Add a PS visibility mask to the active layer (Reveal All = opaque white) and
+// Add a standard visibility mask to the active layer (Reveal All = opaque white) and
 // enter mask-edit mode; if one exists, toggle editing the mask vs the pixels.
 function _toggleLayerMask() {
   const layer = activeLayer();
@@ -1070,7 +1070,7 @@ function _deleteLayerMask() {
   composite();
 }
 // Rubylith overlay for the active layer's mask (Alt+click the mask thumb / '\'):
-// tint the HIDDEN (low-coverage) areas red, like the PS mask preview. Only shown
+// tint the HIDDEN (low-coverage) areas red, like the standard mask preview. Only shown
 // while the overlaid layer is the active one, so switching layers hides it.
 function _drawMaskRubylith() {
   if (state.maskOverlay !== state.activeLayerId) return;
@@ -1115,7 +1115,7 @@ function _bakeLayerMask() {
   composite();
   _renderLayerPanel();
 }
-// Invert the mask's tones (reveal<->hide) — PS Ctrl+I on a mask.
+// Invert the mask's tones (reveal<->hide) — Ctrl+I on a mask.
 function _invertLayerMask() {
   const layer = activeLayer();
   if (!layer || !layer.layerMask) return;
@@ -1166,7 +1166,7 @@ function _maskFromSelection() {
   _renderLayerPanel();
 }
 // Small right-click mask menu (Edit / Disable / View / Invert / Apply / From
-// Selection / Delete) — the PS "right-click the mask" affordance. Anchored at
+// Selection / Delete) — the standard "right-click the mask" affordance. Anchored at
 // the cursor; closes on outside click.
 function _openMaskMenu(x, y) {
   document.getElementById('ge-mask-menu')?.remove();
@@ -1347,7 +1347,7 @@ function _fxInner(source, { color, blur, dx, dy }) {
   return c;
 }
 
-// Non-destructive layer effects (PS "Blending Options"): drop shadow + outer
+// Non-destructive layer effects (the standard "Blending Options"): drop shadow + outer
 // glow behind the layer, outer stroke around it, inner shadow + inner glow inside
 // its edges, colour overlay on top. Returns a NEW canvas; the layer's own pixels
 // are never modified. No-op (returns the source) when no effect is enabled.
@@ -1389,7 +1389,7 @@ function _applyLayerFx(source, fx) {
   }
   ctx.drawImage(source, 0, 0);
   // Inner Shadow / Inner Glow — on TOP of the layer, clipped to its alpha so they
-  // hug the inside edges (PS stacking: below Color Overlay).
+  // hug the inside edges (standard stacking: below Color Overlay).
   if (ish && ish.enabled) {
     ctx.save();
     ctx.globalAlpha = ish.opacity == null ? 0.6 : ish.opacity;
@@ -1403,14 +1403,14 @@ function _applyLayerFx(source, fx) {
     ctx.restore();
   }
   // Satin (interior sheen) + Gradient Overlay — on top of the layer, clipped to its
-  // alpha, below Color Overlay (PS stacking).
+  // alpha, below Color Overlay (standard stacking).
   if (sa && sa.enabled) {
     ctx.save();
     ctx.globalAlpha = sa.opacity == null ? 0.5 : sa.opacity;
     ctx.drawImage(satin(source, { color: sa.color, blur: sa.blur, distance: sa.distance, angle: sa.angle, invert: sa.invert, opacity: 1 }), 0, 0);
     ctx.restore();
   }
-  // Pattern Overlay — tiled pattern clipped to the layer's alpha. PS stacking:
+  // Pattern Overlay — tiled pattern clipped to the layer's alpha. Standard stacking:
   // below Gradient + Color overlays, so those paint on top.
   if (po && po.enabled) {
     const tile = _patternTile(po.patternId, po.scale);
@@ -1724,7 +1724,7 @@ function _renderLayersTo(ctx, canvas) {
     if (layer.isGroup) continue; // groups have no pixels of their own
     if (!layer.visible) {
       // A hidden NON-clipped layer still owns the clip "base slot": clipped
-      // layers above clip to IT, so they must hide along with it (PS clipping-
+      // layers above clip to IT, so they must hide along with it (standard clipping-
       // group semantics) rather than fall through to an earlier, stale base.
       if (!layer.clipped) clipBase = { hidden: true };
       continue;
@@ -1735,7 +1735,7 @@ function _renderLayersTo(ctx, canvas) {
       if (!g.visible) { if (!layer.clipped) clipBase = { hidden: true }; continue; } // group hidden → skip member (still owns the clip base slot)
       // Isolated group (explicit blend mode != Pass-Through): flatten its members
       // to a buffer once, then blend the buffer with the group's mode + opacity —
-      // PS isolated-group semantics. Pass-Through groups keep the flat path below.
+      // Standard isolated-group semantics. Pass-Through groups keep the flat path below.
       if (g.blendMode && g.blendMode !== 'pass-through') {
         if (isoGroupsDone.has(g.id)) continue;
         isoGroupsDone.add(g.id);
@@ -2074,7 +2074,7 @@ function _snapshotState() {
       };
     } catch {}
   }
-  // Tile-based copy-on-write history (PS-style): each layer/mask's pixels are
+  // Tile-based copy-on-write history (industry-standard): each layer/mask's pixels are
   // captured as a grid of tiles, sharing byte-identical tiles with the previous
   // capture so a localized edit costs only its changed tiles. `_histTiles`
   // (id → prior tiled entry) is the dedup source; we rebuild it fresh here so
@@ -2129,7 +2129,7 @@ function _snapshotState() {
           canvasH: m.canvas.height,
           tiles: tileFor(m.id, m.ctx, m.canvas.width, m.canvas.height),
         })),
-        // PS visibility mask (layer.layerMask) — round-trip through undo so
+        // Standard visibility mask (layer.layerMask) — round-trip through undo so
         // adding / painting / filling it (and deleting it) is reversible, like
         // the inpaint-region masks above. Keyed by `<id>:layerMask` for tile
         // dedup so an unchanged mask costs nothing across snapshots.
@@ -2368,7 +2368,7 @@ function _buildDraftPayload() {
         canvasH: l.canvas.height,
         offset: { ...(state.layerOffsets.get(l.id) || { x: 0, y: 0 }) },
         dataUrl: l.canvas.toDataURL('image/png'),
-        // Non-destructive extras (so they survive reload): PS visibility mask,
+        // Non-destructive extras (so they survive reload): standard visibility mask,
         // layer effects (Blending Options), and editable text.
         layerMask: l.layerMask ? l.layerMask.toDataURL('image/png') : null,
         maskEnabled: l.maskEnabled === false ? false : undefined,
@@ -2606,7 +2606,7 @@ function _restoreDraft(draft) {
       };
       img.onerror = () => { if (--pending === 0) resolve(); };
       img.src = s.dataUrl;
-      // Restore the PS visibility mask (separate async image).
+      // Restore the standard visibility mask (separate async image).
       if (s.layerMask) {
         const mc = document.createElement('canvas');
         mc.width = layer.canvas.width; mc.height = layer.canvas.height;
@@ -2759,7 +2759,7 @@ function _restoreState(snap) {
       } catch {}
       return { id: ms.id, name: ms.name, canvas: mc, ctx: mctx, visible: ms.visible !== false };
     });
-    // Restore the PS visibility mask (or clear it if the snapshot had none, so
+    // Restore the standard visibility mask (or clear it if the snapshot had none, so
     // undoing "Add layer mask" actually removes it). Fresh canvas like masks[].
     if (s.layerMask && (s.layerMask.tiles || s.layerMask.imageData)) {
       const lm = document.createElement('canvas');
@@ -3017,7 +3017,7 @@ function _eyedropperPick(e) {
     try { d = sctx.getImageData(px, py, 1, 1).data; } catch { return; }
     r = d[0]; g = d[1]; b = d[2]; a = d[3];
   } else {
-    // N×N average — steadier picks off noisy / dithered areas (PS sample size).
+    // N×N average — steadier picks off noisy / dithered areas (standard sample size).
     const half = (n - 1) >> 1;
     const x0 = Math.max(0, px - half), y0 = Math.max(0, py - half);
     const w = Math.min(cw, px + half + 1) - x0, h = Math.min(ch, py + half + 1) - y0;
@@ -3034,7 +3034,7 @@ function _eyedropperPick(e) {
   const hex = '#' + [r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('');
   state.color = hex;
   if (state.container) {
-    // Eyedropper sets the FOREGROUND only (PS behaviour). '.ge-color-picker' is on
+    // Eyedropper sets the FOREGROUND only (standard behaviour). '.ge-color-picker' is on
     // BOTH the FG and BG swatches, so target the FG input specifically — dispatching
     // on the BG swatch used to clobber state.bgColor on every pick.
     const fgEl = state.container.querySelector('.ge-fg-color') || state.container.querySelector('.ge-color-picker');
@@ -3746,7 +3746,7 @@ function _promptExportAnim() {
   document.addEventListener('keydown', onKey, true);
 }
 
-// Transparency-checkerboard preferences (PS parity) — square size + the two
+// Transparency-checkerboard preferences (industry-standard) — square size + the two
 // square colours, with Light/Medium/Dark/Charcoal presets + custom colours and
 // a live preview. Changes apply immediately and persist in localStorage.
 function _persistChecker() {
@@ -4036,7 +4036,7 @@ const _reapplyTransform    = _transformSession.reapplyTransform;
 const _confirmTransform    = _transformSession.confirmTransform;
 const _cancelTransform     = _transformSession.cancelTransform;
 
-// Transform Again (PS Ctrl+Shift+T) — replay the last committed transform's
+// Transform Again (Ctrl+Shift+T) — replay the last committed transform's
 // relative scale / rotation / flip onto the active layer.
 function _repeatLastTransform() {
   const lt = state.lastTransform;
@@ -4266,9 +4266,9 @@ const _pcropTool = createPerspectiveCropTool({
 function _fillActiveLayer(color) {
   const layer = activeLayer();
   if (!layer || layer.locked) return;
-  // When the active layer's PS visibility mask is being edited, a fill writes
+  // When the active layer's visibility mask is being edited, a fill writes
   // the chosen tone INTO the mask (black = hide, white = reveal, gray = partial)
-  // rather than the layer's pixels — so "fill black to hide" works like PS. The
+  // rather than the layer's pixels — so "fill black to hide" works as standard. The
   // matte (luminance × alpha) is recomputed at composite, so an opaque fill of
   // any tone modulates the layer's alpha correctly.
   if (state.layerMaskEdit && layer.layerMask) {
@@ -4411,7 +4411,7 @@ function _drawLassoOverlay() {
   }
   tracePath(ringPts);
   // Marching ants: a solid black underlay + crawling white dashes (offset by the
-  // animated phase) so the outline reads on any background and "moves" like PS.
+  // animated phase) so the outline reads on any background and "moves" conventionally.
   state.mainCtx.lineWidth = 1 / state.zoom;
   state.mainCtx.setLineDash([]);
   state.mainCtx.lineDashOffset = 0;
@@ -4820,7 +4820,7 @@ function _showWandLoading() {
 // ── Marching ants ──
 // Animate the selection outline. The phase advances on a slow timer (only while
 // a selection is visible) and the overlays draw dashes offset by it, so the
-// boundary "crawls" like Photoshop.
+// boundary "crawls" like the standard.
 let _antsPhase = 0;
 let _antsTimer = null;
 function _selectionActive() {
@@ -4857,7 +4857,7 @@ function _drawWandOverlay() {
   const layer = state.layers.find(l => l.id === state.wandLayerId);
   if (!layer) return;
   const off = state.layerOffsets.get(layer.id) || { x: 0, y: 0 };
-  // Quick Mask only: tint the selected area red (PS Quick Mask preview). A plain
+  // Quick Mask only: tint the selected area red (standard Quick Mask preview). A plain
   // selection (marquee / wand / lasso) shows the marching-ants boundary ONLY —
   // a filled red overlay obscures the artwork and isn't how selections read in
   // any pro editor.
@@ -5873,7 +5873,7 @@ function _buildEditor(container) {
   const editorBody = document.createElement('div');
   editorBody.className = 'ge-editor-body';
   editorBody.appendChild(toolbar);
-  // PS-style sub-tool flyouts: group related tools (lassos, wand/quick-select,
+  // Industry-standard sub-tool flyouts: group related tools (lassos, wand/quick-select,
   // crop/perspective-crop, heal/red-eye, brush/mixer) into one slot each.
   try { _wireToolFlyouts(toolbar); } catch (_) {}
 
@@ -5924,7 +5924,7 @@ function _buildEditor(container) {
     updateBrushCursor: (e) => _updateBrushCursor(e),
     syncZoomControls: () => _syncZoomControls(),
   });
-  // Double-click closes an in-progress polygonal-lasso selection (PS parity).
+  // Double-click closes an in-progress polygonal-lasso selection (standard behaviour).
   canvasArea.addEventListener('dblclick', (e) => {
     if (state.tool === 'polylasso' && state.polyLassoActive) { e.preventDefault(); _polyLassoTool.close(); }
     if (state.tool === 'maglasso' && state.magLassoActive) { e.preventDefault(); _magLassoTool.close(); }
@@ -5947,7 +5947,7 @@ function _buildEditor(container) {
   container.appendChild(editorBody);
   // Initial options-bar fill now that the canonical controls exist.
   _optionsBar.refresh(state.tool);
-  // PS layout: the active tool's PRIMARY settings live on the top options bar,
+  // Standard layout: the active tool's PRIMARY settings live on the top options bar,
   // so hide their duplicate rows in the right panel. The canonical inputs stay
   // in the DOM (just hidden) — the top-bar remotes proxy them, so all wiring
   // still runs. What remains in the right "Brush" section is the advanced
@@ -6202,7 +6202,7 @@ function _buildEditor(container) {
   });
   _addManagedListener(window, 'mouseup', () => { state.brushHudActive = false; _hideBrushHudReadout(); });
   // Right-click on the canvas with Brush/Eraser → the brush quick-pick popup
-  // (Size / Hardness / preset grid, PS parity). Otherwise: suppress the browser
+  // (Size / Hardness / preset grid, industry-standard). Otherwise: suppress the browser
   // menu only while Alt+right-dragging the size HUD; any other right-click falls
   // through to the pasteboard background-colour menu (wired on the canvas area).
   state.mainCanvas.addEventListener('contextmenu', (e) => {
@@ -6217,7 +6217,7 @@ function _buildEditor(container) {
 
   // Alt-hover eyedropper PREVIEW — while the Eyedropper tool is active, or while
   // Alt is held with a paint tool (the quick-pick gesture), show a swatch of the
-  // colour under the cursor so the pick is predictable (PS shows this ring).
+  // colour under the cursor so the pick is predictable (the standard shows this ring).
   let _eyedropPrev = null;
   const _hideEyedropPrev = () => { if (_eyedropPrev) _eyedropPrev.style.display = 'none'; };
   _addManagedListener(window, 'mousemove', (e) => {
@@ -6513,7 +6513,7 @@ function _buildEditor(container) {
     });
   }
 
-  // Crop "Delete cropped pixels" toggle (PS parity) — off keeps outside pixels.
+  // Crop "Delete cropped pixels" toggle (industry-standard) — off keeps outside pixels.
   const _cropDel = document.getElementById('ge-crop-delete');
   _cropDel?.addEventListener('change', () => { state.cropDeletePixels = _cropDel.checked; });
 
@@ -7381,7 +7381,7 @@ function _promptCanvasSize(opts) {
   });
 }
 
-// New-Layer dialog (PS: Layer ▸ New ▸ Layer… / Alt-click the New-Layer
+// New-Layer dialog (Layer ▸ New ▸ Layer… / Alt-click the New-Layer
 // button). Resolves to { name, colorLabel, blendMode, opacity, clip,
 // neutralFill } or null on cancel. Sibling of _promptCanvasSize; reuses the
 // same themed modal shell, so it lives in its own overlay element.

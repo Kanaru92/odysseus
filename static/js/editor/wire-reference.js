@@ -1,6 +1,6 @@
 /**
  * Reference image panel — load an image to paint from, shown in the right
- * panel (a Krita-style reference docker). Display-only: it never touches the
+ * panel (a reference docker like painting apps). Display-only: it never touches the
  * canvas, layers, or composite, so it has zero rendering blast radius. Supports
  * dim (opacity), horizontal flip (artists flip references to spot errors), and
  * clear. Self-contained DOM wiring.

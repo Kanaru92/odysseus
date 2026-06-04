@@ -89,8 +89,8 @@ export function createBrushEngine(preset) {
   let strokeBuf = null, strokeCtx = null; // accumulating stroke (flow build-up)
   let baseSnap = null, baseCtx = null;    // layer pixels captured at stroke start
   let targetCtx = null;                   // the layer ctx being painted
-  // ── Dual-brush scratch ── a secondary tip textures each primary dab (PS Dual
-  // Brush). secCache caches the white secondary tip; dualA/dualB are reused per
+  // ── Dual-brush scratch ── a secondary tip textures each primary dab (the
+  // standard dual brush). secCache caches the white secondary tip; dualA/dualB are reused per
   // dab so the modulation doesn't allocate two canvases for every stamp.
   const secCache = new Map();
   let dualA = null, dualAx = null, dualB = null, dualBx = null;
@@ -136,7 +136,7 @@ export function createBrushEngine(preset) {
 
   // Build a textured copy of the primary dab: draw the primary tip, then carve it
   // by the union of `count` scattered secondary-tip stamps (destination-in =
-  // intersection, the dominant PS "Multiply" dual-brush look). Returns a shared
+  // intersection, the dominant "Multiply" dual-brush look). Returns a shared
   // scratch canvas valid until the next call — fine because the caller consumes
   // it (across its symmetry copies) before stamping the next dab.
   const DUAL_CAP = 1024; // ceiling for the per-dab modulation buffer; large brushes

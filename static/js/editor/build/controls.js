@@ -784,7 +784,7 @@ export function controlsHTML({ color, brushSize, wandTolerance }) {
  */
 export function layerPanelHTML() {
   // Single uniform action bar acting on the ACTIVE layer, on its own row UNDER
-  // the title (PS layers-panel footer parity). One consistent icon size (24px
+  // the title (standard layers-panel footer placement). One consistent icon size (24px
   // button / 14px glyph); wraps to a second line rather than clipping at 280px.
   // IDs are preserved where existing wiring depends on them
   // (ge-add-layer / ge-layer-mask / ge-layer-fx / ge-group-layer / ge-del-layer /

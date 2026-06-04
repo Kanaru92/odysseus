@@ -35,7 +35,7 @@ export function createMarqueeTool({ composite, drawLassoOverlay }) {
   }
   // Resolve the marquee polygon for a mode. 'row'/'col' (Single Row / Single
   // Column) ignore the drag extent and select a 1px band across the whole
-  // canvas at the start point — PS parity.
+  // canvas at the start point — industry-standard behaviour.
   function pointsFor(mode, x0, y0, x1, y1) {
     if (mode === 'row') return rectPoints(0, y0, state.imgWidth, y0 + 1);
     if (mode === 'col') return rectPoints(x0, 0, x0 + 1, state.imgHeight);

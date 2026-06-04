@@ -1,12 +1,12 @@
 /**
- * Actions — record a sequence of editor commands and replay it (PS Actions).
+ * Actions — record a sequence of editor commands and replay it (industry-standard Actions).
  * Built directly on the command registry: recording = subscribing to
  * onCommandRun(); playback = re-running the captured (id, args) stream. So any
  * op that goes through runCommand() (scripted, clicked, or menu) is recordable
  * with zero per-op work. Saved actions persist to localStorage.
  *
- * Continuous strokes aren't commands (they're in undo already), so — like PS —
- * Actions capture discrete ops (adjustments, fills, flips, layer ops, …).
+ * Continuous strokes aren't commands (they're in undo already), so — by
+ * convention — Actions capture discrete ops (adjustments, fills, flips, layer ops, …).
  *
  * @param {{ saveState: (label?:string)=>void, composite?: ()=>void }} deps
  */

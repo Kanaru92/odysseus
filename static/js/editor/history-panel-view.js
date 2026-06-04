@@ -1,5 +1,5 @@
 /**
- * History-panel VIEW — a self-contained, Photoshop-style visual History list
+ * History-panel VIEW — a self-contained, industry-standard visual History list
  * that renders the editor's labeled undo/redo timeline into a host element you
  * provide, highlights the current position, and jumps the document to any state
  * on click.
@@ -27,7 +27,7 @@
  *     state.redoStack   // future states, newest→oldest (LIFO); each has `_label`, `_ts`
  *
  * The CURRENT document sits implicitly BETWEEN those two stacks. A new edit
- * pushes onto `undoStack` and clears `redoStack` (PS linear-history truncation —
+ * pushes onto `undoStack` and clears `redoStack` (the standard linear-history truncation —
  * we don't fight it; we render whatever the stacks say). So this view ENUMERATES
  * those two arrays (the "use step count / labels" path the brief asks for), and
  * JUMPS by calling the injected `undo()` / `redo()` the right number of times —
@@ -167,7 +167,7 @@ export function createHistoryPanelView({ rootEl, undo, redo, state, onJump } = {
 
   // Build the row model in chronological order — oldest at top, newest at the
   // bottom, the Current marker sitting between past and future, exactly like the
-  // Photoshop History panel (and the existing popup). Each row carries the
+  // standard History panel (and the existing popup). Each row carries the
   // signed `offset` the jump machinery needs.
   function buildRows() {
     const u = state.undoStack || [];

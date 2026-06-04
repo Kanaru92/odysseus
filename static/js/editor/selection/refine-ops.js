@@ -150,7 +150,7 @@ export function feather(alpha, w, h, px) {
 /**
  * Smooth — remove jaggies / single-pixel noise from the matte while keeping a
  * hard-ish edge: blur, then re-threshold at the 50% coverage midpoint. This is
- * the "round off the corners" refinement (PS Smooth), distinct from feather
+ * the "round off the corners" refinement (the standard Smooth), distinct from feather
  * which keeps the soft gradient.
  * @param {Uint8ClampedArray|Uint8Array} alpha  length w*h
  * @param {number} w

@@ -117,7 +117,7 @@ export function wireSectionReorder(root) {
       persistFloats();
     };
     // Drag-drop-to-dock: releasing the float with its centre over the right panel
-    // re-docks it (PS-style); otherwise just remember the new position.
+    // re-docks it (the standard behavior); otherwise just remember the new position.
     dragFloat(win, bar, () => {
       const panel = document.querySelector('.ge-right-panel') || document.querySelector('.ge-controls');
       if (panel) {
@@ -131,7 +131,7 @@ export function wireSectionReorder(root) {
     dockBtn.addEventListener('click', dockBack);
   };
 
-  // ---- Collapse-to-icon (PS "Collapse to Icons") ----
+  // ---- Collapse-to-icon (industry-standard "Collapse to Icons") ----
   // A minimized section is parked in a hidden holder + represented by an icon
   // chip in a tray; clicking the chip pops it open as a transient flyout (click
   // again / click-away to close); Restore (or double-click the chip) returns it
@@ -229,7 +229,7 @@ export function wireSectionReorder(root) {
     pop.style.cssText = 'cursor:pointer;opacity:0.45;margin-left:6px;font-size:11px;user-select:none;';
     sum.appendChild(pop);
     pop.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); popOut(sec); });
-    // Collapse-to-icon button (PS "Collapse to Icons").
+    // Collapse-to-icon button (industry-standard "Collapse to Icons").
     const mini = document.createElement('span');
     mini.className = 'ge-dock-mini';
     mini.textContent = '⊟';

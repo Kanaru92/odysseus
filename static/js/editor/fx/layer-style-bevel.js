@@ -42,7 +42,7 @@ export function bevelEmboss(source, params) {
   const sh = _hexToRgb(p.shadow, [0, 0, 0]);
 
   // Light direction. Canvas y grows downward, so we flip the y component so that a
-  // PS-style angle (measured counter-clockwise from +x) lights the expected side.
+  // conventional angle (measured counter-clockwise from +x) lights the expected side.
   const az = angleDeg * Math.PI / 180;
   const alt = altitudeDeg * Math.PI / 180;
   const cosAlt = Math.cos(alt);

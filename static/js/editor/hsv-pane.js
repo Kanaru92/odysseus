@@ -47,7 +47,7 @@ export function wireHsvPane() {
   host.dataset.mounted = '1';
   // Compact numeric block (R/G/B 0–255, H 0–360, S/V 0–100, hex). Styling lives in
   // CSS (.ge-hsv-* / .ge-field) per the design guide — no inline styles. The SV
-  // square + a VERTICAL hue bar sit side-by-side (PS layout); fields below align to
+  // square + a VERTICAL hue bar sit side-by-side (standard layout); fields below align to
   // a fixed letter column. HSV's third channel is labelled V (not a second "B").
   const fld = (lbl, cls, max) =>
     `<label class="ge-hsv-f"><span>${lbl}</span>`

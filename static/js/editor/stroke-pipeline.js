@@ -326,7 +326,7 @@ export function createStrokePipeline({ activeLayer, getActiveMaskLayer, composit
     // Inpaint still works (its mask plumbing was already pointed at
     // the same canvas).
     const activeMask = getActiveMaskLayer();
-    // PS raster layer mask: when editing the active layer's visibility mask,
+    // Raster layer mask: when editing the active layer's visibility mask,
     // route paint onto it (brush reveals = adds coverage, eraser hides = carves)
     // exactly like the inpaint-region mask path, but onto `layer.layerMask`.
     const editingLayerMask = !!(state.layerMaskEdit && layer.layerMask) &&
@@ -381,7 +381,7 @@ export function createStrokePipeline({ activeLayer, getActiveMaskLayer, composit
         const fromY = state.lastY - off.y;
         const toX = tx - off.x;
         const toY = ty - off.y;
-        // Remap raw stylus pressure through the user's response curve (CSP-style
+        // Remap raw stylus pressure through the user's response curve (the standard
         // calibration). Identity for the default linear curve, so mouse/no-curve
         // users are unaffected.
         const pr = samplePressure(state.pressure != null ? state.pressure : 1);
@@ -536,7 +536,7 @@ export function createStrokePipeline({ activeLayer, getActiveMaskLayer, composit
     } else if (state.tool === 'brush') {
       ctx.globalCompositeOperation = 'source-over';
       if (editingLayerMask) {
-        // PS layer mask: paint a GRAYSCALE tone from the foreground colour —
+        // Layer mask: paint a GRAYSCALE tone from the foreground colour —
         // black hides, white reveals, gray = partial. Respect opacity/flow so
         // partial coverage builds up, and honour softness. (D/X give the
         // canonical black<->white mask pair.)
@@ -576,7 +576,7 @@ export function createStrokePipeline({ activeLayer, getActiveMaskLayer, composit
       ctx.strokeStyle = state.color;
     }
 
-    // Inpaint / region masks are full-image (no per-layer offset). But the PS
+    // Inpaint / region masks are full-image (no per-layer offset). But the
     // layer mask (editingLayerMask) is LAYER-LOCAL — its offset is applied at
     // composite — so painting it must subtract the layer offset like pixel paint,
     // else strokes land shifted on any moved/pasted/cropped layer.

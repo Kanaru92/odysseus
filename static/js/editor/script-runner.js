@@ -1,5 +1,5 @@
 /**
- * Script Console — a power-user scripting surface (like PS's scripting), letting
+ * Script Console — a power-user scripting surface (industry-standard scripting), letting
  * the artist automate/extend the editor with small JS snippets. Exposes a
  * curated `ge` API (layers, active layer + ctx, colour, adjustments, composite)
  * plus `state` and `log`. Runs the user's OWN code in the page context (this is

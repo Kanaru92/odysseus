@@ -100,7 +100,7 @@ export function wireWindowMenu(bar) {
   const live = items.filter((it) => it.isConnected && REGISTRY[it.dataset.relayPanel]);
 
   // Persist show/hide for the docked sections so a hidden panel stays hidden
-  // across reopens / reloads (PS remembers panel visibility). Tab/floating
+  // across reopens / reloads (the standard remembers panel visibility). Tab/floating
   // panels (ok, swatches, history, actions, timeline) are excluded — their
   // state is owned elsewhere. Restore the saved visibility before the first
   // checkmark refresh; the click handler below saves on every toggle.

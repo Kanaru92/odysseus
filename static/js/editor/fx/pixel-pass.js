@@ -286,7 +286,7 @@ export function applyAdjustment(srcCanvas, adj) {
   }
 
   if (adj.type === 'desaturate') {
-    // PS "Desaturate" = HSL lightness ((max+min)/2), distinct from the luma-based
+    // The standard "Desaturate" = HSL lightness ((max+min)/2), distinct from the luma-based
     // Black & White above.
     for (let i = 0; i < d.length; i += 4) {
       const v = (Math.max(d[i], d[i + 1], d[i + 2]) + Math.min(d[i], d[i + 1], d[i + 2])) / 2;
@@ -297,7 +297,7 @@ export function applyAdjustment(srcCanvas, adj) {
   }
 
   if (adj.type === 'selective-color') {
-    // Per-colour-family CMYK push (PS Selective Color). For each pixel pick its
+    // Per-colour-family CMYK push (Selective Color). For each pixel pick its
     // dominant family (6 hue sextants for chromatic pixels; whites/neutrals/
     // blacks for low-chroma) and shift it by that family's C/M/Y/K deltas
     // (cyan↓red, magenta↓green, yellow↓blue, black↓all), weighted by chroma.

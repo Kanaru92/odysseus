@@ -192,7 +192,7 @@ export function createAnimation({ composite, createLayer, renderLayerPanel, onCh
 
   function setFps(v) { ensure().fps = Math.max(1, Math.min(60, v | 0)); }
   function toggleOnion(on) { const a = ensure(); a.onion.enabled = on == null ? !a.onion.enabled : !!on; composite(); emit(); }
-  // Light-table options (CSP-style): how many cels before/after, their tints,
+  // Light-table options (industry-standard): how many cels before/after, their tints,
   // and the overall opacity.
   function setOnion(opts) {
     const a = ensure();
@@ -203,7 +203,7 @@ export function createAnimation({ composite, createLayer, renderLayerPanel, onCh
     if (opts.afterTint) a.onion.afterTint = opts.afterTint;
     composite(); emit();
   }
-  // CSP cel reuse: place an EXISTING cel on the current frame (the same drawing
+  // Cel reuse: place an EXISTING cel on the current frame (the same drawing
   // can repeat across frames), or clear the frame so it HOLDS the previous cel.
   function assignCel(celId) { const a = ensure(), trk = track(); M.setFrameCel(trk, a.currentFrame, celId); gotoFrame(a.currentFrame); }
   function setHold() { const a = ensure(), trk = track(); M.setFrameCel(trk, a.currentFrame, null); gotoFrame(a.currentFrame); }

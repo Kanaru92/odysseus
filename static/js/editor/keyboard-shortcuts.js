@@ -75,7 +75,7 @@ export function wireKeyboardShortcuts(deps) {
   const _onKeyDown = (e) => {
     if (!state.editorOpen) return;
     // Arrow keys nudge the active layer when the Move tool is active: 1px, or
-    // 10px with Shift (PS-style nudge). Skips text fields and active
+    // 10px with Shift (industry-standard nudge). Skips text fields and active
     // transform/crop interactions (arrows belong to those then). Holding a key
     // moves every repeat but only records ONE undo step for the whole nudge.
     if ((e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === 'ArrowRight')
@@ -170,7 +170,7 @@ export function wireKeyboardShortcuts(deps) {
         return;
       }
       if ((e.code === 'KeyZ' || e.key === 'z' || e.key === 'Z') && !inField) { e.preventDefault(); if (e.shiftKey) redo(); else undo(); }
-      // Ctrl+D / Ctrl+Shift+D = Deselect (PS uses Ctrl+D): clears the wand
+      // Ctrl+D / Ctrl+Shift+D = Deselect (Ctrl+D is the standard): clears the wand
       // selection (and lasso if active) without affecting layers.
       if (!e.altKey && !inField && (e.key === 'D' || e.key === 'd')) {
         if (state.wandMask || state.lassoPoints.length) {
@@ -193,12 +193,12 @@ export function wireKeyboardShortcuts(deps) {
         e.preventDefault();
         document.getElementById(e.shiftKey ? 'ge-export-gallery' : 'ge-save')?.click();
       }
-      // Ctrl+E — merge the active layer down into the one below (PS standard).
+      // Ctrl+E — merge the active layer down into the one below (industry-standard).
       if ((e.key === 'e' || e.key === 'E') && !e.shiftKey && !e.altKey && !inField) {
         e.preventDefault();
         document.getElementById('ge-merge-down')?.click();
       }
-      // Ctrl+Shift+T — Transform Again (PS standard). Falls back to the custom
+      // Ctrl+Shift+T — Transform Again (industry-standard). Falls back to the custom
       // resize prompt if transform-again isn't wired (defensive).
       if (e.shiftKey && e.key === 'T' && !inField) { e.preventDefault(); if (repeatLastTransform) repeatLastTransform(); else resizeCustomPrompt(); }
       if (e.altKey && e.key === 't' && !inField) { e.preventDefault(); startTransform(); }
@@ -220,19 +220,19 @@ export function wireKeyboardShortcuts(deps) {
       // Ctrl+'  → toggle grid · Ctrl+;  → toggle guide visibility (layout aids).
       if (e.key === "'" && !inField) { e.preventDefault(); e.stopPropagation(); state.showGrid = !state.showGrid; composite(); }
       if (e.key === ';' && !e.shiftKey && !inField) { e.preventDefault(); e.stopPropagation(); state.guidesVisible = !state.guidesVisible; composite(); }
-      // Ctrl+Alt+I / Ctrl+Shift+I — invert current selection (PS uses
-      // Ctrl+Shift+I). Uses e.code so Alt-modified key values don't break it.
+      // Ctrl+Alt+I / Ctrl+Shift+I — invert current selection (Ctrl+Shift+I is
+      // the standard). Uses e.code so Alt-modified key values don't break it.
       if (!inField && (e.altKey || e.shiftKey) && e.code === 'KeyI') {
         if (invertSelection()) {
           e.preventDefault();
           e.stopPropagation();
         }
       }
-      // Ctrl+I (no Shift/Alt) — invert the active layer (PS image invert).
+      // Ctrl+I (no Shift/Alt) — invert the active layer (standard image invert).
       if (!inField && !e.altKey && !e.shiftKey && e.code === 'KeyI' && runCommand) {
         e.preventDefault(); e.stopPropagation(); runCommand('invert');
       }
-      // Ctrl+Shift+U — Desaturate the active layer (PS).
+      // Ctrl+Shift+U — Desaturate the active layer (industry-standard).
       if (!inField && e.shiftKey && e.code === 'KeyU' && runCommand) {
         e.preventDefault(); e.stopPropagation(); runCommand('desaturate');
       }
@@ -242,7 +242,7 @@ export function wireKeyboardShortcuts(deps) {
         e.stopPropagation();
         addEmptyLayer();
       }
-      // Ctrl+Shift+N — new layer (PS). Best-effort: Chrome/Edge reserve this for
+      // Ctrl+Shift+N — new layer (industry-standard). Best-effort: Chrome/Edge reserve this for
       // incognito and may swallow it before the page sees it; Ctrl+Alt+J always
       // works as the fallback.
       if (e.shiftKey && e.code === 'KeyN') {
@@ -420,7 +420,7 @@ export function wireKeyboardShortcuts(deps) {
           return;
         }
       }
-      // Ctrl+A / Ctrl+Alt+A = select all canvas (PS uses Ctrl+A). Guarded so
+      // Ctrl+A / Ctrl+Alt+A = select all canvas (Ctrl+A is the standard). Guarded so
       // Ctrl+A still selects text inside form fields.
       if (!e.shiftKey && (e.key === 'a' || e.key === 'A') &&
           e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA' &&
@@ -439,7 +439,7 @@ export function wireKeyboardShortcuts(deps) {
       if (e.key === 'v') { /* no-op here */ }
       return;
     }
-    // Alt+Shift+P — toggle Airbrush / build-up mode (PS standard).
+    // Alt+Shift+P — toggle Airbrush / build-up mode (industry-standard).
     if (e.altKey && e.shiftKey && !e.ctrlKey && !e.metaKey && e.code === 'KeyP') {
       e.preventDefault();
       state.airbrush = !state.airbrush;

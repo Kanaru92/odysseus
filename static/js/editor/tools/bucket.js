@@ -56,7 +56,7 @@ export function createBucketTool({ activeLayer, saveState, composite }) {
         tctx.globalCompositeOperation = 'destination-in';
         tctx.drawImage(mask, 0, 0);
         // Confine the fill to the active selection too (marquee/lasso/wand), like
-        // the gradient + shape tools do — PS clips bucket fill to the selection.
+        // the gradient + shape tools do — the standard clips bucket fill to the selection.
         let selCv = null;
         if (state.wandMask && state.wandMask.width) {
           selCv = document.createElement('canvas'); selCv.width = w; selCv.height = h;

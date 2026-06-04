@@ -1,5 +1,5 @@
 /**
- * PS-style tool flyout / sub-tool grouping for the left tool palette.
+ * Industry-standard tool flyout / sub-tool grouping for the left tool palette.
  *
  * Related sub-tools (e.g. the three lassos) collapse into a single visible
  * slot bearing a small corner triangle; the other members hide. Right-click

@@ -1,6 +1,6 @@
 /**
- * Distort transform — free 4-corner warp of the active layer (PS Edit →
- * Transform → Distort, as a guideline). On tool select it snapshots the layer
+ * Distort transform — free 4-corner warp of the active layer (the standard
+ * Edit → Transform → Distort, as a guideline). On tool select it snapshots the layer
  * and shows draggable corner handles at the layer's bounding box; dragging a
  * corner re-warps the snapshot onto the layer live (via warp-quad.js). Commits
  * on tool-switch / Enter (the warped pixels are already on the layer), cancels

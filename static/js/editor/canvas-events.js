@@ -100,7 +100,7 @@ export function wireCanvasEvents({ canvasArea, beginDraw, continueDraw, endDraw:
   const capturePen = (e) => {
     if (e.pointerType === 'pen') {
       state.isPen = true;
-      // Pressure: a Wacom + Windows Ink can fire a brief 1.0 on light contact
+      // Pressure: a graphics tablet + Windows Ink can fire a brief 1.0 on light contact
       // (full-pressure spike). Seed LOW on pointerdown (no carryover from the
       // last stroke), floor so a 0 reading doesn't give a zero-size dab, then
       // EMA-smooth + cap upward jumps so a momentary spike can't punch through.
@@ -355,7 +355,7 @@ export function wireCanvasEvents({ canvasArea, beginDraw, continueDraw, endDraw:
 
   // ── Wheel zoom-to-cursor ───────────────────────────────────────────────
   // Wheel / trackpad-pinch zooms TOWARD the pointer: the image point under the
-  // cursor stays fixed (PS/Procreate navigation). Kept on the canvas-area and
+  // cursor stays fixed (industry-standard navigation). Kept on the canvas-area and
   // preventDefault'd so it doesn't scroll the page. Pan offset is adjusted
   // rather than reset, so you can zoom into any corner.
   canvasArea.addEventListener('wheel', (e) => {

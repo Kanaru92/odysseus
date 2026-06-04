@@ -181,7 +181,7 @@ export function createGradientEditor() {
     host.appendChild(row);
 
     // Midpoint of the segment AFTER this stop — where the blend to the next stop
-    // reaches 50% (Photoshop/GIMP gradient midpoint). Only meaningful when a next
+    // reaches 50% (the standard gradient midpoint). Only meaningful when a next
     // stop exists.
     if (selected < stops.length - 1) {
       const mrow = document.createElement('div');

@@ -1,5 +1,5 @@
 /**
- * Tile-based copy-on-write history storage — the model Photoshop uses for its
+ * Tile-based copy-on-write history storage — the standard model for
  * undo/History: the image is divided into a grid of fixed tiles, and each
  * history state stores ONLY the tiles whose pixels changed since the previous
  * state. Unchanged tiles are shared by reference between states (copy-on-write),
