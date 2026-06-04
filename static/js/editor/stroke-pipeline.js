@@ -441,28 +441,67 @@ export function createStrokePipeline({ activeLayer, getActiveMaskLayer, composit
         };
         // tryBegin seeds lastX/lastY to the start point, so a dist-0 first
         // call marks the stroke start → snapshot the layer + reset the buffer.
-        if (isStart) eng.begin(ctx, rt);
+        if (isStart) { eng.begin(ctx, rt); state._qprevX = null; state._qprevY = null; }
         state._engStrokeStarted = true; // subsequent dabs (incl. airbrush ticks) add to the buffer
-        eng.segment(
-          ctx,
-          { x: fromX, y: fromY, pressure: fromPr, tilt: tiltMag },
-          { x: toX, y: toY, pressure: pr, tilt: tiltMag },
-          rt,
-        );
-        // Dirty rect = the segment's bounding box grown by the dab footprint
-        // (diameter + a margin for soft edges). In IMAGE space — composite()
-        // renders 1:1 (view zoom/pan is CSS). composite() ignores it when a
-        // global redraw is needed (overlays / custom blends / fx), so the
+        // Curve smoothing: instead of one straight chord per input sample (which
+        // looks polygonal when samples are sparse / the stroke is fast), draw a
+        // quadratic through the MIDPOINT of (previous raw point, current raw
+        // point) using the previous raw point as the control. Consecutive
+        // midpoint-quadratics join continuously, so the path curves through the
+        // samples instead of cutting corners. It's subdivided into short
+        // sub-segments so the dab engine keeps its even spacing (residual carries
+        // across the eng.segment calls). A stationary tick (airbrush) or the very
+        // first sample falls back to the straight segment so build-up stays exact.
+        const segMove = Math.hypot(tx - state.lastX, ty - state.lastY);
+        const p1x = state.lastX, p1y = state.lastY; // previous sample (= last emitted point)
+        let _minX = null, _minY = null, _maxX = 0, _maxY = 0;
+        const _acc = (px, py) => {
+          if (_minX === null) { _minX = _maxX = px; _minY = _maxY = py; }
+          else { if (px < _minX) _minX = px; else if (px > _maxX) _maxX = px; if (py < _minY) _minY = py; else if (py > _maxY) _maxY = py; }
+        };
+        if (state._qprevX === null || segMove <= 0.6) {
+          // First sample of the stroke, or a stationary (airbrush) tick → straight.
+          eng.segment(
+            ctx,
+            { x: fromX, y: fromY, pressure: fromPr, tilt: tiltMag },
+            { x: toX, y: toY, pressure: pr, tilt: tiltMag },
+            rt,
+          );
+          _acc(p1x, p1y); _acc(tx, ty);
+        } else {
+          // Quadratic that PASSES THROUGH the previous and current samples — so a
+          // captured zig-zag apex is never cut (the samples lie ON the curve, not
+          // used as control points). The control is extrapolated from the incoming
+          // direction (prev-prev → prev) so the joins are smooth, not polygonal.
+          const k = 0.22;
+          const cx = p1x + (p1x - state._qprevX) * k;
+          const cy = p1y + (p1y - state._qprevY) * k;
+          const N = Math.max(2, Math.min(28, Math.round(segMove / 3)));
+          let pvx = p1x, pvy = p1y, pvp = fromPr;
+          for (let i = 1; i <= N; i++) {
+            const t = i / N, mt = 1 - t;
+            const qx = mt * mt * p1x + 2 * mt * t * cx + t * t * tx;
+            const qy = mt * mt * p1y + 2 * mt * t * cy + t * t * ty;
+            const qp = fromPr + (pr - fromPr) * t;
+            eng.segment(
+              ctx,
+              { x: pvx - off.x, y: pvy - off.y, pressure: pvp, tilt: tiltMag },
+              { x: qx - off.x, y: qy - off.y, pressure: qp, tilt: tiltMag },
+              rt,
+            );
+            _acc(pvx, pvy); _acc(qx, qy);
+            pvx = qx; pvy = qy; pvp = qp;
+          }
+        }
+        state._qprevX = p1x; state._qprevY = p1y; // previous sample becomes the next control's anchor
+        state.lastX = tx; state.lastY = ty;       // curve ends exactly on the current sample
+        // Dirty rect = the bounding box of the painted curve grown by the dab
+        // footprint (diameter + a margin for soft edges). In IMAGE space —
+        // composite() renders 1:1 (view zoom/pan is CSS). composite() ignores it
+        // when a global redraw is needed (overlays / custom blends / fx), so the
         // result is always correct; this just skips a full repaint per dab.
         const _m = effSize * 1.2 + 6;
-        const dirty = {
-          x: Math.min(state.lastX, tx) - _m,
-          y: Math.min(state.lastY, ty) - _m,
-          w: Math.abs(tx - state.lastX) + 2 * _m,
-          h: Math.abs(ty - state.lastY) + 2 * _m,
-        };
-        state.lastX = tx;
-        state.lastY = ty;
+        const dirty = { x: _minX - _m, y: _minY - _m, w: (_maxX - _minX) + 2 * _m, h: (_maxY - _minY) + 2 * _m };
         state.lastPressure = pr;
         // Symmetry mirrors dabs across the canvas centre and large scatter throws
         // them up to scatter×size away — both land OUTSIDE this endpoint-derived

@@ -26146,13 +26146,9 @@ button .spinner-whirlpool {
   .ge-alpha-badge {
     display: none;
   }
-  #ge-undo {
-    position: sticky !important;
-    left: 8px;
-    background: var(--panel);
-    z-index: 8;
-    box-shadow: 8px 0 10px -10px color-mix(in srgb, var(--fg) 55%, transparent);
-  }
+  /* Undo scrolls with the (now decluttered) topbar like everything else.
+     The old position:sticky pin left a detached "floating" copy over the
+     scrolling row, so it's removed. */
   .ge-topbar .ge-btn,
   .ge-topbar .ge-btn-sm {
     padding: 7px 11px !important;

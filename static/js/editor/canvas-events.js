@@ -106,7 +106,11 @@ export function wireCanvasEvents({ canvasArea, beginDraw, continueDraw, endDraw:
       // EMA-smooth + cap upward jumps so a momentary spike can't punch through.
       const raw = (typeof e.pressure === 'number' && e.pressure > 0) ? e.pressure : 0;
       if (e.type === 'pointerdown') {
-        state.pressure = Math.max(0.05, raw);
+        // Pen-down often reports a brief FULL-pressure spike on first contact
+        // (Windows Ink / S-Pen), which made strokes start with a full-pressure
+        // blob. Never trust the down reading: seed LOW and let the EMA below
+        // ramp toward the real pressure over the next few samples.
+        state.pressure = Math.min(0.12, Math.max(0.04, raw));
       } else {
         const prev = state.pressure != null ? state.pressure : (raw || 0.5);
         let p = Math.max(0.04, raw || prev);
@@ -145,7 +149,13 @@ export function wireCanvasEvents({ canvasArea, beginDraw, continueDraw, endDraw:
   // compat mousemove is suppressed via state._penDroveFrame. Mouse is unaffected
   // (it has no useful sub-frame samples and keeps the mousemove path).
   state.mainCanvas.addEventListener('pointermove', (e) => {
-    if (state.drawing && e.pointerType === 'pen') {
+    // Drive the stroke from the pointer's COALESCED sub-frame samples for both
+    // pen AND mouse, so fast direction reversals (zig-zag apexes that occur
+    // between animation frames) are recorded instead of being skipped — the
+    // single compat mousemove only ever reports one position per frame. The
+    // paired compat mousemove is then suppressed (_penDroveFrame) so the same
+    // points aren't painted twice. Touch keeps its own handler below.
+    if (state.drawing && (e.pointerType === 'pen' || e.pointerType === 'mouse')) {
       const evs = (typeof e.getCoalescedEvents === 'function') ? e.getCoalescedEvents() : null;
       const list = (evs && evs.length) ? evs : [e];
       for (const ce of list) { capturePen(ce); continueDraw(ce); }
