@@ -157,6 +157,12 @@ export function createStrokePipeline({ activeLayer, getActiveMaskLayer, composit
   // chords. Centripetal parameterisation (alpha 0.5) avoids the loops/overshoot
   // uniform Catmull-Rom produces on sharp turns. Pressure is interpolated P1->P2.
   // Each point is {x,y,pr} in IMAGE space; emitted dabs are in layer-local space.
+  // Reused endpoint scratch for eng.segment — it reads both endpoints
+  // synchronously and never retains them, so mutating two objects avoids
+  // allocating a fresh pair per sub-segment (up to ~64 per input sample → heavy
+  // GC churn → the periodic frame stalls that dropped samples mid-stroke).
+  const _segA = { x: 0, y: 0, pressure: 1, tilt: 0 };
+  const _segB = { x: 0, y: 0, pressure: 1, tilt: 0 };
   function drawCRSegment(eng, ctx, rt, off, tiltMag, P0, P1, P2, P3, acc) {
     const d = Math.hypot(P2.x - P1.x, P2.y - P1.y);
     // Sub-sample the curve about every 6 image px (the dab spacing fills the rest);
@@ -176,10 +182,9 @@ export function createStrokePipeline({ activeLayer, getActiveMaskLayer, composit
       const B2x = ((t3 - t) * A2x + (t - t1) * A3x) / d31, B2y = ((t3 - t) * A2y + (t - t1) * A3y) / d31;
       const cxv = ((t2 - t) * B1x + (t - t1) * B2x) / d21, cyv = ((t2 - t) * B1y + (t - t1) * B2y) / d21;
       const cp = P1.pr + (P2.pr - P1.pr) * tt;
-      eng.segment(ctx,
-        { x: pvx - off.x, y: pvy - off.y, pressure: pvp, tilt: tiltMag },
-        { x: cxv - off.x, y: cyv - off.y, pressure: cp, tilt: tiltMag },
-        rt);
+      _segA.x = pvx - off.x; _segA.y = pvy - off.y; _segA.pressure = pvp; _segA.tilt = tiltMag;
+      _segB.x = cxv - off.x; _segB.y = cyv - off.y; _segB.pressure = cp; _segB.tilt = tiltMag;
+      eng.segment(ctx, _segA, _segB, rt);
       if (acc) { acc(pvx, pvy); acc(cxv, cyv); }
       pvx = cxv; pvy = cyv; pvp = cp;
     }
