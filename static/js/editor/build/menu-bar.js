@@ -145,6 +145,13 @@ const STYLE = `
    is injected by wire-window-menu.js when the panel is visible. */
 .ge-menu-item[data-relay-panel]{padding-left:6px;}
 .ge-menu-item .ge-menu-check{display:inline-block;width:14px;flex:0 0 14px;text-align:center;opacity:0.95;}
+/* Phone: an absolute left-anchored dropdown runs off the right edge for the
+   right-hand menus (Select/Filter/View/Window). Pin it as a full-width panel
+   just under the menu bar and let long labels wrap so nothing is clipped. */
+@media (max-width:700px){
+  .ge-menu-drop{position:fixed;left:6px;right:6px;top:38px;min-width:0;width:auto;max-width:calc(100vw - 12px);max-height:72vh;overflow-y:auto;}
+  .ge-menu-item{white-space:normal;}
+}
 `;
 
 function relayAttr(it) {
