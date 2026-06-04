@@ -25741,9 +25741,14 @@ button .spinner-whirlpool {
     transition: width 0.12s ease, height 0.12s ease;
   }
   .ge-toolbar {
-    flex-direction: row;
+    /* Single horizontal scroll strip (base is `column wrap`; resetting only
+       direction leaves `wrap` on, which spills tools into 4 stacked rows and
+       eats ~177px of canvas — force nowrap so it's one swipeable row). */
+    flex-flow: row nowrap;
+    align-content: stretch;
     width: 100%;
     height: auto;
+    max-height: none;
     padding: 4px 0;
     border-right: none;
     border-bottom: 1px solid var(--border);
@@ -25778,6 +25783,9 @@ button .spinner-whirlpool {
   .ge-canvas-area {
     flex: 1 1 auto;
     min-height: 40vh;
+    /* Clear the layers bottom-sheet peek (~110px) and the dock bar so the
+       artwork centres in the *visible* canvas band rather than behind them. */
+    padding-bottom: calc(var(--peek-height, 110px) + 8px);
   }
   /* Right panel = layers list. Docked as a bottom sheet with a peek
      state: collapsed shows the header strip (and the active layer

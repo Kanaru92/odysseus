@@ -91,6 +91,12 @@ export function buildRightPanel({ controlsHTML, layerPanelHTML }) {
   // docked inside the right panel above the layers list.
   if (window.innerWidth <= 700 && state.container) {
     state.container.appendChild(controls);
+    // Canvas-dominant default: the controls sheet (color picker + tool
+    // options + docks) is a 60vh bottom sheet — leaving it open on launch
+    // buries the whole canvas. Start it dismissed so the artwork is visible;
+    // tapping a tool slides its controls (incl. the color picker) back up,
+    // and re-tapping the same tool dismisses it again (handled in onSelectTool).
+    controls.classList.add('dismissed');
   }
 
   // Move every slider-row's value chip out of its <label> and place
