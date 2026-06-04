@@ -374,12 +374,13 @@ export function createOptionsBar() {
       input.min = canon.min; input.max = canon.max; input.step = canon.step || 1;
       input.value = canon.value;
       input.dataset.canon = key; input.dataset.control = 'range';
+      // (compacted below to help the options bar fit narrower laptop widths)
       if (spec.kind) input.dataset.kind = spec.kind;
       if (spec.suffix) input.dataset.suffix = spec.suffix;
-      input.style.cssText = 'width:96px;';
+      input.style.cssText = 'width:76px;';
       const val = document.createElement('span');
       val.className = 'ge-ob-val';
-      val.style.cssText = 'min-width:36px;opacity:0.85;';
+      val.style.cssText = 'min-width:30px;opacity:0.85;';
       const setVal = () => { val.textContent = spec.kind === 'size' ? sizeLabelText() : canon.value + (spec.suffix || ''); };
       input.addEventListener('input', () => {
         canon.value = input.value;

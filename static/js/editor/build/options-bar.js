@@ -19,13 +19,13 @@ export function buildOptionsBar() {
   // switch. Pinned to comfortably fit the tallest tool's controls (sliders +
   // a native select); shorter tools just centre in the same height.
   bar.style.cssText =
-    'display:flex;align-items:center;gap:14px;padding:0 12px;font-size:11px;box-sizing:border-box;' +
+    'display:flex;align-items:center;gap:10px;padding:0 12px;font-size:11px;box-sizing:border-box;' +
     'border-bottom:1px solid rgba(255,255,255,0.07);background:rgba(255,255,255,0.02);' +
-    'height:44px;min-height:44px;flex:0 0 auto;overflow-x:auto;overflow-y:hidden;white-space:nowrap;';
+    'height:44px;min-height:44px;flex:0 0 auto;overflow-x:auto;overflow-y:hidden;white-space:nowrap;scrollbar-width:thin;';
   bar.innerHTML = `
-    <span class="ge-ob-tool-name" style="font-weight:600;opacity:0.92;white-space:nowrap;">Move</span>
+    <span class="ge-ob-tool-name" style="font-weight:600;opacity:0.92;white-space:nowrap;flex:0 0 auto;">Move</span>
     <span class="ge-ob-sep" style="width:1px;height:16px;background:rgba(255,255,255,0.12);flex:0 0 auto;"></span>
-    <div class="ge-ob-controls" style="display:flex;align-items:center;gap:16px;"></div>
+    <div class="ge-ob-controls" style="display:flex;align-items:center;gap:11px;flex:0 0 auto;"></div>
   `;
   return bar;
 }
