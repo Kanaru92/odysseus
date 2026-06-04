@@ -25876,8 +25876,20 @@ button .spinner-whirlpool {
     width: 18px;
     height: 18px;
   }
-  /* Action bar wraps comfortably and centers on the wider mobile sheet. */
-  .ge-layers-actions-row { justify-content: center; gap: 2px; }
+  /* Action bar: a single horizontal swipe-scroll strip so the ~12 action
+     buttons never wrap into overlapping rows on a phone. */
+  .ge-layers-actions-row {
+    justify-content: flex-start;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    gap: 4px;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .ge-layers-actions-row::-webkit-scrollbar { display: none; }
+  .ge-layers-actions-row .ge-action-btn,
+  .ge-layers-actions-row .ge-actions-divider,
+  .ge-layers-actions-row .ge-actions-spacer { flex: 0 0 auto; }
   /* Layer opacity slider stays at its expanded size at all times on
      mobile — there's room for it and the resize-on-hover felt jittery
      when scrolling. */
@@ -26118,6 +26130,14 @@ button .spinner-whirlpool {
     scrollbar-width: none;
   }
   .ge-topbar::-webkit-scrollbar { display: none; }
+  /* Declutter: flip/rotate live in the Image menu, 1:1 is redundant with Fit +
+     the zoom stack, and the canvas-size badge is informational — hiding them
+     keeps the essential nav (undo/redo/history/zoom/fit) visible without a long
+     horizontal scroll (the remaining import/save/AI still slide in). */
+  #ge-tb-fliph, #ge-tb-flipv, #ge-tb-rotccw, #ge-tb-rotcw,
+  #ge-zoom-100, #ge-canvas-size {
+    display: none !important;
+  }
   .ge-topbar-left,
   .ge-topbar-right {
     flex-shrink: 0;

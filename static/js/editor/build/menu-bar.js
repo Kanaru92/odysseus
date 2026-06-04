@@ -149,6 +149,13 @@ const STYLE = `
    right-hand menus (Select/Filter/View/Window). Pin it as a full-width panel
    just under the menu bar and let long labels wrap so nothing is clipped. */
 @media (max-width:700px){
+  /* The 8 menus don't fit 390px wide, so the bar becomes a horizontal swipe-
+     scroll strip (every title stays reachable; tighter padding fits more). */
+  .ge-menu-bar{flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;scrollbar-width:none;}
+  .ge-menu-bar::-webkit-scrollbar{display:none;}
+  .ge-menu{flex:0 0 auto;}
+  .ge-menu-title{padding:3px 7px;}
+  /* Open dropdown = full-width fixed panel under the bar (no right-edge clip). */
   .ge-menu-drop{position:fixed;left:6px;right:6px;top:38px;min-width:0;width:auto;max-width:calc(100vw - 12px);max-height:72vh;overflow-y:auto;}
   .ge-menu-item{white-space:normal;}
 }
