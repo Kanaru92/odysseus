@@ -147,25 +147,44 @@ export function wireCanvasEvents({ canvasArea, beginDraw, continueDraw, endDraw:
     }
   };
   state.mainCanvas.addEventListener('pointerdown', capturePen);
-  // High-rate pen: drive the in-progress stroke from the pointer's COALESCED
-  // sub-frame samples so fast strokes don't drop points (the "angular / skipped
-  // section" lines). Safe now that compositing is rAF-coalesced — replaying many
-  // points per frame renders dabs cheaply and composites once. Each sample
-  // updates pressure/tilt (capturePen) then paints (continueDraw). The paired
-  // compat mousemove is suppressed via state._penDroveFrame. Mouse is unaffected
-  // (it has no useful sub-frame samples and keeps the mousemove path).
+  // Sample the stroke at the input device's FULL hardware rate.
+  //
+  // Browsers throttle 'pointermove' to ~one event per animation frame (~60 Hz)
+  // and stash the skipped sub-frame samples in getCoalescedEvents(). That is
+  // fine WHEN the coalesced history is populated — but on a number of devices
+  // (notably Android styluses) it comes back empty, so a 240 Hz pen is sampled
+  // at ~60 Hz. Since the stroke is drawn as a path THROUGH the samples, far-apart
+  // points render as long straight chords: curves go polygonal and fast squiggles
+  // drop the motion that happened between frames. No amount of interpolation can
+  // recover detail that was never captured.
+  //
+  // 'pointerrawupdate' fires once per raw hardware sample, bypassing the
+  // per-frame throttle, so we drive the stroke from it when the browser supports
+  // it and fall back to pointermove+coalesced otherwise. Each sample updates
+  // pressure/tilt (capturePen) then paints (continueDraw); the paired compat
+  // mousemove is suppressed via state._penDroveFrame so points aren't doubled.
+  const drivePointer = (e) => {
+    const evs = (typeof e.getCoalescedEvents === 'function') ? e.getCoalescedEvents() : null;
+    const list = (evs && evs.length) ? evs : [e];
+    for (const ce of list) { capturePen(ce); continueDraw(ce); }
+    state._penDroveFrame = true;
+  };
+  // If the browser lacks pointerrawupdate this listener simply never fires, so no
+  // feature test is needed — rawSupported stays false and pointermove drives.
+  let rawSupported = false;
+  state.mainCanvas.addEventListener('pointerrawupdate', (e) => {
+    if (!state.drawing) return;
+    if (e.pointerType === 'pen' || e.pointerType === 'mouse') {
+      rawSupported = true;
+      drivePointer(e);
+    }
+  });
   state.mainCanvas.addEventListener('pointermove', (e) => {
-    // Drive the stroke from the pointer's COALESCED sub-frame samples for both
-    // pen AND mouse, so fast direction reversals (zig-zag apexes that occur
-    // between animation frames) are recorded instead of being skipped — the
-    // single compat mousemove only ever reports one position per frame. The
-    // paired compat mousemove is then suppressed (_penDroveFrame) so the same
-    // points aren't painted twice. Touch keeps its own handler below.
     if (state.drawing && (e.pointerType === 'pen' || e.pointerType === 'mouse')) {
-      const evs = (typeof e.getCoalescedEvents === 'function') ? e.getCoalescedEvents() : null;
-      const list = (evs && evs.length) ? evs : [e];
-      for (const ce of list) { capturePen(ce); continueDraw(ce); }
-      state._penDroveFrame = true;
+      // pointerrawupdate already drove this stroke at full rate — don't paint the
+      // same points again; just keep the paired compat mousemove suppressed.
+      if (rawSupported) { state._penDroveFrame = true; return; }
+      drivePointer(e);
     } else {
       capturePen(e);
     }
