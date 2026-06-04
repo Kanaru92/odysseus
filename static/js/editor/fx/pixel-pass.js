@@ -23,6 +23,34 @@ import { getLut, applyLut } from './lut.js';
  */
 import { buildCurvesLUTs } from './curves.js';
 
+// ── Adjustment-layer masks ── an adjLayer may carry a `maskUrl` (a grayscale/
+// alpha mask dataURL) confining its effect to a region. Decoded masks are cached
+// by adj.id; a live setter (cacheAdjMask) populates it instantly, and a reload
+// decodes lazily then fires the ready callback so the composite re-runs.
+const _adjMaskCache = new Map(); // adj.id -> { url, canvas|null }
+let _onAdjMaskReady = null;
+export function setAdjMaskReadyCallback(fn) { _onAdjMaskReady = fn; }
+export function cacheAdjMask(adj, canvas) { if (adj && adj.id) _adjMaskCache.set(adj.id, { url: adj.maskUrl, canvas }); }
+function _adjMask(adj) {
+  if (!adj || !adj.maskUrl) return null;
+  const e = _adjMaskCache.get(adj.id);
+  if (e && e.url === adj.maskUrl) return e.canvas || null; // ready (or decoding)
+  const entry = { url: adj.maskUrl, canvas: null };
+  _adjMaskCache.set(adj.id, entry); // mark in-flight so we decode once
+  try {
+    const img = new Image();
+    img.onload = () => {
+      const c = document.createElement('canvas');
+      c.width = img.naturalWidth || img.width; c.height = img.naturalHeight || img.height;
+      c.getContext('2d').drawImage(img, 0, 0);
+      entry.canvas = c;
+      try { if (_onAdjMaskReady) _onAdjMaskReady(); } catch {}
+    };
+    img.src = adj.maskUrl;
+  } catch {}
+  return null; // not ready this frame → apply unmasked; re-render fires on load
+}
+
 function _hexRgb(hex) {
   const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || '').trim());
   const n = m ? parseInt(m[1], 16) : 0;
@@ -406,7 +434,7 @@ export function renderLayerWithAdjLayers(layer) {
     layer._adjFinalKey = '';
     return layer.canvas;
   }
-  const sig = stack.map(a => `${a.id}:${a.visible?1:0}:${a.opacity}:${a.type}:${JSON.stringify(a.params)}`).join('|') +
+  const sig = stack.map(a => `${a.id}:${a.visible?1:0}:${a.opacity}:${a.type}:${a.maskUrl?('m'+a.maskUrl.length):''}:${JSON.stringify(a.params)}`).join('|') +
     (staged ? `|S:${staged.type}:${JSON.stringify(staged.params)}` : '') +
     (editingId ? `|E:${editingId}` : '');
   if (layer._adjFinal && layer._adjFinalKey === sig) return layer._adjFinal;
@@ -414,15 +442,28 @@ export function renderLayerWithAdjLayers(layer) {
   const w = layer.canvas.width, h = layer.canvas.height;
   for (const adj of stack) {
     const adjOut = applyAdjustment(cur, adj);
-    if (adj.opacity >= 0.999) {
+    const maskCv = _adjMask(adj); // null = no mask (or not yet decoded)
+    if (adj.opacity >= 0.999 && !maskCv) {
       cur = adjOut;
     } else {
       const blend = document.createElement('canvas');
       blend.width = w; blend.height = h;
       const bctx = blend.getContext('2d');
       bctx.drawImage(cur, 0, 0);
+      // Confine the adjustment to its mask (alpha coverage) before blending at
+      // opacity — outside the mask the prior (unadjusted) pixels show through.
+      let src = adjOut;
+      if (maskCv) {
+        const mo = document.createElement('canvas');
+        mo.width = w; mo.height = h;
+        const mx = mo.getContext('2d');
+        mx.drawImage(adjOut, 0, 0);
+        mx.globalCompositeOperation = 'destination-in';
+        mx.drawImage(maskCv, 0, 0, w, h);
+        src = mo;
+      }
       bctx.globalAlpha = adj.opacity;
-      bctx.drawImage(adjOut, 0, 0);
+      bctx.drawImage(src, 0, 0);
       bctx.globalAlpha = 1;
       cur = blend;
     }

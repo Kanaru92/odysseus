@@ -39,6 +39,7 @@ import {
   applyAdjustment as _applyAdjToCanvas,
   renderLayerPixelAdjustments as _renderLayerPixelAdjustmentsImpl,
   renderLayerWithAdjLayers as _renderLayerWithAdjLayers,
+  setAdjMaskReadyCallback as _setAdjMaskReadyCallback,
 } from './editor/fx/pixel-pass.js';
 import {
   layerFilterString as _layerFilterString,
@@ -7611,6 +7612,7 @@ export function openEditor(imageUrl, imageId, presetSize, displayName, draftId) 
   try { window.__geWebGPUStatus = _webgpuStatus; } catch {} // dev: WebGPU compute backend status (real-hardware check)
   try { window.__geCompositeCalls = () => _compositeCalls; } catch {} // dev: composite-render counter (rAF-coalesce check)
   try { window.__geComposite = () => composite(); } catch {} // dev: force a synchronous composite (tests)
+  try { _setAdjMaskReadyCallback(() => composite()); } catch {} // re-composite when an adj-layer mask finishes decoding (reload)
   try { window.__geRenderLayers = (cv) => _renderLayersTo(cv.getContext('2d'), cv); } catch {} // dev: render the layer stack into a test canvas
   try { window.__geBuildDraft = () => _buildDraftPayload(); } catch {} // dev: serialize the draft payload (persistence round-trip tests)
   try { window.__geBuildProject = () => _buildProjectPayload(); } catch {} // dev: serialize the .geproj payload (project round-trip tests)

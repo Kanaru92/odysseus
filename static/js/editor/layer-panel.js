@@ -41,7 +41,7 @@ import {
   adjLayerLabel,
   ADJ_ICONS,
 } from './layer-helpers.js';
-import { applyAdjustment } from './fx/pixel-pass.js';
+import { applyAdjustment, cacheAdjMask } from './fx/pixel-pass.js';
 import { BLEND_MODES } from './blend-modes.js';
 import { LAYER_COLOR_LABELS, cssForLayerLabel } from './build/popups.js';
 
@@ -1016,6 +1016,28 @@ export function createLayerPanelRenderer(deps) {
             render();
           });
           sControls.appendChild(mergeBtn);
+          // Mask the adjustment to the current selection (or clear an existing
+          // mask) — confines the non-destructive adjustment to a region (PS).
+          const maskBtn = document.createElement('button');
+          maskBtn.className = 'ge-layer-btn' + (adj.maskUrl ? ' active' : '');
+          maskBtn.title = adj.maskUrl ? 'Clear adjustment mask' : 'Mask to selection (confine this adjustment to the current selection)';
+          maskBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="12" cy="12" r="4" fill="currentColor" stroke="none"/></svg>';
+          maskBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (adj.maskUrl) { saveState('Clear adjustment mask'); delete adj.maskUrl; layer._adjFinalKey = null; composite(); render(); return; }
+            if (!state.wandMask) { uiModule?.showToast?.('Make a selection first (wand / marquee / lasso)'); return; }
+            const off = state.layerOffsets.get(layer.id) || { x: 0, y: 0 };
+            const selOff = state.layerOffsets.get(state.wandLayerId) || { x: 0, y: 0 };
+            const m = document.createElement('canvas');
+            m.width = layer.canvas.width; m.height = layer.canvas.height;
+            m.getContext('2d').drawImage(state.wandMask, selOff.x - off.x, selOff.y - off.y);
+            saveState('Adjustment mask from selection');
+            adj.maskUrl = m.toDataURL('image/png');
+            cacheAdjMask(adj, m); // instant (no decode) for the live path
+            layer._adjFinalKey = null;
+            composite(); render();
+          });
+          sControls.appendChild(maskBtn);
           const delBtn = document.createElement('button');
           delBtn.className = 'ge-layer-btn danger';
           delBtn.textContent = '×';
