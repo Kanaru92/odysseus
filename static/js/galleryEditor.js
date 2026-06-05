@@ -7784,8 +7784,16 @@ export function openEditor(imageUrl, imageId, presetSize, displayName, draftId) 
       _renderLayerPanel();
       _fitZoom();
       try { state.warmEngine && state.warmEngine(); } catch {} // avoid a first-stroke init hitch
-      // Default to the Brush so a new canvas is ready to draw on (was Move).
-      try { state.container?.querySelector('.ge-tool-btn[data-tool="brush"]')?.click(); } catch {}
+      // Default to the Brush so a new canvas is ready to draw on (was Move), but
+      // keep its settings panel collapsed on mobile so it doesn't cover the canvas
+      // on open — tapping the brush icon again reveals the settings.
+      try {
+        state.container?.querySelector('.ge-tool-btn[data-tool="brush"]')?.click();
+        if (window.innerWidth <= 820) {
+          const _c = document.getElementById('ge-controls') || document.querySelector('.ge-controls');
+          if (_c) _c.classList.add('dismissed');
+        }
+      } catch {}
       // First persist creates the server-side row (blank-canvas drafts).
       _schedulePersist();
     };
@@ -7877,8 +7885,15 @@ export function openEditor(imageUrl, imageId, presetSize, displayName, draftId) 
     _renderLayerPanel();
     _fitZoom();
     try { state.warmEngine && state.warmEngine(); } catch {} // avoid a first-stroke init hitch
-    // Default to the Brush so the image is ready to paint on (was Move).
-    try { state.container?.querySelector('.ge-tool-btn[data-tool="brush"]')?.click(); } catch {}
+    // Default to the Brush so the image is ready to paint on (was Move), with its
+    // settings panel collapsed on mobile (tap the brush icon again to reveal it).
+    try {
+      state.container?.querySelector('.ge-tool-btn[data-tool="brush"]')?.click();
+      if (window.innerWidth <= 820) {
+        const _c = document.getElementById('ge-controls') || document.querySelector('.ge-controls');
+        if (_c) _c.classList.add('dismissed');
+      }
+    } catch {}
     _removeLoading();
     _schedulePersist();
   };
