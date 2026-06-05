@@ -699,5 +699,19 @@ export function createStrokePipeline({ activeLayer, getActiveMaskLayer, composit
   // Same idea for the Catmull-Rom stroke-end flush (the path lags one sample).
   state.flushCurve = flushCurve;
 
-  return { strokeTo, cloneStrokeTo, drainSmoothing, flushCurve };
+  // Pre-warm the brush engine so the FIRST stroke doesn't hitch: building the
+  // engine + allocating its two full-canvas stroke buffers (and the initial layer
+  // snapshot) is lazy on the first dab, which showed up as a one-time fps dip at
+  // the start of drawing. A begin()/end() with no dabs allocates everything and
+  // leaves the layer untouched. Called once after a document opens.
+  function warmEngine() {
+    try {
+      const eng = getBrushEngine();
+      const l = activeLayer();
+      if (l && l.ctx) { eng.begin(l.ctx, buildBrushRuntime(l, state.brushSize || 20, 0)); eng.end(); }
+    } catch {}
+  }
+  state.warmEngine = warmEngine;
+
+  return { strokeTo, cloneStrokeTo, drainSmoothing, flushCurve, warmEngine };
 }

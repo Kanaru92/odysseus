@@ -7783,6 +7783,7 @@ export function openEditor(imageUrl, imageId, presetSize, displayName, draftId) 
       composite();
       _renderLayerPanel();
       _fitZoom();
+      try { state.warmEngine && state.warmEngine(); } catch {} // avoid a first-stroke init hitch
       // First persist creates the server-side row (blank-canvas drafts).
       _schedulePersist();
     };
@@ -7873,6 +7874,7 @@ export function openEditor(imageUrl, imageId, presetSize, displayName, draftId) 
     composite();
     _renderLayerPanel();
     _fitZoom();
+    try { state.warmEngine && state.warmEngine(); } catch {} // avoid a first-stroke init hitch
     _removeLoading();
     _schedulePersist();
   };
