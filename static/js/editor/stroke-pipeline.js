@@ -449,8 +449,10 @@ export function createStrokePipeline({ activeLayer, getActiveMaskLayer, composit
         if (!isStart && state.lastStrokeT != null) {
           const _dtSa = Math.max(1, _nowSa - state.lastStrokeT);
           const _spdScreen = (Math.hypot(x - state.lastX, y - state.lastY) * (state.zoom || 1)) / _dtSa;
-          // at rest → 0.45 (smooth); ramps to 1 (no smoothing) by ~0.8 screen px/ms.
-          sa = Math.min(sa, Math.max(0.45, Math.min(1, 0.45 + _spdScreen * 0.7)));
+          // at rest → 0.35 (smooth); ramps to 1 (no smoothing) by ~1.6 screen px/ms,
+          // so slow AND moderate "deliberate line" speeds get cleaned while quick
+          // strokes (> ~1.6 px/ms) stay perfectly sharp.
+          sa = Math.min(sa, Math.max(0.35, Math.min(1, 0.35 + _spdScreen * 0.4)));
         }
         if (state.brushSmoothPull && sm > 0 && !isStart) {
           // "Pulled String" — the brush trails the cursor by a fixed radius and
@@ -508,34 +510,45 @@ export function createStrokePipeline({ activeLayer, getActiveMaskLayer, composit
         if (state.brushTiltSize && tiltMag > 0) effSize *= (1 + tiltMag);
         state._lastEffSize = effSize; // so the stroke-end catch-up drain matches this width
         const isEraser = state.tool === 'eraser';
-        const rt = {
-          size: effSize,
-          opacity: (isEraser ? state.eraserOpacity : state.brushOpacity) / 100,  // stroke-level cap
-          flow: (isEraser ? state.eraserFlow : state.brushFlow) / 100,           // per-dab build-up
-          color: isEraser ? '#000000' : state.color,  // color is irrelevant when erasing
-          hardness: Math.max(0, Math.min(1, 1 - (isEraser ? state.eraserSoftness : state.brushSoftness) / 300)),
-          symmetry: state.symActive ? (state.brushSymmetry || 'none') : 'none',
-          symN: state.brushSymmetryN || 6,
-          symCx: state.symCx, symCy: state.symCy, symAngle: state.symAngle || 0,
-          flowPressure: !isEraser && !!state.brushPressureOpacity, // pen pressure → opacity
-
-          angleFollow: !isEraser && !!state.brushAngleFollow,
-          tiltAngle: !isEraser && !!state.brushTiltAngle,
-          tiltAz: Math.atan2(state.tiltY || 0, state.tiltX || 0), // pen tilt azimuth (rad)
-          brushBlend: isEraser ? 'source-over' : (state.brushBlendMode || 'source-over'),
-          colorJitter: isEraser ? 0 : (state.brushColorJitter || 0),
-          sizeJitter: isEraser ? 0 : (state.brushSizeJitter || 0),
-          flowJitter: isEraser ? 0 : (state.brushFlowJitter || 0),
-          dualEnabled: !isEraser && !!state.brushDualEnabled,
-          dualTipType: state.brushDualTipType || 'round',
-          dualScale: state.brushDualScale != null ? state.brushDualScale : 0.35,
-          dualCount: state.brushDualCount != null ? state.brushDualCount : 6,
-          dualScatter: state.brushDualScatter != null ? state.brushDualScatter : 0.8,
-          dualHardness: state.brushDualHardness != null ? state.brushDualHardness : 1,
-          airbrushPulse: !isEraser && !!state.airbrush, // held-airbrush build-up at a stationary point
-          lockAlpha: !isEraser && !!(layer && layer.lockAlpha),
-          erase: isEraser,
-        };
+        // Build the runtime ONCE per stroke and reuse it, mutating only the
+        // per-sample fields (size, tilt azimuth). Allocating a ~30-field object
+        // every sample was the remaining GC pressure behind the occasional frame
+        // dip; brush settings are fixed for the duration of a stroke, so the rest
+        // is cached at stroke start.
+        let rt = state._rt;
+        if (isStart || !rt) {
+          rt = {
+            size: effSize,
+            opacity: (isEraser ? state.eraserOpacity : state.brushOpacity) / 100,  // stroke-level cap
+            flow: (isEraser ? state.eraserFlow : state.brushFlow) / 100,           // per-dab build-up
+            color: isEraser ? '#000000' : state.color,  // color is irrelevant when erasing
+            hardness: Math.max(0, Math.min(1, 1 - (isEraser ? state.eraserSoftness : state.brushSoftness) / 300)),
+            symmetry: state.symActive ? (state.brushSymmetry || 'none') : 'none',
+            symN: state.brushSymmetryN || 6,
+            symCx: state.symCx, symCy: state.symCy, symAngle: state.symAngle || 0,
+            flowPressure: !isEraser && !!state.brushPressureOpacity, // pen pressure → opacity
+            angleFollow: !isEraser && !!state.brushAngleFollow,
+            tiltAngle: !isEraser && !!state.brushTiltAngle,
+            tiltAz: Math.atan2(state.tiltY || 0, state.tiltX || 0), // pen tilt azimuth (rad)
+            brushBlend: isEraser ? 'source-over' : (state.brushBlendMode || 'source-over'),
+            colorJitter: isEraser ? 0 : (state.brushColorJitter || 0),
+            sizeJitter: isEraser ? 0 : (state.brushSizeJitter || 0),
+            flowJitter: isEraser ? 0 : (state.brushFlowJitter || 0),
+            dualEnabled: !isEraser && !!state.brushDualEnabled,
+            dualTipType: state.brushDualTipType || 'round',
+            dualScale: state.brushDualScale != null ? state.brushDualScale : 0.35,
+            dualCount: state.brushDualCount != null ? state.brushDualCount : 6,
+            dualScatter: state.brushDualScatter != null ? state.brushDualScatter : 0.8,
+            dualHardness: state.brushDualHardness != null ? state.brushDualHardness : 1,
+            airbrushPulse: !isEraser && !!state.airbrush, // held-airbrush build-up at a stationary point
+            lockAlpha: !isEraser && !!(layer && layer.lockAlpha),
+            erase: isEraser,
+          };
+          state._rt = rt;
+        } else {
+          rt.size = effSize;
+          rt.tiltAz = Math.atan2(state.tiltY || 0, state.tiltX || 0);
+        }
         // tryBegin seeds lastX/lastY to the start point, so a dist-0 first
         // call marks the stroke start → snapshot the layer + reset the buffer.
         if (isStart) { eng.begin(ctx, rt); state._crBuf = []; }
