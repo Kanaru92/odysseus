@@ -7784,6 +7784,8 @@ export function openEditor(imageUrl, imageId, presetSize, displayName, draftId) 
       _renderLayerPanel();
       _fitZoom();
       try { state.warmEngine && state.warmEngine(); } catch {} // avoid a first-stroke init hitch
+      // Default to the Brush so a new canvas is ready to draw on (was Move).
+      try { state.container?.querySelector('.ge-tool-btn[data-tool="brush"]')?.click(); } catch {}
       // First persist creates the server-side row (blank-canvas drafts).
       _schedulePersist();
     };
@@ -7875,6 +7877,8 @@ export function openEditor(imageUrl, imageId, presetSize, displayName, draftId) 
     _renderLayerPanel();
     _fitZoom();
     try { state.warmEngine && state.warmEngine(); } catch {} // avoid a first-stroke init hitch
+    // Default to the Brush so the image is ready to paint on (was Move).
+    try { state.container?.querySelector('.ge-tool-btn[data-tool="brush"]')?.click(); } catch {}
     _removeLoading();
     _schedulePersist();
   };

@@ -24572,6 +24572,14 @@ input.settings-select::placeholder { color: color-mix(in srgb, var(--fg) 35%, tr
     max-width: calc(100vw - 16px);
   }
 }
+/* Mobile: the docked tabbed colour picker (#ge-color-panel — the big SV square +
+   OK Color / Lab / Swatches tabs) fills the entire controls bottom-sheet on a
+   phone, covering the canvas and pushing the compact swatch row below the fold.
+   Hide it on mobile; the compact fg/bg + swap swatch row (#ge-color-row) stays as
+   the colour control and opens the same picker as a popover on tap. */
+@media (max-width: 820px) {
+  #ge-color-panel { display: none !important; }
+}
 .ge-resize-menu { min-width: 200px; }
 .ge-edge-menu { min-width: 220px; padding: 10px; gap: 6px; }
 .ge-image-menu { min-width: 180px; }
